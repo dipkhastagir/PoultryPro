@@ -1,0 +1,209 @@
+@model AnalyticsHubVm
+@using System.Text.Json
+@{
+    var epef = Model.EpefBatches;
+    var epefLabels = epef.Select(b => b.BatchCode).ToList();
+    var epefValues = epef.Select(b => Math.Round(b.EPEF, 1)).ToList();
+    var epefColors = epef.Select(b => AnalyticsUi.EpefColor(b.EPEF)).ToList();
+    var epefActive = epef.Select(b => b.IsActive).ToList();
+
+    var modules = new List<(string Action, string Controller, string Title, string Icon, string Tone, string Desc)>
+    {
+        ("GrowthCurve", "Analytics", "Growth vs breed standard", "bi-activity", "green", "Daily body weight and cumulative FCR against the interpolated Cobb / Ross / Sonali curve, with growth-lag in days."),
+        ("Efficiency", "Analytics", "Production efficiency (EPEF)", "bi-trophy", "blue", "Ranks every meat flock by EPEF, FCR, livability and daily gain with excellent / good / poor bands."),
+        ("Anomalies", "Analytics", "Mortality anomaly detection", "bi-exclamation-diamond", "red", "EWMA control chart (λ = 0.3, L = 3) and robust z-scores flag abnormal daily mortality early."),
+        ("HeatStress", "Analytics", "Heat stress (THI)", "bi-thermometer-sun", "amber", "Temperature-Humidity Index per farm and flock, 7-day sensor trend and THI–mortality dose response."),
+        ("RiskScore", "Analytics", "Flock risk score", "bi-radar", "violet", "Transparent weighted 0–100 index from mortality, heat, vaccination, disease, growth and biosecurity."),
+        ("Forecast", "Analytics", "Harvest forecast", "bi-magic", "green", "Market-weight date by scaled breed curve and OLS regression, with projected live kg and revenue."),
+        ("FeedForecast", "Analytics", "Feed demand forecast", "bi-basket", "amber", "Next 14 days of feed by stage vs stock on hand → days of cover and reorder quantities."),
+        ("Benchmark", "Analytics", "Farm benchmarking", "bi-bar-chart-steps", "blue", "Farms compared on FCR, EPEF, mortality and biosecurity, normalised to the best performer."),
+        ("Carbon", "Analytics", "Carbon footprint", "bi-cloud-haze2", "slate", "Indicative kg CO₂e per flock and per kg live weight from feed, chicks, electricity and manure."),
+        ("Index", "Trials", "Field trials", "bi-clipboard2-data", "violet", "Treatment vs control flock comparisons with Welch t-tests and hypothesis tracking."),
+        ("Index", "Research", "Research data", "bi-database-down", "slate", "Download clean CSV datasets, data dictionary and correlation matrix for publication work."),
+        ("Index", "Alerts", "Early-warning alerts", "bi-bell", "red", "Rule-based alerts generated from the same surveillance methods; resolve and audit them.")
+    };
+}
+
+<partial name="_AnalyticsNav" />
+
+<div class="page-head">
+    <div>
+        <h4>Precision production analytics</h4>
+        <p>Every indicator on these pages is computed from the farm's own daily records, weighings, sensors and health logs — methods are shown on each page so results can be reproduced in a paper.</p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+        <span class="chip"><i class="bi bi-diagram-3"></i>@Model.StandardBreeds breed standard(s) loaded</span>
+        <span class="chip"><i class="bi bi-clipboard2-data"></i>@Model.RunningTrials running / planned trial(s)</span>
+    </div>
+</div>
+
+<div class="stat-grid">
+    <div class="stat-tile tone-green">
+        <div class="st-label">Active flocks</div>
+        <div class="st-value">@Model.ActiveFlocks</div>
+        <div class="st-sub">@Fmt.Num(Model.ActiveBirds) birds · @Model.ActiveMeatFlocks meat flock(s)</div>
+        <div class="st-icon"><i class="bi bi-egg"></i></div>
+    </div>
+    <div class="stat-tile tone-blue">
+        <div class="st-label">Average FCR</div>
+        <div class="st-value">@(Model.AvgFcr > 0 ? Fmt.Num(Model.AvgFcr, 2) : "—")</div>
+        <div class="st-sub">kg feed per kg live weight (active meat flocks)</div>
+        <div class="st-icon"><i class="bi bi-arrow-left-right"></i></div>
+    </div>
+    <div class="stat-tile tone-violet">
+        <div class="st-label">Average EPEF</div>
+        <div class="st-value">@(Model.AvgEpef > 0 ? Fmt.Num(Model.AvgEpef, 0) : "—")</div>
+        <div class="st-sub">@(Model.AvgEpef > 0 ? AnalyticsUi.EpefBand(Model.AvgEpef) + " band" : "No EPEF yet")</div>
+        <div class="st-icon"><i class="bi bi-trophy"></i></div>
+    </div>
+    <div class="stat-tile tone-amber">
+        <div class="st-label">Livability</div>
+        <div class="st-value">@(Model.ActiveFlocks > 0 ? Fmt.Pct(Model.AvgLivability) : "—")</div>
+        <div class="st-sub">mean across active flocks</div>
+        <div class="st-icon"><i class="bi bi-heart-pulse"></i></div>
+    </div>
+    <div class="stat-tile tone-red">
+        <div class="st-label">Flocks at risk</div>
+        <div class="st-value">@Model.FlocksAtRisk</div>
+        <div class="st-sub">risk score ≥ 45 · @Model.OpenAlerts open alert(s)</div>
+        <div class="st-icon"><i class="bi bi-radar"></i></div>
+    </div>
+</div>
+
+<div class="row g-3 mb-3">
+    <div class="col-lg-8">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h6 class="mb-0"><i class="bi bi-bar-chart me-1"></i>EPEF by flock</h6>
+                <a asp-action="Efficiency" class="btn btn-xs btn-outline-secondary">Full ranking</a>
+            </div>
+            <div class="card-body">
+                @if (epef.Count == 0)
+                {
+                    <div class="empty-state"><i class="bi bi-bar-chart"></i>No meat flock has enough data for EPEF yet (needs feed records and a weighing).</div>
+                }
+                else
+                {
+                    <div style="height:280px"><canvas id="chEpef"></canvas></div>
+                    <div class="text-xs text-muted mt-2">
+                        <span class="me-3"><i class="bi bi-square-fill" style="color:#0d9e75"></i> &gt; 400 excellent</span>
+                        <span class="me-3"><i class="bi bi-square-fill" style="color:#3b82f6"></i> 300–400 good</span>
+                        <span class="me-3"><i class="bi bi-square-fill" style="color:#ef4444"></i> &lt; 300 poor</span>
+                        Faded bars = closed flocks. Ordered by placement date.
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h6 class="mb-0"><i class="bi bi-radar me-1"></i>Highest-risk flocks</h6>
+                <a asp-action="RiskScore" class="btn btn-xs btn-outline-secondary">All</a>
+            </div>
+            <div class="card-body">
+                @if (Model.TopRisks.Count == 0)
+                {
+                    <div class="empty-state"><i class="bi bi-shield-check"></i>No active flocks to score.</div>
+                }
+                else
+                {
+                    foreach (var f in Model.TopRisks)
+                    {
+                        var top = f.Components.OrderByDescending(c => c.Points).First();
+                        <div class="mb-3">
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <div>
+                                    <a asp-controller="Batch" asp-action="Detail" asp-route-id="@f.BatchId" class="fw-600 text-decoration-none">@f.BatchCode</a>
+                                    <span class="text-xs text-muted">@f.FarmName · day @f.AgeInDays</span>
+                                </div>
+                                <span class="badge @AnalyticsUi.RiskBadge(f.Score)">@AnalyticsUi.D(f.Score, 0) · @f.Level</span>
+                            </div>
+                            <div class="risk-bar"><div class="marker" style="left:calc(@Math.Clamp(f.Score, 0, 100).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)% - 2px)"></div></div>
+                            <div class="text-xs text-muted mt-1"><i class="bi @top.Icon me-1"></i>Main driver: @top.Name (@AnalyticsUi.D(top.Points) pts)</div>
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="section-header"><h6 class="section-title">Analytics modules</h6></div>
+<div class="row g-3 mb-3">
+    @foreach (var m in modules)
+    {
+        <div class="col-md-6 col-xl-4">
+            <a asp-controller="@m.Controller" asp-action="@m.Action" class="text-decoration-none text-reset">
+                <div class="stat-tile tone-@m.Tone h-100">
+                    <div class="st-label">@m.Controller</div>
+                    <div class="fw-600 mt-1" style="font-size:15px;padding-right:40px">@m.Title</div>
+                    <div class="st-sub mt-1">@m.Desc</div>
+                    <div class="st-icon"><i class="bi @m.Icon"></i></div>
+                </div>
+            </a>
+        </div>
+    }
+</div>
+
+<div class="row g-3">
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-header"><h6 class="mb-0"><i class="bi bi-calculator me-1"></i>Headline formulas</h6></div>
+            <div class="card-body">
+                <div class="formula mb-2">EPEF = Livability(%) × LiveWeight(kg) × 100 ÷ (Age(d) × FCR)</div>
+                <div class="formula mb-2">FCR = Σ feed (kg) ÷ live mass produced (kg)</div>
+                <div class="formula">Livability = birds alive ÷ chicks placed × 100</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-header"><h6 class="mb-0"><i class="bi bi-lightbulb me-1"></i>How to read this</h6></div>
+            <div class="card-body">
+                <div class="info-callout">
+                    The tiles summarise <b>active</b> flocks only; averages of FCR and EPEF use meat flocks (broiler and Sonali) because
+                    layers are judged on egg output. A flock is <b>at risk</b> when its composite risk score reaches 45/100 (High or Critical).
+                    Open any module for the method, the full data table and a CSV-ready view of the numbers.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+(function () {
+    const el = document.getElementById('chEpef');
+    if (!el) return;
+    const labels = @Html.Raw(JsonSerializer.Serialize(epefLabels));
+    const values = @Html.Raw(JsonSerializer.Serialize(epefValues));
+    const colors = @Html.Raw(JsonSerializer.Serialize(epefColors));
+    const active = @Html.Raw(JsonSerializer.Serialize(epefActive));
+    new Chart(el, {
+        type: 'bar',
+        data: { labels, datasets: [{
+            label: 'EPEF', data: values,
+            backgroundColor: colors.map((c, i) => active[i] ? c : c + '88'),
+            borderColor: colors, borderWidth: 1, borderRadius: 4
+        }] },
+        options: {
+            plugins: { legend: { display: false },
+                tooltip: { callbacks: { afterLabel: ctx => active[ctx.dataIndex] ? 'Active flock' : 'Closed flock' } } },
+            scales: { y: { beginAtZero: true, title: { display: true, text: 'EPEF' } } }
+        },
+        plugins: [{
+            id: 'bands', beforeDatasetsDraw(chart) {
+                const { ctx, chartArea: a, scales: { y } } = chart;
+                [300, 400].forEach(v => {
+                    if (v > y.max) return;
+                    const py = y.getPixelForValue(v);
+                    ctx.save(); ctx.setLineDash([4, 4]); ctx.strokeStyle = '#94a3b8';
+                    ctx.beginPath(); ctx.moveTo(a.left, py); ctx.lineTo(a.right, py); ctx.stroke(); ctx.restore();
+                });
+            }
+        }]
+    });
+})();
+</script>
+}

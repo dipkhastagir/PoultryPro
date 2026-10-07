@@ -1,0 +1,662 @@
+@model BatchDetailVm
+@using System.Text.Json
+@{
+    var b = Model.Batch;
+    var canWrite = User.IsInRole(Roles.Admin) || User.IsInRole(Roles.Manager) || User.IsInRole(Roles.Veterinarian);
+    var canRecord = canWrite || User.IsInRole(Roles.FieldOfficer);
+    var isLayer = b.BatchType == "Layer";
+    var placed = b.PlacementDate.Date;
+
+    // one row per calendar day (a day can hold several visits)
+    var days = Model.DailyRecords.GroupBy(r => r.RecordDate.Date).OrderBy(g => g.Key).Select(g =>
+    {
+        var temps = g.Where(x => x.TemperatureC.HasValue).Select(x => x.TemperatureC!.Value).ToList();
+        var hums = g.Where(x => x.HumidityPercent.HasValue).Select(x => x.HumidityPercent!.Value).ToList();
+        var wts = g.Where(x => x.AverageWeightGm is > 0).Select(x => x.AverageWeightGm!.Value).ToList();
+        var birds = g.Max(x => x.BirdCount);
+        var feed = g.Sum(x => x.FeedConsumptionKg);
+        var water = g.Sum(x => x.WaterConsumptionLtr);
+        decimal? t = temps.Any() ? Math.Round(temps.Average(), 1) : null;
+        decimal? h = hums.Any() ? Math.Round(hums.Average(), 0) : null;
+        return new
+        {
+            Date = g.Key,
+            Age = (g.Key - placed).Days,
+            Birds = birds,
+            Mort = g.Sum(x => x.MortalityCount),
+            Cull = g.Sum(x => x.CullingCount),
+            Feed = feed,
+            Water = water,
+            FeedPerBird = birds > 0 ? Math.Round(feed * 1000 / birds, 1) : 0m,
+            WaterPerBird = birds > 0 ? Math.Round(water * 1000 / birds, 0) : 0m,
+            Temp = t,
+            Hum = h,
+            Thi = t.HasValue && h.HasValue ? PoultryMath.THI(t.Value, h.Value) : (decimal?)null,
+            Weight = wts.Any() ? Math.Round(wts.Average(), 0) : (decimal?)null,
+            Medicine = string.Join(", ", g.Where(x => !string.IsNullOrWhiteSpace(x.MedicineUsed)).Select(x => x.MedicineUsed).Distinct()),
+            Vaccine = string.Join(", ", g.Where(x => !string.IsNullOrWhiteSpace(x.VaccineUsed)).Select(x => x.VaccineUsed).Distinct()),
+            Remarks = string.Join(" · ", g.Where(x => !string.IsNullOrWhiteSpace(x.Remarks)).Select(x => x.Remarks)),
+            Officer = string.Join(", ", g.Select(x => x.FieldOfficerName).Distinct())
+        };
+    }).ToList();
+
+    var cum = 0;
+    var cumMortPct = new List<decimal>();
+    foreach (var d in days) { cum += d.Mort; cumMortPct.Add(b.InitialCount > 0 ? Math.Round(cum * 100m / b.InitialCount, 2) : 0); }
+    var stdCumMort = days.Select(d => PoultryMath.Standard(Model.Standard, d.Age)?.CumMortPct is decimal v ? Math.Round(v, 2) : (decimal?)null).ToList();
+    var stdFeed = days.Select(d => PoultryMath.Standard(Model.Standard, d.Age)?.DailyFeedGm is decimal v && v > 0 ? Math.Round(v, 0) : (decimal?)null).ToList();
+
+    // weight: daily-record averages + weighing samples, against the breed curve
+    var weightPts = days.Where(d => d.Weight.HasValue).Select(d => new { x = d.Age, y = d.Weight!.Value }).ToList();
+    var samplePts = Model.Weights.Select(w => new { x = w.AgeInDays, y = Math.Round(w.AvgWeightKg * 1000, 0) }).ToList();
+    var maxAge = Math.Max(b.AgeInDays, Math.Max(days.Any() ? days.Max(d => d.Age) : 0, 7));
+    var stdPts = new List<object>();
+    if (Model.Standard.Any())
+    {
+        for (var a = 0; a <= Math.Min(maxAge + 3, Model.Standard.Max(s => s.AgeDay)); a++)
+        {
+            var s = PoultryMath.Standard(Model.Standard, a);
+            if (s.HasValue) stdPts.Add(new { x = a, y = Math.Round(s.Value.WeightGm, 0) });
+        }
+    }
+
+    var vaxDone = Model.Vaccinations.Count(v => v.CompletedDate.HasValue);
+    var vaxDue = Model.Vaccinations.Count(v => v.DueDate <= DateTime.Today);
+    var vaxCompliance = vaxDue > 0 ? Math.Round(Model.Vaccinations.Count(v => v.DueDate <= DateTime.Today && v.CompletedDate.HasValue) * 100m / vaxDue, 0) : 100;
+    var vaxOverdue = Model.Vaccinations.Count(v => v.IsOverdue);
+    var openCases = Model.DiseaseCases.Count(c => c.Status != "Resolved");
+    var weightGm = b.AverageWeightKg * 1000;
+    var weightGap = Model.StdWeightTodayGm is > 0 && weightGm > 0 ? Math.Round((weightGm - Model.StdWeightTodayGm.Value) / Model.StdWeightTodayGm.Value * 100, 1) : (decimal?)null;
+    var labels = days.Select(d => "D" + d.Age).ToList();
+}
+
+<div class="page-head no-print">
+    <div>
+        <h4>
+            @b.BatchCode
+            <span class="badge @Fmt.Badge(b.HealthStatus) align-middle ms-1">@b.HealthStatus</span>
+            @if (!b.IsActive) { <span class="badge badge-info-soft align-middle">Closed @Fmt.Date(b.ClosedDate)</span> }
+        </h4>
+        <p>@b.FarmName @(string.IsNullOrEmpty(b.ShedNo) ? "" : "· shed " + b.ShedNo) · @b.Breed (@b.BatchType) · placed @Fmt.Date(b.PlacementDate)</p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+        <a asp-action="Index" asp-route-farmId="@b.FarmId" asp-route-status="@(b.IsActive ? "active" : "closed")" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Register</a>
+        @if (b.IsActive && canRecord)
+        {
+            <div class="btn-group">
+                <a asp-controller="Visit" asp-action="Create" asp-route-farmId="@b.FarmId" asp-route-batchId="@b.Id" class="btn btn-sm btn-primary"><i class="bi bi-plus-lg me-1"></i>Add daily record</a>
+                <button type="button" class="btn btn-sm btn-primary dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-label="More"></button>
+                <ul class="dropdown-menu dropdown-menu-end">
+                    <li><a class="dropdown-item" asp-controller="Visit" asp-action="Create" asp-route-farmId="@b.FarmId" asp-route-batchId="@b.Id"><i class="bi bi-geo-alt me-2"></i>Via field visit</a></li>
+                    <li><a class="dropdown-item" asp-controller="DailyRecord" asp-action="Index" asp-route-batchId="@b.Id"><i class="bi bi-clipboard2-data me-2"></i>Daily records of this flock</a></li>
+                </ul>
+            </div>
+        }
+        @if (canWrite)
+        {
+            <a asp-action="Edit" asp-route-id="@b.Id" class="btn btn-sm btn-outline-secondary"><i class="bi bi-pencil me-1"></i>Edit</a>
+            @if (b.IsActive)
+            {
+                <a asp-action="Close" asp-route-id="@b.Id" class="btn btn-sm btn-outline-warning"><i class="bi bi-box-arrow-right me-1"></i>Close / harvest</a>
+            }
+        }
+        <a href="/Trace/Timeline/@b.Id" class="btn btn-sm btn-outline-secondary"><i class="bi bi-qr-code me-1"></i>Traceability</a>
+        <a href="/Analytics/GrowthCurve?batchId=@b.Id" class="btn btn-sm btn-outline-secondary"><i class="bi bi-activity me-1"></i>Growth analytics</a>
+    </div>
+</div>
+
+<div class="stat-grid">
+    <div class="stat-tile tone-slate">
+        <div class="st-label">Age</div>
+        <div class="st-value">@b.AgeInDays d</div>
+        <div class="st-sub">@(b.IsActive ? (b.ExpectedHarvestDate.HasValue ? $"harvest {Fmt.Date(b.ExpectedHarvestDate)}" : "in production") : $"closed {Fmt.Date(b.ClosedDate)}")</div>
+        <div class="st-icon"><i class="bi bi-calendar3"></i></div>
+    </div>
+    <div class="stat-tile tone-blue">
+        <div class="st-label">@(b.IsActive ? "Live birds" : "Harvested")</div>
+        <div class="st-value">@Fmt.Num(b.IsActive ? b.CurrentCount : b.HarvestedCount)</div>
+        <div class="st-sub">of @Fmt.Num(b.InitialCount) placed · @b.CullingCount culls</div>
+        <div class="st-icon"><i class="bi bi-feather"></i></div>
+    </div>
+    <div class="stat-tile @(b.LivabilityPct < 93 ? "tone-red" : "tone-green")">
+        <div class="st-label">Livability</div>
+        <div class="st-value">@Fmt.Pct(b.LivabilityPct)</div>
+        <div class="st-sub">@b.MortalityCount dead (@Fmt.Pct(b.MortalityRate, 2))@(Model.StdCumMortToday.HasValue ? $" · std ≤ {Model.StdCumMortToday:0.0}%" : "")</div>
+        <div class="st-icon"><i class="bi bi-heart-pulse"></i></div>
+    </div>
+    <div class="stat-tile tone-amber">
+        <div class="st-label">Avg weight</div>
+        <div class="st-value">@(weightGm > 0 ? Fmt.Num(weightGm, 0) + " g" : "—")</div>
+        <div class="st-sub">
+            @if (Model.StdWeightTodayGm.HasValue && !isLayer)
+            {
+                <span>std @Fmt.Num(Model.StdWeightTodayGm.Value, 0) g</span>
+                @if (weightGap.HasValue) { <span class="metric-delta @(weightGap >= 0 ? "up" : "down")"> (@(weightGap >= 0 ? "+" : "")@weightGap%)</span> }
+            }
+            else
+            {
+                <span>ADG @Fmt.Num(b.AvgDailyGainGm, 1) g/d</span>
+            }
+        </div>
+        <div class="st-icon"><i class="bi bi-speedometer"></i></div>
+    </div>
+    <div class="stat-tile tone-violet">
+        <div class="st-label">FCR</div>
+        <div class="st-value">@(b.FCR > 0 ? b.FCR.ToString("0.000") : "—")</div>
+        <div class="st-sub">@(Model.StdFcrToday is > 0 ? $"std {Model.StdFcrToday:0.00}" : "kg feed / kg live")</div>
+        <div class="st-icon"><i class="bi bi-arrow-left-right"></i></div>
+    </div>
+    <div class="stat-tile tone-green">
+        <div class="st-label">EPEF</div>
+        <div class="st-value">@(b.EPEF > 0 ? b.EPEF.ToString("0") : "—")</div>
+        <div class="st-sub">@(b.EPEF >= 400 ? "excellent" : b.EPEF >= 300 ? "good" : b.EPEF > 0 ? "below target" : "needs FCR & weight")</div>
+        <div class="st-icon"><i class="bi bi-trophy"></i></div>
+    </div>
+    <div class="stat-tile tone-slate">
+        <div class="st-label">Feed used</div>
+        <div class="st-value">@Fmt.Num(b.TotalFeedKg, 0) kg</div>
+        <div class="st-sub">@Fmt.Num(b.AvgFeedPerBirdDayGm, 1) g/bird/day</div>
+        <div class="st-icon"><i class="bi bi-basket"></i></div>
+    </div>
+</div>
+
+<div class="row g-3 mb-3">
+    <div class="col-xl-4">
+        <div class="card h-100">
+            <div class="card-header"><h6><i class="bi bi-info-circle text-primary me-2"></i>Flock profile</h6></div>
+            <div class="card-body">
+                <dl class="kv mb-3">
+                    <dt>Farm</dt><dd><a asp-controller="Batch" asp-action="Index" asp-route-farmId="@b.FarmId">@b.FarmName</a></dd>
+                    <dt>Shed</dt><dd>@(b.ShedNo ?? "—")</dd>
+                    <dt>Breed / type</dt><dd>@b.Breed · @b.BatchType</dd>
+                    <dt>Hatchery</dt><dd>@(b.HatcheryName ?? "—")</dd>
+                    <dt>Placement</dt><dd>@Fmt.Date(b.PlacementDate)</dd>
+                    <dt>Expected harvest</dt><dd>@Fmt.Date(b.ExpectedHarvestDate)</dd>
+                    @if (!b.IsActive)
+                    {
+                        <dt>Closed</dt><dd>@Fmt.Date(b.ClosedDate)</dd>
+                        <dt>Harvest mass</dt><dd>@Fmt.Num(b.HarvestWeightKg, 0) kg</dd>
+                    }
+                    <dt>Chick cost</dt><dd>@Fmt.Money(Model.ChickCostTotal) <span class="text-muted text-xs">(@Fmt.Money(b.ChickCostPerBird, 2)/bird)</span></dd>
+                    <dt>Sales booked</dt><dd>@Fmt.Money(Model.SalesTotal) <span class="text-muted text-xs">(@Model.Orders.Count orders)</span></dd>
+                    <dt>Field visits</dt><dd>@b.TotalVisits @(b.LastVisitDate.HasValue ? "· last " + Fmt.Ago(b.LastVisitDate) : "")</dd>
+                    <dt>Vaccination</dt>
+                    <dd>
+                        @vaxDone / @Model.Vaccinations.Count done · <span class="@(vaxCompliance < 90 ? "text-danger fw-600" : "text-success fw-600")">@vaxCompliance% compliance</span>
+                        @if (vaxOverdue > 0) { <span class="badge badge-danger-soft ms-1">@vaxOverdue overdue</span> }
+                    </dd>
+                    <dt>Disease cases</dt><dd>@Model.DiseaseCases.Count @(openCases > 0 ? $"({openCases} open)" : "")</dd>
+                </dl>
+                @if (!string.IsNullOrWhiteSpace(b.Notes))
+                {
+                    <div class="info-callout">@b.Notes</div>
+                }
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-8">
+        <div class="card h-100">
+            <div class="card-header"><h6><i class="bi bi-bar-chart text-danger me-2"></i>Daily mortality &amp; cumulative mortality</h6></div>
+            <div class="card-body">
+                @if (days.Any())
+                {
+                    <div style="height:290px"><canvas id="mortChart"></canvas></div>
+                }
+                else
+                {
+                    <div class="empty-state"><i class="bi bi-clipboard2-data"></i>No daily records yet — add the first record to see mortality, growth and feed trends.</div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (days.Any() || Model.Weights.Any())
+{
+    <div class="row g-3 mb-3">
+        <div class="col-xl-6">
+            <div class="card h-100">
+                <div class="card-header"><h6><i class="bi bi-graph-up-arrow text-success me-2"></i>Body weight vs breed standard</h6></div>
+                <div class="card-body"><div style="height:280px"><canvas id="weightChart"></canvas></div>
+                    @if (!Model.Standard.Any())
+                    {
+                        <div class="text-xs text-muted mt-2">No breed standard curve is defined for @b.Breed — only actual weights are shown.</div>
+                    }
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-6">
+            <div class="card h-100">
+                <div class="card-header"><h6><i class="bi bi-droplet text-primary me-2"></i>Feed &amp; water per bird</h6></div>
+                <div class="card-body"><div style="height:280px"><canvas id="feedChart"></canvas></div></div>
+            </div>
+        </div>
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header"><h6><i class="bi bi-thermometer-half text-warning me-2"></i>House climate — temperature, humidity &amp; THI</h6></div>
+                <div class="card-body"><div style="height:240px"><canvas id="climateChart"></canvas></div></div>
+            </div>
+        </div>
+    </div>
+}
+
+<div class="card">
+    <div class="card-header">
+        <ul class="nav nav-tabs card-header-tabs border-0" role="tablist">
+            <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tDaily" type="button">Daily records <span class="badge badge-gray">@days.Count</span></button></li>
+            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tVax" type="button">Vaccinations <span class="badge @(vaxOverdue > 0 ? "badge-danger-soft" : "badge-gray")">@Model.Vaccinations.Count</span></button></li>
+            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tDisease" type="button">Disease &amp; mortality <span class="badge @(openCases > 0 ? "badge-warning-soft" : "badge-gray")">@Model.DiseaseCases.Count</span></button></li>
+            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tWeight" type="button">Weight samples <span class="badge badge-gray">@Model.Weights.Count</span></button></li>
+            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tVisits" type="button">Field visits <span class="badge badge-gray">@Model.Visits.Count</span></button></li>
+            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tOrders" type="button">Sales orders <span class="badge badge-gray">@Model.Orders.Count</span></button></li>
+            @if (isLayer)
+            {
+                <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tEggs" type="button">Egg production <span class="badge badge-gray">@Model.EggRecords.Count</span></button></li>
+            }
+        </ul>
+    </div>
+    <div class="tab-content">
+        <!-- DAILY -->
+        <div class="tab-pane fade show active" id="tDaily">
+            @if (!days.Any())
+            {
+                <div class="empty-state"><i class="bi bi-clipboard2"></i>No daily records for this flock.</div>
+            }
+            else
+            {
+                <div class="p-2 no-print"><input class="form-control form-control-sm" style="max-width:280px" placeholder="Filter records…" data-table-filter="#tblDaily" /></div>
+                <div class="table-responsive" style="max-height:480px">
+                    <table class="table table-hover table-sm mb-0" id="tblDaily">
+                        <thead><tr><th>Date</th><th>Age</th><th class="text-end">Birds</th><th class="text-end">Dead</th><th class="text-end">Culls</th><th class="text-end">Feed kg</th><th class="text-end">g/bird</th><th class="text-end">Water L</th><th class="text-end">Temp</th><th class="text-end">RH</th><th class="text-end">THI</th><th class="text-end">Wt g</th><th>Treatment</th><th>Remarks</th></tr></thead>
+                        <tbody>
+                            @foreach (var d in Enumerable.Reverse(days))
+                            {
+                                var band = d.Thi.HasValue ? PoultryMath.HeatBand(d.Thi.Value) : "Normal";
+                                <tr>
+                                    <td class="text-nowrap">@d.Date.ToString("dd MMM yyyy")</td>
+                                    <td>@d.Age</td>
+                                    <td class="text-end">@Fmt.Num(d.Birds)</td>
+                                    <td class="text-end @(d.Mort > Math.Max(5, d.Birds * 0.002m) ? "text-danger fw-600" : "")">@d.Mort</td>
+                                    <td class="text-end">@d.Cull</td>
+                                    <td class="text-end">@Fmt.Num(d.Feed, 1)</td>
+                                    <td class="text-end">@d.FeedPerBird</td>
+                                    <td class="text-end">@Fmt.Num(d.Water, 0)</td>
+                                    <td class="text-end">@(d.Temp?.ToString("0.0") ?? "—")</td>
+                                    <td class="text-end">@(d.Hum?.ToString("0") ?? "—")</td>
+                                    <td class="text-end">@if (d.Thi.HasValue) { <span class="badge @(band == "Normal" ? "badge-gray" : band == "Alert" ? "badge-warning-soft" : "badge-danger-soft")">@d.Thi</span> } else { <span>—</span> }</td>
+                                    <td class="text-end">@(d.Weight?.ToString("0") ?? "—")</td>
+                                    <td class="text-xs">@d.Medicine @(string.IsNullOrEmpty(d.Vaccine) ? "" : "💉 " + d.Vaccine)</td>
+                                    <td class="text-xs text-muted" style="max-width:220px">@d.Remarks</td>
+                                </tr>
+                            }
+                        </tbody>
+                        <tfoot>
+                            <tr><td colspan="3">Totals</td><td class="text-end">@days.Sum(d => d.Mort)</td><td class="text-end">@days.Sum(d => d.Cull)</td><td class="text-end">@Fmt.Num(days.Sum(d => d.Feed), 0)</td><td></td><td class="text-end">@Fmt.Num(days.Sum(d => d.Water), 0)</td><td colspan="6"></td></tr>
+                        </tfoot>
+                    </table>
+                </div>
+            }
+        </div>
+
+        <!-- VACCINATIONS -->
+        <div class="tab-pane fade" id="tVax">
+            <div class="d-flex justify-content-between align-items-center p-3 flex-wrap gap-2 no-print">
+                <div class="text-xs text-muted">Compliance = vaccinations completed ÷ vaccinations due to date. On time = completed within 1 day of due date.</div>
+                @if (canWrite)
+                {
+                    <div class="d-flex gap-2">
+                        <a asp-controller="Health" asp-action="AddVaccination" asp-route-batchId="@b.Id" class="btn btn-sm btn-outline-primary"><i class="bi bi-plus-lg me-1"></i>Add vaccination</a>
+                        <a asp-controller="VaccineSchedule" asp-action="Index" class="btn btn-sm btn-outline-secondary"><i class="bi bi-eyedropper me-1"></i>Apply programme</a>
+                    </div>
+                }
+            </div>
+            @if (!Model.Vaccinations.Any())
+            {
+                <div class="empty-state"><i class="bi bi-eyedropper"></i>No vaccinations scheduled for this flock.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover table-sm mb-0">
+                        <thead><tr><th>Age</th><th>Vaccine</th><th>Route</th><th class="text-end">Dose ml</th><th>Due</th><th>Completed</th><th>By</th><th>Status</th><th></th></tr></thead>
+                        <tbody>
+                            @foreach (var v in Model.Vaccinations)
+                            {
+                                <tr class="@(v.IsOverdue ? "table-danger" : "")">
+                                    <td>D@((v.DueDate.Date - placed).Days)</td>
+                                    <td class="fw-600">@v.VaccineName</td>
+                                    <td>@(v.Route ?? "—")</td>
+                                    <td class="text-end">@(v.DoseMl?.ToString("0.##") ?? "—")</td>
+                                    <td>@Fmt.Date(v.DueDate) @if (v.IsOverdue) { <span class="badge badge-danger-soft">@v.DaysOverdue d late</span> }</td>
+                                    <td>@Fmt.Date(v.CompletedDate) @if (v.CompletedDate.HasValue && !v.OnTime) { <span class="text-xs text-warning">late</span> }</td>
+                                    <td class="text-xs">@(v.AdministeredBy ?? "—")</td>
+                                    <td><span class="badge @Fmt.Badge(v.IsOverdue ? "Overdue" : v.Status)">@(v.IsOverdue ? "Overdue" : v.Status)</span></td>
+                                    <td class="text-nowrap">
+                                        @if (canWrite)
+                                        {
+                                            if (!v.CompletedDate.HasValue)
+                                            {
+                                                <form asp-controller="Health" asp-action="MarkDone" method="post" class="d-inline">
+                                                    @Html.AntiForgeryToken()
+                                                    <input type="hidden" name="id" value="@v.Id" />
+                                                    <input type="hidden" name="returnUrl" value="/Batch/Detail/@b.Id" />
+                                                    <button class="btn btn-xs btn-success" title="Mark done today"><i class="bi bi-check-lg"></i></button>
+                                                </form>
+                                            }
+                                            <a asp-controller="Health" asp-action="EditVaccination" asp-route-id="@v.Id" asp-route-returnUrl="/Batch/Detail/@b.Id" class="btn btn-xs btn-outline-secondary"><i class="bi bi-pencil"></i></a>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+
+        <!-- DISEASE -->
+        <div class="tab-pane fade" id="tDisease">
+            <div class="d-flex justify-content-end p-3 no-print">
+                @if (canWrite)
+                {
+                    <a asp-controller="Health" asp-action="AddDisease" asp-route-batchId="@b.Id" class="btn btn-sm btn-outline-danger"><i class="bi bi-plus-lg me-1"></i>Log disease case</a>
+                }
+            </div>
+            @if (!Model.DiseaseCases.Any())
+            {
+                <div class="empty-state"><i class="bi bi-shield-check"></i>No disease cases recorded for this flock.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover table-sm mb-0">
+                        <thead><tr><th>Reported</th><th>Disease</th><th class="text-end">Affected</th><th class="text-end">Deaths</th><th class="text-end">CFR</th><th>Treatment</th><th>Diagnosed by</th><th>Status</th><th></th></tr></thead>
+                        <tbody>
+                            @foreach (var c in Model.DiseaseCases)
+                            {
+                                <tr>
+                                    <td class="text-nowrap">@Fmt.Date(c.ReportedDate)<div class="text-xs text-muted">D@((c.ReportedDate.Date - placed).Days)</div></td>
+                                    <td class="fw-600">@c.DiseaseName</td>
+                                    <td class="text-end">@Fmt.Num(c.AffectedCount)</td>
+                                    <td class="text-end">@Fmt.Num(c.DeathCount)</td>
+                                    <td class="text-end">@Fmt.Pct(c.CaseFatalityPct)</td>
+                                    <td class="text-xs" style="max-width:260px">@c.Treatment</td>
+                                    <td class="text-xs">@(c.DiagnosedBy ?? "—")</td>
+                                    <td><span class="badge @Fmt.Badge(c.Status)">@c.Status</span>@if (c.ResolvedDate.HasValue) { <div class="text-xs text-muted">@c.DurationDays d</div> }</td>
+                                    <td>@if (canWrite) { <a asp-controller="Health" asp-action="EditDisease" asp-route-id="@c.Id" asp-route-returnUrl="/Batch/Detail/@b.Id" class="btn btn-xs btn-outline-secondary"><i class="bi bi-pencil"></i></a> }</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+            @if (Model.MortalityLogs.Any())
+            {
+                <div class="px-3 pt-3 fw-600 text-xs text-uppercase text-muted">Mortality log (causes)</div>
+                <div class="table-responsive">
+                    <table class="table table-sm mb-0">
+                        <thead><tr><th>Date</th><th>Cause</th><th class="text-end">Birds</th><th>Notes</th></tr></thead>
+                        <tbody>
+                            @foreach (var m in Model.MortalityLogs)
+                            {
+                                <tr><td>@Fmt.Date(m.LogDate)</td><td>@m.Cause</td><td class="text-end">@m.Count</td><td class="text-xs text-muted">@m.Notes</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+
+        <!-- WEIGHTS -->
+        <div class="tab-pane fade" id="tWeight">
+            <div class="d-flex justify-content-end p-3 no-print">
+                @if (canWrite && b.IsActive)
+                {
+                    <a asp-controller="Bird" asp-action="Detail" asp-route-id="@b.Id" class="btn btn-sm btn-outline-primary"><i class="bi bi-plus-lg me-1"></i>Record weighing / mortality</a>
+                }
+            </div>
+            @if (!Model.Weights.Any())
+            {
+                <div class="empty-state"><i class="bi bi-speedometer"></i>No weighing samples recorded. Weekly sample weighing (≥ 1% of birds, min 50) is recommended.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover table-sm mb-0">
+                        <thead><tr><th>Date</th><th>Age</th><th class="text-end">Avg weight</th><th class="text-end">Standard</th><th class="text-end">vs std</th><th class="text-end">Sample</th><th class="text-end">Uniformity</th></tr></thead>
+                        <tbody>
+                            @foreach (var w in Model.Weights.OrderByDescending(w => w.AgeInDays))
+                            {
+                                var s = PoultryMath.Standard(Model.Standard, w.AgeInDays);
+                                var g = w.AvgWeightKg * 1000;
+                                var gap = s.HasValue && s.Value.WeightGm > 0 ? Math.Round((g - s.Value.WeightGm) / s.Value.WeightGm * 100, 1) : (decimal?)null;
+                                <tr>
+                                    <td>@Fmt.Date(w.RecordDate)</td>
+                                    <td>D@w.AgeInDays</td>
+                                    <td class="text-end fw-600">@Fmt.Num(g, 0) g</td>
+                                    <td class="text-end">@(s.HasValue ? Fmt.Num(s.Value.WeightGm, 0) + " g" : "—")</td>
+                                    <td class="text-end @(gap < -5 ? "text-danger" : gap >= 0 ? "text-success" : "")">@(gap.HasValue ? (gap >= 0 ? "+" : "") + gap + "%" : "—")</td>
+                                    <td class="text-end">@w.SampleSize</td>
+                                    <td class="text-end @(w.UniformityPct < 80 ? "text-warning" : "")">@(w.UniformityPct.HasValue ? Fmt.Pct(w.UniformityPct.Value, 0) : "—")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+
+        <!-- VISITS -->
+        <div class="tab-pane fade" id="tVisits">
+            @if (!Model.Visits.Any())
+            {
+                <div class="empty-state"><i class="bi bi-geo-alt"></i>No field visits recorded for this flock.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover table-sm mb-0">
+                        <thead><tr><th>Date</th><th>Age</th><th>Officer</th><th>Purpose</th><th class="text-end">Records</th><th class="text-end">Photos</th><th>Signed</th><th>Status</th><th>Sync</th><th></th></tr></thead>
+                        <tbody>
+                            @foreach (var v in Model.Visits)
+                            {
+                                <tr>
+                                    <td>@Fmt.Date(v.VisitDate)</td>
+                                    <td>@(v.AgeInDays.HasValue ? "D" + v.AgeInDays : "—")</td>
+                                    <td>@v.FieldOfficerName</td>
+                                    <td class="text-xs">@v.VisitPurpose</td>
+                                    <td class="text-end">@v.DailyRecordCount</td>
+                                    <td class="text-end">@v.PhotoCount</td>
+                                    <td>@if (v.SignatureCount > 0) { <i class="bi bi-patch-check-fill text-success"></i> } else { <i class="bi bi-dash text-muted"></i> }</td>
+                                    <td><span class="badge @Fmt.Badge(v.VisitStatus)">@v.VisitStatus</span></td>
+                                    <td><span class="badge @Fmt.Badge(v.SyncStatus)">@v.SyncStatus</span></td>
+                                    <td><a asp-controller="Visit" asp-action="Detail" asp-route-id="@v.Id" class="btn btn-xs btn-outline-primary"><i class="bi bi-eye"></i></a></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+
+        <!-- ORDERS -->
+        <div class="tab-pane fade" id="tOrders">
+            @if (!Model.Orders.Any())
+            {
+                <div class="empty-state"><i class="bi bi-cart"></i>No sales orders are linked to this flock yet.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover table-sm mb-0">
+                        <thead><tr><th>Order</th><th>Customer</th><th>Product</th><th class="text-end">Qty</th><th class="text-end">Birds</th><th class="text-end">Unit price</th><th class="text-end">Total</th><th>Delivery</th><th>Status</th><th>Payment</th></tr></thead>
+                        <tbody>
+                            @foreach (var o in Model.Orders)
+                            {
+                                <tr>
+                                    <td class="mono">@o.OrderCode<div class="text-xs text-muted">@Fmt.Date(o.OrderDate)</div></td>
+                                    <td>@o.CustomerName</td>
+                                    <td>@o.Product</td>
+                                    <td class="text-end">@Fmt.Num(o.Quantity, 0) @o.Unit</td>
+                                    <td class="text-end">@(o.BirdCount.HasValue ? Fmt.Num(o.BirdCount.Value) : "—")</td>
+                                    <td class="text-end">@Fmt.Money(o.UnitPrice, 2)</td>
+                                    <td class="text-end fw-600">@Fmt.Money(o.TotalAmount)</td>
+                                    <td>@Fmt.Date(o.DeliveryDate)</td>
+                                    <td><span class="badge @Fmt.Badge(o.Status)">@o.Status</span></td>
+                                    <td><span class="badge @Fmt.Badge(o.PaymentStatus)">@o.PaymentStatus</span></td>
+                                </tr>
+                            }
+                        </tbody>
+                        <tfoot><tr><td colspan="6">Total (excluding cancelled)</td><td class="text-end">@Fmt.Money(Model.SalesTotal)</td><td colspan="3"></td></tr></tfoot>
+                    </table>
+                </div>
+            }
+        </div>
+
+        @if (isLayer)
+        {
+            var eggs = Model.EggRecords;
+            <div class="tab-pane fade" id="tEggs">
+                <div class="d-flex justify-content-between align-items-center p-3 flex-wrap gap-2 no-print">
+                    <div class="text-xs text-muted">
+                        @if (eggs.Any())
+                        {
+                            <span>@eggs.Count days recorded · last 7-day hen-day @Fmt.Pct(eggs.Take(7).Average(e => e.HenDayPct)) · peak @Fmt.Pct(eggs.Max(e => e.HenDayPct))</span>
+                        }
+                    </div>
+                    <div class="d-flex gap-2">
+                        <a asp-controller="EggProduction" asp-action="Index" asp-route-batchId="@b.Id" class="btn btn-sm btn-outline-secondary"><i class="bi bi-graph-up me-1"></i>Production dashboard</a>
+                        @if (canWrite && b.IsActive)
+                        {
+                            <a asp-controller="EggProduction" asp-action="Create" asp-route-batchId="@b.Id" class="btn btn-sm btn-primary"><i class="bi bi-plus-lg me-1"></i>Record eggs</a>
+                        }
+                    </div>
+                </div>
+                @if (!eggs.Any())
+                {
+                    <div class="empty-state"><i class="bi bi-egg"></i>No egg production recorded yet.</div>
+                }
+                else
+                {
+                    <div class="table-responsive" style="max-height:420px">
+                        <table class="table table-hover table-sm mb-0">
+                            <thead><tr><th>Date</th><th>Week</th><th class="text-end">Hens</th><th class="text-end">Eggs</th><th class="text-end">Hen-day</th><th class="text-end">Grade A</th><th class="text-end">Cracked</th><th class="text-end">Egg wt</th><th class="text-end">Feed/dozen</th></tr></thead>
+                            <tbody>
+                                @foreach (var e in eggs.Take(60))
+                                {
+                                    <tr>
+                                        <td>@Fmt.Date(e.RecordDate)</td><td>@e.AgeWeeks</td>
+                                        <td class="text-end">@Fmt.Num(e.HenCount)</td><td class="text-end">@Fmt.Num(e.TotalEggs)</td>
+                                        <td class="text-end fw-600">@Fmt.Pct(e.HenDayPct)</td><td class="text-end">@Fmt.Num(e.GradeA)</td>
+                                        <td class="text-end">@Fmt.Pct(e.CrackedPct)</td>
+                                        <td class="text-end">@(e.AvgEggWeightGm?.ToString("0.0") ?? "—")</td>
+                                        <td class="text-end">@(e.FeedPerDozenGm > 0 ? Fmt.Num(e.FeedPerDozenGm, 0) + " g" : "—")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@section Scripts {
+<script>
+(function () {
+    const labels = @Html.Raw(JsonSerializer.Serialize(labels));
+    const mort = @Html.Raw(JsonSerializer.Serialize(days.Select(d => d.Mort)));
+    const culls = @Html.Raw(JsonSerializer.Serialize(days.Select(d => d.Cull)));
+    const cumPct = @Html.Raw(JsonSerializer.Serialize(cumMortPct));
+    const stdCum = @Html.Raw(JsonSerializer.Serialize(stdCumMort));
+    const feedPb = @Html.Raw(JsonSerializer.Serialize(days.Select(d => d.FeedPerBird)));
+    const waterPb = @Html.Raw(JsonSerializer.Serialize(days.Select(d => d.WaterPerBird)));
+    const stdFeed = @Html.Raw(JsonSerializer.Serialize(stdFeed));
+    const temp = @Html.Raw(JsonSerializer.Serialize(days.Select(d => d.Temp)));
+    const hum = @Html.Raw(JsonSerializer.Serialize(days.Select(d => d.Hum)));
+    const thi = @Html.Raw(JsonSerializer.Serialize(days.Select(d => d.Thi)));
+    const wDaily = @Html.Raw(JsonSerializer.Serialize(weightPts));
+    const wSample = @Html.Raw(JsonSerializer.Serialize(samplePts));
+    const wStd = @Html.Raw(JsonSerializer.Serialize(stdPts));
+    const c = window.ppColors;
+    const hasStd = arr => arr.some(v => v !== null);
+
+    const m = document.getElementById('mortChart');
+    if (m) new Chart(m, {
+        data: {
+            labels,
+            datasets: [
+                { type: 'bar', label: 'Deaths', data: mort, backgroundColor: c.red, yAxisID: 'y', order: 2 },
+                { type: 'bar', label: 'Culls', data: culls, backgroundColor: c.amber, yAxisID: 'y', order: 3 },
+                { type: 'line', label: 'Cumulative mortality %', data: cumPct, borderColor: c.slate, backgroundColor: c.slate, pointRadius: 0, tension: .2, yAxisID: 'y1', order: 1 }
+            ].concat(hasStd(stdCum) ? [{ type: 'line', label: 'Breed standard cum. %', data: stdCum, borderColor: c.green, borderDash: [5, 4], pointRadius: 0, yAxisID: 'y1', order: 0 }] : [])
+        },
+        options: {
+            interaction: { mode: 'index', intersect: false },
+            scales: {
+                y: { stacked: true, beginAtZero: true, title: { display: true, text: 'Birds / day' } },
+                x: { stacked: true },
+                y1: { position: 'right', beginAtZero: true, grid: { drawOnChartArea: false }, title: { display: true, text: 'Cumulative %' } }
+            }
+        }
+    });
+
+    const w = document.getElementById('weightChart');
+    if (w) new Chart(w, {
+        type: 'line',
+        data: {
+            datasets: [
+                { label: 'Breed standard', data: wStd, borderColor: c.slate, borderDash: [6, 4], pointRadius: 0, tension: .3 },
+                { label: 'Daily record avg', data: wDaily, borderColor: c.green, backgroundColor: c.greenSoft, pointRadius: 2, tension: .3, fill: false },
+                { label: 'Weighing samples', data: wSample, borderColor: c.violet, backgroundColor: c.violet, showLine: false, pointRadius: 5, pointStyle: 'rectRot' }
+            ]
+        },
+        options: {
+            parsing: { xAxisKey: 'x', yAxisKey: 'y' },
+            interaction: { mode: 'nearest', intersect: false },
+            scales: { x: { type: 'linear', title: { display: true, text: 'Age (days)' }, min: 0 }, y: { title: { display: true, text: 'Body weight (g)' }, beginAtZero: true } }
+        }
+    });
+
+    const f = document.getElementById('feedChart');
+    if (f) new Chart(f, {
+        type: 'line',
+        data: {
+            labels,
+            datasets: [
+                { label: 'Feed g/bird/day', data: feedPb, borderColor: c.amber, backgroundColor: c.amberSoft, fill: true, pointRadius: 0, tension: .25, yAxisID: 'y' },
+                { label: 'Water ml/bird/day', data: waterPb, borderColor: c.blue, pointRadius: 0, tension: .25, yAxisID: 'y1' }
+            ].concat(hasStd(stdFeed) ? [{ label: 'Std feed g/bird/day', data: stdFeed, borderColor: c.slate, borderDash: [5, 4], pointRadius: 0, yAxisID: 'y' }] : [])
+        },
+        options: {
+            interaction: { mode: 'index', intersect: false },
+            scales: {
+                y: { beginAtZero: true, title: { display: true, text: 'Feed g' } },
+                y1: { position: 'right', beginAtZero: true, grid: { drawOnChartArea: false }, title: { display: true, text: 'Water ml' } }
+            }
+        }
+    });
+
+    const k = document.getElementById('climateChart');
+    if (k) new Chart(k, {
+        type: 'line',
+        data: {
+            labels,
+            datasets: [
+                { label: 'Temperature °C', data: temp, borderColor: c.red, pointRadius: 0, tension: .25, yAxisID: 'y', spanGaps: true },
+                { label: 'THI', data: thi, borderColor: c.violet, borderDash: [4, 3], pointRadius: 0, tension: .25, yAxisID: 'y', spanGaps: true },
+                { label: 'Humidity %', data: hum, borderColor: c.blue, backgroundColor: c.blueSoft, fill: true, pointRadius: 0, tension: .25, yAxisID: 'y1', spanGaps: true }
+            ]
+        },
+        options: {
+            interaction: { mode: 'index', intersect: false },
+            scales: {
+                y: { title: { display: true, text: '°C / THI' } },
+                y1: { position: 'right', min: 0, max: 100, grid: { drawOnChartArea: false }, title: { display: true, text: 'RH %' } }
+            }
+        }
+    });
+})();
+</script>
+}

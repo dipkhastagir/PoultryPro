@@ -1,0 +1,185 @@
+@model AttendanceSheetVm
+@{
+    var groups = Model.Rows.GroupBy(r => r.FarmName ?? "Head office / all farms").ToList();
+    var i = 0;
+    var total = Model.Rows.Count;
+    string Hm(TimeSpan? t) => t.HasValue ? t.Value.ToString(@"hh\:mm") : "";
+}
+
+<div class="page-head">
+    <div>
+        <h4>Attendance sheet</h4>
+        <p>Mark every active employee for the day and save once. Friday is the weekly holiday.</p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap align-items-center">
+        <a asp-action="Index" asp-route-date="@Model.Date.AddDays(-1).ToString("yyyy-MM-dd")" class="btn btn-sm btn-outline-secondary" title="Previous day"><i class="bi bi-chevron-left"></i></a>
+        <form method="get" class="d-flex">
+            <input type="date" name="date" value="@Model.Date.ToString("yyyy-MM-dd")" max="@DateTime.Today.AddDays(7).ToString("yyyy-MM-dd")" class="form-control form-control-sm" onchange="this.form.submit()" />
+        </form>
+        <a asp-action="Index" asp-route-date="@Model.Date.AddDays(1).ToString("yyyy-MM-dd")" class="btn btn-sm btn-outline-secondary @(Model.Date >= DateTime.Today.AddDays(7) ? "disabled" : "")" title="Next day"><i class="bi bi-chevron-right"></i></a>
+        @if (Model.Date != DateTime.Today)
+        {
+            <a asp-action="Index" class="btn btn-sm btn-outline-secondary">Today</a>
+        }
+        <a asp-action="Report" asp-route-year="@Model.Date.Year" asp-route-month="@Model.Date.Month" class="btn btn-sm btn-outline-primary"><i class="bi bi-grid-3x3 me-1"></i>Monthly report</a>
+    </div>
+</div>
+
+<div class="stat-grid">
+    <div class="stat-tile tone-green">
+        <div class="st-label">Present rate</div>
+        <div class="st-value">@(Model.Marked == 0 ? "—" : Fmt.Pct(Model.PresentPct, 0))</div>
+        <div class="st-sub">@Model.Present present · @Model.HalfDay half day</div>
+        <div class="st-icon"><i class="bi bi-person-check"></i></div>
+    </div>
+    <div class="stat-tile tone-amber">
+        <div class="st-label">Late</div>
+        <div class="st-value">@Model.Late</div>
+        <div class="st-sub">Checked in after shift start</div>
+        <div class="st-icon"><i class="bi bi-alarm"></i></div>
+    </div>
+    <div class="stat-tile tone-red">
+        <div class="st-label">Absent</div>
+        <div class="st-value">@Model.Absent</div>
+        <div class="st-sub">@Model.Leave on approved leave</div>
+        <div class="st-icon"><i class="bi bi-person-x"></i></div>
+    </div>
+    <div class="stat-tile tone-slate">
+        <div class="st-label">Marked</div>
+        <div class="st-value">@Model.Marked / @total</div>
+        <div class="st-sub">@(total - Model.Marked) still unmarked</div>
+        <div class="st-icon"><i class="bi bi-list-check"></i></div>
+    </div>
+</div>
+
+@if (Model.IsWeekend)
+{
+    <div class="warn-callout mb-3"><i class="bi bi-calendar-x me-1"></i><strong>Friday is the weekly holiday.</strong> You can still record attendance for staff on duty today (e.g. shed workers on rotation).</div>
+}
+
+@if (total == 0)
+{
+    <div class="card"><div class="empty-state"><i class="bi bi-people"></i>No active employees had joined by this date.<div class="mt-2"><a asp-controller="Employee" asp-action="Create" class="btn btn-sm btn-primary">Add employee</a></div></div></div>
+}
+else
+{
+    <form asp-action="Save" method="post" id="attForm">
+        @Html.AntiForgeryToken()
+        <input type="hidden" name="date" value="@Model.Date.ToString("yyyy-MM-dd")" />
+
+        <div class="filter-bar no-print">
+            <div style="flex:1 1 220px">
+                <label class="form-label">Quick filter</label>
+                <input class="form-control" placeholder="Type a name or role…" id="attFilter" />
+            </div>
+            <div>
+                <label class="form-label">Default shift</label>
+                <div class="d-flex gap-1">
+                    <input type="time" id="shiftIn" value="08:00" class="form-control" style="width:110px" />
+                    <input type="time" id="shiftOut" value="17:00" class="form-control" style="width:110px" />
+                </div>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-success" id="fillPresent"><i class="bi bi-check2-all me-1"></i>Unmarked → Present</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="fillTimes"><i class="bi bi-clock me-1"></i>Fill missing times</button>
+            <button type="submit" class="btn btn-sm btn-primary ms-auto"><i class="bi bi-save me-1"></i>Save attendance</button>
+        </div>
+
+        @foreach (var g in groups)
+        {
+            <div class="card mb-3 att-group">
+                <div class="card-header">
+                    <h6><i class="bi bi-house-door text-success me-2"></i>@g.Key <span class="text-muted fw-normal">(@g.Count())</span></h6>
+                    <button type="button" class="btn btn-xs btn-outline-success group-present">All present</button>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0 align-middle table-sm">
+                        <thead><tr><th style="min-width:220px">Employee</th><th style="width:160px">Status</th><th style="width:130px">Check-in</th><th style="width:130px">Check-out</th><th>Notes</th></tr></thead>
+                        <tbody>
+                            @foreach (var r in g)
+                            {
+                                <tr class="att-row" data-search="@((r.FullName + " " + r.Role + " " + r.EmployeeCode).ToLowerInvariant())">
+                                    <td>
+                                        <input type="hidden" name="rows[@i].EmployeeId" value="@r.EmployeeId" />
+                                        <div class="d-flex align-items-center gap-2">
+                                            <div class="avatar">@r.Initials</div>
+                                            <div>
+                                                <a asp-controller="Employee" asp-action="Detail" asp-route-id="@r.EmployeeId" class="fw-600 text-decoration-none text-reset">@r.FullName</a>
+                                                <div class="text-xs text-muted">@r.Role @if (r.EmpStatus != "On Duty") { <span class="badge @Fmt.Badge(r.EmpStatus) ms-1">@r.EmpStatus</span> }</div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <select name="rows[@i].Status" class="form-select form-select-sm att-status">
+                                            <option value="">— not marked —</option>
+                                            @foreach (var s in AttendanceRecord.Statuses)
+                                            {
+                                                <option value="@s" selected="@(r.Status == s)">@s</option>
+                                            }
+                                        </select>
+                                    </td>
+                                    <td><input type="time" name="rows[@i].CheckIn" value="@Hm(r.CheckIn)" class="form-control form-control-sm att-in" /></td>
+                                    <td><input type="time" name="rows[@i].CheckOut" value="@Hm(r.CheckOut)" class="form-control form-control-sm att-out" /></td>
+                                    <td><input type="text" name="rows[@i].Notes" value="@r.Notes" maxlength="200" class="form-control form-control-sm" placeholder="optional" /></td>
+                                </tr>
+                                i++;
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+
+        <div class="d-flex justify-content-between align-items-center">
+            <span class="text-muted small"><i class="bi bi-info-circle me-1"></i>Times are cleared automatically for Leave and Absent. Choosing “not marked” removes an existing entry.</span>
+            <button type="submit" class="btn btn-primary"><i class="bi bi-save me-1"></i>Save attendance</button>
+        </div>
+    </form>
+}
+
+@section Scripts {
+<script>
+(function () {
+    var form = document.getElementById('attForm');
+    if (!form) return;
+    var tint = { 'Present': '#f0fdf4', 'Late': '#fffbeb', 'Half Day': '#fefce8', 'Leave': '#eff6ff', 'Absent': '#fef2f2' };
+    function paint(row) {
+        var sel = row.querySelector('.att-status');
+        row.style.background = tint[sel.value] || '';
+        var worked = ['Present', 'Late', 'Half Day'].indexOf(sel.value) >= 0;
+        row.querySelectorAll('.att-in, .att-out').forEach(function (inp) { inp.disabled = !worked && sel.value !== ''; });
+    }
+    function fillTimes(row) {
+        var sel = row.querySelector('.att-status').value;
+        if (['Present', 'Late', 'Half Day'].indexOf(sel) < 0) return;
+        var inp = row.querySelector('.att-in'), out = row.querySelector('.att-out');
+        if (!inp.value) inp.value = document.getElementById('shiftIn').value;
+        if (!out.value) out.value = sel === 'Half Day' ? '13:00' : document.getElementById('shiftOut').value;
+    }
+    function setPresent(rows, onlyUnmarked) {
+        rows.forEach(function (row) {
+            var sel = row.querySelector('.att-status');
+            if (onlyUnmarked && sel.value) return;
+            sel.value = 'Present'; fillTimes(row); paint(row);
+        });
+    }
+    var rows = Array.prototype.slice.call(form.querySelectorAll('.att-row'));
+    rows.forEach(function (row) {
+        paint(row);
+        row.querySelector('.att-status').addEventListener('change', function () { fillTimes(row); paint(row); });
+    });
+    document.getElementById('fillPresent').addEventListener('click', function () { setPresent(rows, true); });
+    document.getElementById('fillTimes').addEventListener('click', function () { rows.forEach(fillTimes); });
+    form.querySelectorAll('.group-present').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            setPresent(Array.prototype.slice.call(btn.closest('.att-group').querySelectorAll('.att-row')), false);
+        });
+    });
+    document.getElementById('attFilter').addEventListener('input', function () {
+        var q = this.value.toLowerCase();
+        rows.forEach(function (r) { r.style.display = r.dataset.search.indexOf(q) >= 0 ? '' : 'none'; });
+    });
+    // disabled inputs are not posted; re-enable before submit so values (cleared server-side) don't break indexing
+    form.addEventListener('submit', function () { form.querySelectorAll('input:disabled').forEach(function (x) { x.disabled = false; }); });
+})();
+</script>
+}

@@ -1,0 +1,83 @@
+@{
+    var farms = ((ViewBag.Farms as IEnumerable<Farm>)?.ToList() ?? new List<Farm>());
+    var certs = ((ViewBag.Certifications as IEnumerable<Certification>)?.ToList() ?? new List<Certification>());
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <a asp-action="Index" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>All Reports</a>
+    <button onclick="window.print()" class="btn btn-sm btn-outline-primary"><i class="bi bi-printer me-1"></i>Print</button>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md-3"><div class="kpi-card">
+        <div class="kpi-label">Total Farms</div><div class="kpi-value">@farms.Count</div>
+    </div></div>
+    <div class="col-6 col-md-3"><div class="kpi-card">
+        <div class="kpi-label">Total Capacity</div>
+        <div class="kpi-value">@(((int)ViewBag.TotalCapacity).ToString("N0"))</div>
+    </div></div>
+    <div class="col-6 col-md-3"><div class="kpi-card">
+        <div class="kpi-label">Current Stock</div>
+        <div class="kpi-value">@(((int)ViewBag.TotalStock).ToString("N0"))</div>
+    </div></div>
+    <div class="col-6 col-md-3"><div class="kpi-card">
+        <div class="kpi-label">Avg Utilization</div>
+        <div class="kpi-value">@(farms.Any() ? farms.Average(f => f.UtilizationPercent).ToString("F1") : "0")%</div>
+    </div></div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-header"><h6><i class="bi bi-geo-alt-fill text-primary me-2"></i>Farm Capacity Overview</h6></div>
+    <div class="table-responsive">
+        <table class="table mb-0">
+            <thead><tr><th>Farm</th><th>Location</th><th>Capacity</th><th>Current Stock</th><th>Available</th><th>Utilization</th><th>Staff</th><th>Cert Status</th><th>Cert Expiry</th></tr></thead>
+            <tbody>
+                @foreach (var f in farms)
+                {
+                    var pct = (int)f.UtilizationPercent;
+                    <tr>
+                        <td><strong>@f.Name</strong></td>
+                        <td><small class="text-muted">@f.Location</small></td>
+                        <td>@f.Capacity.ToString("N0")</td>
+                        <td class="fw-semibold">@f.CurrentStock.ToString("N0")</td>
+                        <td class="text-muted">@((f.Capacity - f.CurrentStock).ToString("N0"))</td>
+                        <td>
+                            <div class="d-flex align-items-center gap-2">
+                                <div class="prog-bar-wrap" style="width:80px">
+                                    <div class="prog-bar-fill @(pct>90?"danger":pct>75?"warning":"")" style="width:@pct%"></div>
+                                </div>
+                                <small class="@(pct>90?"text-danger fw-bold":"")">@pct%</small>
+                            </div>
+                        </td>
+                        <td>@f.EmployeeCount</td>
+                        <td><span class="badge @(f.CertStatus=="Valid"?"badge-healthy":f.CertStatus=="Expiring Soon"?"badge-warning-soft":"badge-danger-soft")">@f.CertStatus</span></td>
+                        <td><small class="@((f.CertExpiry.HasValue && f.CertExpiry.Value <= DateTime.Today.AddDays(30))?"text-danger fw-bold":"text-muted")">@(f.CertExpiry?.ToString("dd MMM yyyy") ?? "—")</small></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header"><h6><i class="bi bi-patch-check text-success me-2"></i>Certifications</h6></div>
+    <div class="table-responsive">
+        <table class="table mb-0">
+            <thead><tr><th>Farm</th><th>Certification</th><th>Issued</th><th>Expiry</th><th>Days Left</th><th>Status</th></tr></thead>
+            <tbody>
+                @foreach (var c in certs)
+                {
+                    var days = (c.ExpiryDate - DateTime.Today).Days;
+                    <tr class="@(days < 30 ? "table-warning" : "")">
+                        <td><strong>@c.FarmName</strong></td>
+                        <td>@c.CertName</td>
+                        <td>@c.IssuedDate.ToString("dd MMM yyyy")</td>
+                        <td>@c.ExpiryDate.ToString("dd MMM yyyy")</td>
+                        <td class="@(days < 30 ? "text-danger fw-bold" : "text-muted")">@days days</td>
+                        <td><span class="badge @(c.Status=="Valid"?"badge-healthy":c.Status=="Expiring Soon"?"badge-warning-soft":"badge-danger-soft")">@c.Status</span></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>

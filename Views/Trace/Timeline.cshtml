@@ -1,0 +1,239 @@
+@model TraceTimelineVm
+@{
+    var b = Model.Batch;
+    var f = Model.Farm;
+    var kinds = Model.Events.GroupBy(e => e.Kind).Select(g => new { Kind = g.Key, Count = g.Count(), Icon = g.First().Icon }).ToList();
+    var upcoming = Model.Events.Count(e => e.Date.Date > DateTime.Today);
+    var seal = Model.Seal;
+    var canSeal = User.IsAny(Roles.Operations);
+    string BadgeCls(string? badge) => badge switch
+    {
+        "Planned" => "badge-gray",
+        "A" => "badge-healthy",
+        "B" or "C" => "badge-warning-soft",
+        "D" or "F" => "badge-danger-soft",
+        _ => Fmt.Badge(badge)
+    };
+}
+
+@section Head {
+<style>
+    .tl-item.future { opacity: .6; }
+    .tl-item .tl-dot { width: 22px; height: 22px; left: -27px; font-size: 11px; }
+    .tl-month { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); margin: 6px 0 10px -26px; padding-left: 26px; }
+    .kind-filter .chip { cursor: pointer; user-select: none; border: 1px solid transparent; }
+    .kind-filter .chip.off { opacity: .45; text-decoration: line-through; }
+    #qrBox { width: 168px; height: 168px; margin: 0 auto; padding: 8px; background: #fff; border: 1px solid var(--border); border-radius: 10px; }
+    #qrBox img, #qrBox canvas { width: 100% !important; height: 100% !important; }
+    @@media print { .tl-item.future { opacity: 1; } }
+</style>
+}
+
+<div class="page-head">
+    <div>
+        <a asp-action="Index" class="text-xs text-decoration-none no-print"><i class="bi bi-arrow-left me-1"></i>Traceability</a>
+        <h4 class="mt-1">@b.BatchCode <span class="badge @(b.IsActive ? "badge-healthy" : "badge-info-soft") ms-1">@(b.IsActive ? "Active" : "Harvested")</span></h4>
+        <p>@b.Breed @b.BatchType · @b.FarmName@(string.IsNullOrEmpty(b.ShedNo) ? "" : ", shed " + b.ShedNo) · placed @Fmt.Date(b.PlacementDate) · day @b.AgeInDays</p>
+    </div>
+    <div class="d-flex gap-2 no-print">
+        <a asp-controller="Batch" asp-action="Detail" asp-route-id="@b.Id" class="btn btn-sm btn-outline-secondary"><i class="bi bi-collection me-1"></i>Batch detail</a>
+        <a href="@Model.PublicUrl" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary"><i class="bi bi-box-arrow-up-right me-1"></i>Public page</a>
+        <button type="button" class="btn btn-sm btn-primary" onclick="window.print()"><i class="bi bi-printer me-1"></i>Print</button>
+    </div>
+</div>
+
+<div class="stat-grid">
+    <div class="stat-tile tone-blue">
+        <div class="st-label">Vaccinations</div>
+        <div class="st-value">@Model.VaccinationsDone</div>
+        <div class="st-sub">@(Model.VaccinationsOverdue > 0 ? Model.VaccinationsOverdue + " overdue" : "none overdue")</div>
+        <div class="st-icon"><i class="bi bi-shield-check"></i></div>
+    </div>
+    <div class="stat-tile @(Model.DiseaseCases > 0 ? "tone-red" : "tone-green")">
+        <div class="st-label">Disease cases</div>
+        <div class="st-value">@Model.DiseaseCases</div>
+        <div class="st-sub">@Model.MedicineDays medication day(s)</div>
+        <div class="st-icon"><i class="bi bi-virus"></i></div>
+    </div>
+    <div class="stat-tile tone-amber">
+        <div class="st-label">Field visits</div>
+        <div class="st-value">@Model.Visits</div>
+        <div class="st-sub">officer check-ins during the flock</div>
+        <div class="st-icon"><i class="bi bi-geo-alt"></i></div>
+    </div>
+    <div class="stat-tile tone-violet">
+        <div class="st-label">Performance</div>
+        <div class="st-value">@Fmt.Pct(b.LivabilityPct)</div>
+        <div class="st-sub">livability · FCR @(b.FCR > 0 ? b.FCR.ToString("0.00") : "—") · EPEF @(b.EPEF > 0 ? b.EPEF.ToString("0") : "—")</div>
+        <div class="st-icon"><i class="bi bi-graph-up-arrow"></i></div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-xl-8">
+        <div class="card">
+            <div class="card-header">
+                <h6><i class="bi bi-clock-history text-primary me-2"></i>Lifecycle timeline</h6>
+                <span class="text-xs text-muted">@Model.Events.Count event(s)@(upcoming > 0 ? $" · {upcoming} upcoming" : "")</span>
+            </div>
+            <div class="card-body">
+                @if (Model.Events.Count == 0)
+                {
+                    <div class="empty-state"><i class="bi bi-clock"></i>No events recorded for this flock yet.</div>
+                }
+                else
+                {
+                    <div class="kind-filter d-flex flex-wrap gap-1 mb-3 no-print">
+                        @foreach (var k in kinds)
+                        {
+                            <span class="chip" data-kind="@k.Kind"><i class="bi @k.Icon"></i>@k.Kind <b>@k.Count</b></span>
+                        }
+                    </div>
+                    <div class="timeline">
+                        @{ string? lastMonth = null; }
+                        @foreach (var e in Model.Events)
+                        {
+                            var month = e.Date.ToString("MMMM yyyy");
+                            if (month != lastMonth)
+                            {
+                                lastMonth = month;
+                                <div class="tl-month">@month</div>
+                            }
+                            var day = (e.Date.Date - b.PlacementDate.Date).Days;
+                            <div class="tl-item @(e.Date.Date > DateTime.Today ? "future" : "")" data-kind="@e.Kind">
+                                <div class="tl-dot" style="background:@e.Color"><i class="bi @e.Icon"></i></div>
+                                <div class="tl-date">@Fmt.Date(e.Date) · @(day >= 0 ? "day " + day : (-day) + " days before placement") · @e.Kind</div>
+                                <div class="tl-title">
+                                    @if (!string.IsNullOrEmpty(e.Link)) { <a href="@e.Link">@e.Title</a> } else { <span>@e.Title</span> }
+                                    @if (!string.IsNullOrEmpty(e.Badge)) { <span class="badge @BadgeCls(e.Badge) ms-1">@e.Badge</span> }
+                                </div>
+                                @if (!string.IsNullOrEmpty(e.Body)) { <div class="tl-body">@e.Body</div> }
+                                <div class="text-xs text-muted mt-1"><i class="bi bi-link-45deg"></i> <span class="mono" title="SHA-256 chain link: @e.Hash">@e.ShortHash</span></div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-4">
+        <div class="card mb-4">
+            <div class="card-header"><h6><i class="bi bi-qr-code text-primary me-2"></i>Consumer QR code</h6></div>
+            <div class="card-body text-center">
+                <div id="qrBox" data-qr="@Model.PublicUrl"></div>
+                <div class="text-xs text-muted mt-2 text-break"><a href="@Model.PublicUrl" target="_blank" rel="noopener">@Model.PublicUrl</a></div>
+                <div class="d-flex justify-content-center gap-2 mt-3 no-print">
+                    <button type="button" class="btn btn-xs btn-outline-secondary" id="copyUrl"><i class="bi bi-link-45deg me-1"></i>Copy link</button>
+                    <button type="button" class="btn btn-xs btn-outline-secondary" id="dlQr"><i class="bi bi-download me-1"></i>Download PNG</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header">
+                <h6><i class="bi bi-link-45deg text-primary me-2"></i>Record seal</h6>
+                @if (seal.Status == TraceSealInfo.Intact) { <span class="badge badge-healthy"><i class="bi bi-patch-check-fill me-1"></i>Sealed</span> }
+                else if (seal.Status == TraceSealInfo.Changed) { <span class="badge badge-danger-soft"><i class="bi bi-exclamation-octagon-fill me-1"></i>Changed</span> }
+                else { <span class="badge badge-gray">Not sealed</span> }
+            </div>
+            <div class="card-body">
+                @if (seal.Status == TraceSealInfo.Intact)
+                {
+                    <div class="info-callout mb-3"><i class="bi bi-shield-check me-1"></i>Sealed on <b>@Fmt.DateTime(seal.SealedAt)</b> by <b>@(seal.SealedBy ?? "unknown")</b>; record unchanged.</div>
+                }
+                else if (seal.Status == TraceSealInfo.Changed)
+                {
+                    <div class="warn-callout mb-3 text-danger"><i class="bi bi-exclamation-octagon-fill me-1"></i><b>Record changed after sealing.</b>
+                        Sealed on @Fmt.DateTime(seal.SealedAt) by @(seal.SealedBy ?? "unknown"), but the current chain head no longer matches the seal.</div>
+                    <div class="text-xs text-muted">Seal</div>
+                    <div class="mono text-break mb-2">@seal.SealHash</div>
+                }
+                else
+                {
+                    <div class="text-muted small mb-3"><i class="bi bi-unlock me-1"></i>Not sealed yet. Sealing freezes the current chain head so any later edit to this flock's history is flagged here and on the public page.</div>
+                }
+                <div class="text-xs text-muted">Chain head (@Model.Events.Count link@(Model.Events.Count == 1 ? "" : "s"))</div>
+                <div class="mono text-break mb-2">@seal.ChainHead</div>
+                <div class="text-xs text-muted">Genesis</div>
+                <div class="mono text-break mb-3">@Model.GenesisHash</div>
+                <div class="formula mb-3" style="font-size:11.5px">h₀ = SHA-256(batch payload)<br />hᵢ = SHA-256(hᵢ₋₁ | date | type | title | detail)</div>
+                @if (canSeal)
+                {
+                    <form asp-action="Seal" method="post" class="no-print" data-confirm="@(seal.IsSealed ? "Replace the existing seal with the current chain head?" : "Seal this traceability record now?")">
+                        <input type="hidden" name="id" value="@b.Id" />
+                        <input type="hidden" name="head" value="@seal.ChainHead" />
+                        <button type="submit" class="btn btn-sm @(seal.Status == TraceSealInfo.Intact ? "btn-outline-secondary" : "btn-primary")">
+                            <i class="bi bi-lock-fill me-1"></i>@(seal.IsSealed ? "Re-seal record" : "Seal record")
+                        </button>
+                    </form>
+                }
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header"><h6><i class="bi bi-fingerprint text-primary me-2"></i>Verification hash</h6></div>
+            <div class="card-body">
+                <div class="formula text-center fs-6 mb-2" style="letter-spacing:.12em">@Model.VerificationHash</div>
+                <p class="text-xs text-muted mb-0">First 16 hex characters of SHA-256 over batch code, farm, breed, placement &amp; closure dates, placed / harvested counts and hatchery.
+                    The same value is printed on the public page — if any of those records is altered, the hash changes.</p>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header"><h6><i class="bi bi-info-circle text-primary me-2"></i>Flock record</h6></div>
+            <div class="card-body">
+                <dl class="kv" style="grid-template-columns:120px 1fr">
+                    <dt>Farm</dt><dd><a asp-controller="Farm" asp-action="Detail" asp-route-id="@b.FarmId">@b.FarmName</a></dd>
+                    <dt>Location</dt><dd>@(f?.Location ?? b.FarmLocation)@(string.IsNullOrEmpty(f?.Zone) ? "" : " · " + f!.Zone)</dd>
+                    <dt>Hatchery</dt><dd>@(b.HatcheryName ?? "—")</dd>
+                    <dt>Chicks placed</dt><dd>@Fmt.Num(b.InitialCount)</dd>
+                    <dt>@(b.IsActive ? "Current birds" : "Harvested")</dt><dd>@Fmt.Num(b.IsActive ? b.CurrentCount : b.HarvestedCount)</dd>
+                    <dt>Mortality</dt><dd>@Fmt.Num(b.MortalityCount) (@Fmt.Pct(b.MortalityRate))</dd>
+                    <dt>Avg weight</dt><dd>@((b.AverageWeightKg * 1000).ToString("N0")) g</dd>
+                    <dt>Feed used</dt><dd>@Fmt.Num(b.TotalFeedKg) kg</dd>
+                    <dt>@(b.IsActive ? "Expected harvest" : "Closed")</dt><dd>@Fmt.Date(b.IsActive ? b.ExpectedHarvestDate : b.ClosedDate)</dd>
+                    <dt>Sales orders</dt><dd>@Model.SalesOrders</dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+(function () {
+    const box = document.getElementById('qrBox');
+    const url = box.getAttribute('data-qr');
+    if (typeof QRCode !== 'undefined') {
+        new QRCode(box, { text: url, width: 320, height: 320, correctLevel: QRCode.CorrectLevel.M });
+    } else {
+        box.innerHTML = '<i class="bi bi-qr-code" style="font-size:120px;color:#94a3b8"></i>';
+    }
+    document.getElementById('copyUrl').addEventListener('click', function () {
+        const btn = this;
+        navigator.clipboard && navigator.clipboard.writeText(url).then(() => { btn.innerHTML = '<i class="bi bi-check2 me-1"></i>Copied'; setTimeout(() => btn.innerHTML = '<i class="bi bi-link-45deg me-1"></i>Copy link', 1500); });
+    });
+    document.getElementById('dlQr').addEventListener('click', function () {
+        const canvas = box.querySelector('canvas');
+        const img = box.querySelector('img');
+        const src = canvas ? canvas.toDataURL('image/png') : (img ? img.src : null);
+        if (!src) return;
+        const a = document.createElement('a');
+        a.href = src; a.download = @Html.Raw(System.Text.Json.JsonSerializer.Serialize("trace-" + b.BatchCode + ".png"));
+        document.body.appendChild(a); a.click(); a.remove();
+    });
+
+    // Event-type filter chips
+    const items = document.querySelectorAll('.timeline .tl-item');
+    document.querySelectorAll('.kind-filter .chip').forEach(function (chip) {
+        chip.addEventListener('click', function () {
+            chip.classList.toggle('off');
+            const off = Array.from(document.querySelectorAll('.kind-filter .chip.off')).map(c => c.dataset.kind);
+            items.forEach(it => it.style.display = off.includes(it.dataset.kind) ? 'none' : '');
+        });
+    });
+})();
+</script>
+}

@@ -1,0 +1,98 @@
+@model BatchCloseVm
+
+<div class="row justify-content-center">
+    <div class="col-xl-8">
+        <div class="stat-grid">
+            <div class="stat-tile tone-blue">
+                <div class="st-label">Live birds</div>
+                <div class="st-value">@Fmt.Num(Model.CurrentCount)</div>
+                <div class="st-sub">@Model.FarmName</div>
+                <div class="st-icon"><i class="bi bi-feather"></i></div>
+            </div>
+            <div class="stat-tile tone-amber">
+                <div class="st-label">Age</div>
+                <div class="st-value">@Model.AgeInDays d</div>
+                <div class="st-sub">placed @Fmt.Date(Model.PlacementDate)</div>
+                <div class="st-icon"><i class="bi bi-calendar3"></i></div>
+            </div>
+            <div class="stat-tile tone-green">
+                <div class="st-label">Livability</div>
+                <div class="st-value">@Fmt.Pct(Model.LivabilityPct)</div>
+                <div class="st-sub">@Model.Breed · @Model.BatchType</div>
+                <div class="st-icon"><i class="bi bi-heart-pulse"></i></div>
+            </div>
+            <div class="stat-tile tone-violet">
+                <div class="st-label">Feed used</div>
+                <div class="st-value">@Fmt.Num(Model.TotalFeedKg, 0) kg</div>
+                <div class="st-sub">cumulative</div>
+                <div class="st-icon"><i class="bi bi-basket"></i></div>
+            </div>
+        </div>
+
+        <form asp-action="Close" asp-route-id="@Model.BatchId" method="post" class="form-card" data-confirm="Close flock @Model.BatchCode? It will be removed from active stock.">
+            @Html.AntiForgeryToken()
+            <div asp-validation-summary="All" class="text-danger small mb-2"></div>
+            <h6 class="fw-600 mb-3"><i class="bi bi-box-arrow-right text-warning me-2"></i>Harvest &amp; close @Model.BatchCode</h6>
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label asp-for="HarvestDate" class="form-label">Harvest date *</label>
+                    <input asp-for="HarvestDate" type="date" class="form-control" required />
+                </div>
+                <div class="col-md-4">
+                    <label asp-for="HarvestedCount" class="form-label">Birds harvested *</label>
+                    <input asp-for="HarvestedCount" type="number" min="0" max="@Model.CurrentCount" class="form-control" id="hc" required />
+                </div>
+                <div class="col-md-4">
+                    <label asp-for="AvgWeightKg" class="form-label">Average live weight (kg) *</label>
+                    <input asp-for="AvgWeightKg" type="number" step="0.001" min="0.01" class="form-control" id="aw" required />
+                </div>
+                <div class="col-12">
+                    <label asp-for="Notes" class="form-label">Harvest notes</label>
+                    <input asp-for="Notes" class="form-control" maxlength="300" placeholder="Buyer, catching crew, condemnations…" />
+                </div>
+            </div>
+
+            <div class="row g-3 mt-1">
+                <div class="col-md-4"><dl class="kv mb-0"><dt>Harvest mass</dt><dd id="mass">—</dd></dl></div>
+                <div class="col-md-4"><dl class="kv mb-0"><dt>Final FCR</dt><dd id="fcr">—</dd></dl></div>
+                <div class="col-md-4"><dl class="kv mb-0"><dt>Final EPEF</dt><dd id="epef">—</dd></dl></div>
+            </div>
+            <div class="formula mt-3">HarvestWeightKg = birds × avg weight · FCR = feed ÷ harvest mass · EPEF = livability% × avg wt × 100 ÷ (age × FCR)</div>
+
+            @if (User.IsAny(Roles.Finance))
+            {
+                <div class="form-check mt-3">
+                    <input asp-for="CreateSalesOrder" class="form-check-input" />
+                    <label asp-for="CreateSalesOrder" class="form-check-label">Open a new sales order for this flock after closing</label>
+                </div>
+            }
+            <div class="warn-callout mt-3">
+                Closing sets the flock inactive, marks it <strong>Harvested</strong> and recalculates the farm's current stock from its remaining active flocks.
+            </div>
+            <div class="d-flex gap-2 mt-3">
+                <button type="submit" class="btn btn-warning"><i class="bi bi-check2-circle me-1"></i>Close flock</button>
+                <a asp-action="Detail" asp-route-id="@Model.BatchId" class="btn btn-outline-secondary">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+(function () {
+    const feed = @Model.TotalFeedKg.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    const liv = @Model.LivabilityPct.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    const age = @Model.AgeInDays;
+    const hc = document.getElementById('hc'), aw = document.getElementById('aw');
+    function calc() {
+        const n = parseFloat(hc.value) || 0, w = parseFloat(aw.value) || 0, mass = n * w;
+        document.getElementById('mass').textContent = mass > 0 ? mass.toLocaleString('en-US', { maximumFractionDigits: 0 }) + ' kg' : '—';
+        const fcr = mass > 0 ? feed / mass : 0;
+        document.getElementById('fcr').textContent = fcr > 0 ? fcr.toFixed(3) : '—';
+        const epef = (fcr > 0 && age > 0) ? liv * w * 100 / (age * fcr) : 0;
+        document.getElementById('epef').textContent = epef > 0 ? epef.toFixed(0) : '—';
+    }
+    hc.addEventListener('input', calc); aw.addEventListener('input', calc); calc();
+})();
+</script>
+}

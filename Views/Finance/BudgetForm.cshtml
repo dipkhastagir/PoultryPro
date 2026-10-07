@@ -1,0 +1,116 @@
+@model Budget
+@{
+    var isNew = Model.Id == 0;
+    var farms = ((ViewBag.Farms as IEnumerable<Farm>)?.ToList() ?? new List<Farm>());
+    var categories = (((ViewBag.Categories as IEnumerable<string>)?.ToList() ?? new List<string>())).Union(new[] { Model.Category }).Where(c => !string.IsNullOrWhiteSpace(c)).Distinct().OrderBy(c => c).ToList();
+    var month = Model.Month is >= 1 and <= 12 ? Model.Month : DateTime.Today.Month;
+    var year = Model.Year is >= 2000 and <= 2100 ? Model.Year : DateTime.Today.Year;
+}
+
+<div class="page-head">
+    <div>
+        <h4><i class="bi bi-clipboard-plus text-primary me-2"></i>@(isNew ? "New Budget Line" : "Edit Budget Line")</h4>
+        <p>Planned monthly amount for one category — compared against posted transactions on the Budget page.</p>
+    </div>
+    <a asp-action="Budget" asp-route-year="@year" asp-route-month="@month" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Back to budget</a>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-7">
+        <div class="form-card">
+            <form asp-action="@(isNew ? "CreateBudget" : "EditBudget")" method="post" novalidate>
+                @Html.AntiForgeryToken()
+                <input type="hidden" asp-for="Id" />
+                <div asp-validation-summary="ModelOnly" class="alert alert-danger py-2 small"></div>
+                <div class="row g-3">
+                    <div class="col-12">
+                        <label class="form-label d-block">Type *</label>
+                        <div class="btn-group" role="group">
+                            <input type="radio" class="btn-check" name="BudgetType" id="btExp" value="Expense" checked="@(Model.BudgetType != "Revenue")" />
+                            <label class="btn btn-outline-danger btn-sm" for="btExp"><i class="bi bi-arrow-down-circle me-1"></i>Expense budget</label>
+                            <input type="radio" class="btn-check" name="BudgetType" id="btRev" value="Revenue" checked="@(Model.BudgetType == "Revenue")" />
+                            <label class="btn btn-outline-success btn-sm" for="btRev"><i class="bi bi-arrow-up-circle me-1"></i>Revenue target</label>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Month *</label>
+                        <select asp-for="Month" class="form-select">
+                            @for (var m = 1; m <= 12; m++)
+                            {
+                                <option value="@m" selected="@(m == month)">@(new DateTime(2000, m, 1).ToString("MMMM"))</option>
+                            }
+                        </select>
+                        <span asp-validation-for="Month" class="text-danger small"></span>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Year *</label>
+                        <input asp-for="Year" type="number" min="2000" max="2100" class="form-control" />
+                        <span asp-validation-for="Year" class="text-danger small"></span>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Category *</label>
+                        <input asp-for="Category" class="form-control" list="catList" maxlength="100" placeholder="e.g. Feed" required />
+                        <datalist id="catList">
+                            @foreach (var c in categories) { <option value="@c"></option> }
+                        </datalist>
+                        <span asp-validation-for="Category" class="text-danger small"></span>
+                        <div class="form-text">Use the same category name as on transactions so actuals match.</div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Planned amount (৳) *</label>
+                        <input asp-for="PlannedAmount" type="number" step="0.01" min="0" class="form-control" required />
+                        <span asp-validation-for="PlannedAmount" class="text-danger small"></span>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Farm</label>
+                        <select asp-for="FarmId" class="form-select">
+                            <option value="">All farms (company-wide)</option>
+                            @foreach (var f in farms) { <option value="@f.Id">@f.Name</option> }
+                        </select>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Notes</label>
+                        <textarea asp-for="Notes" class="form-control" rows="2" maxlength="500" placeholder="Assumptions — e.g. 2 batches × 3,000 birds × 3.4 kg feed @@ ৳62/kg"></textarea>
+                    </div>
+                </div>
+                <div class="d-flex gap-2 mt-4">
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>@(isNew ? "Save budget line" : "Save changes")</button>
+                    <a asp-action="Budget" asp-route-year="@year" asp-route-month="@month" class="btn btn-outline-secondary">Cancel</a>
+                </div>
+            </form>
+        </div>
+    </div>
+    <div class="col-lg-5">
+        <div class="card mb-3">
+            <div class="card-header"><h6><i class="bi bi-calculator text-primary me-2"></i>Quick feed-budget estimator</h6></div>
+            <div class="card-body">
+                <div class="row g-2">
+                    <div class="col-6"><label class="form-label small">Birds</label><input type="number" id="estBirds" class="form-control form-control-sm" value="3000" min="0" /></div>
+                    <div class="col-6"><label class="form-label small">Feed / bird (kg)</label><input type="number" id="estFeed" class="form-control form-control-sm" value="3.4" step="0.1" min="0" /></div>
+                    <div class="col-6"><label class="form-label small">Price / kg (৳)</label><input type="number" id="estPrice" class="form-control form-control-sm" value="62" step="0.5" min="0" /></div>
+                    <div class="col-6 d-flex align-items-end"><button type="button" id="estUse" class="btn btn-sm btn-outline-primary w-100">Use estimate</button></div>
+                </div>
+                <div class="formula mt-3" id="estOut">—</div>
+            </div>
+        </div>
+        <div class="info-callout small">
+            <i class="bi bi-info-circle me-1"></i>One line per category, type, farm and month. A company-wide line and farm-specific lines for the same
+            category are compared against the same category actuals on the Budget page.
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+(function () {
+    const b = document.getElementById('estBirds'), f = document.getElementById('estFeed'), p = document.getElementById('estPrice'), o = document.getElementById('estOut');
+    function calc() { const v = (+b.value || 0) * (+f.value || 0) * (+p.value || 0); o.textContent = b.value + ' birds × ' + f.value + ' kg × ৳' + p.value + ' = ' + ppMoney(v); return v; }
+    [b, f, p].forEach(e => e.addEventListener('input', calc)); calc();
+    document.getElementById('estUse').addEventListener('click', () => {
+        document.getElementById('PlannedAmount').value = Math.round(calc());
+        const cat = document.getElementById('Category'); if (!cat.value) cat.value = 'Feed';
+        document.getElementById('btExp').checked = true;
+    });
+})();
+</script>
+}

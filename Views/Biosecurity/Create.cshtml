@@ -1,0 +1,146 @@
+@model BiosecurityChecklistVm
+@{
+    var farms = ((ViewBag.Farms as IEnumerable<Farm>)?.ToList() ?? new List<Farm>());
+    var maxScore = Model.Items.Sum(i => i.Weight);
+    var groups = Model.Items.Select((item, idx) => (item, idx)).GroupBy(x => x.item.Category).ToList();
+}
+
+<div class="page-head">
+    <div>
+        <a asp-action="Index" asp-route-farmId="@(Model.FarmId > 0 ? Model.FarmId : null)" class="text-xs text-decoration-none"><i class="bi bi-arrow-left me-1"></i>All audits</a>
+        <h4 class="mt-1"><i class="bi bi-clipboard2-check text-success me-2"></i>New biosecurity audit</h4>
+        <p>@ViewData["Subtitle"]</p>
+    </div>
+</div>
+
+<form asp-action="Create" method="post" novalidate>
+    <div asp-validation-summary="ModelOnly" class="alert alert-danger py-2 small"></div>
+    <div class="row g-3">
+        <div class="col-lg-8">
+            <div class="form-card mb-3">
+                <div class="row g-3">
+                    <div class="col-md-5">
+                        <label class="form-label">Farm *</label>
+                        <select asp-for="FarmId" class="form-select" required>
+                            <option value="0">— select farm —</option>
+                            @foreach (var f in farms)
+                            {
+                                <option value="@f.Id" selected="@(Model.FarmId == f.Id)">@f.Name (@f.Location)</option>
+                            }
+                        </select>
+                        <span asp-validation-for="FarmId" class="text-danger small"></span>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Audit date *</label>
+                        <input asp-for="AuditDate" type="date" class="form-control" value="@Model.AuditDate.ToString("yyyy-MM-dd")" max="@DateTime.Today.ToString("yyyy-MM-dd")" />
+                        <span asp-validation-for="AuditDate" class="text-danger small"></span>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Auditor *</label>
+                        <input asp-for="AuditorName" class="form-control" maxlength="150" required />
+                        <span asp-validation-for="AuditorName" class="text-danger small"></span>
+                    </div>
+                </div>
+            </div>
+
+            @foreach (var g in groups)
+            {
+                <div class="card mb-3">
+                    <div class="card-header">
+                        <h6><i class="bi bi-shield-check text-primary me-2"></i>@g.Key</h6>
+                        <span class="text-xs text-muted cat-score" data-cat="@g.Key">0 / @g.Sum(x => x.item.Weight) pts</span>
+                    </div>
+                    <div class="card-body p-0">
+                        <table class="table mb-0 align-middle">
+                            <tbody>
+                                @foreach (var (item, i) in g)
+                                {
+                                    <tr>
+                                        <td style="width:46%">
+                                            <div class="fw-600 small">@item.Question</div>
+                                            <span class="chip mt-1">weight @item.Weight</span>
+                                        </td>
+                                        <td style="width:150px">
+                                            <div class="form-check form-switch">
+                                                <input class="form-check-input bio-pass" type="checkbox" asp-for="Items[i].Passed" data-weight="@item.Weight" data-cat="@item.Category" />
+                                                <label class="form-check-label small pass-lbl" asp-for="Items[i].Passed">@(item.Passed ? "Pass" : "Fail")</label>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <input asp-for="Items[i].Remark" class="form-control form-control-sm" maxlength="300" placeholder="Observation / corrective action" />
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            }
+
+            <div class="form-card">
+                <label class="form-label">Overall notes</label>
+                <textarea asp-for="Notes" class="form-control" rows="3" maxlength="1000" placeholder="Summary, agreed corrective actions and deadlines"></textarea>
+            </div>
+        </div>
+
+        <div class="col-lg-4">
+            <div class="card position-sticky" style="top:80px">
+                <div class="card-header"><h6><i class="bi bi-calculator text-success me-2"></i>Live score</h6></div>
+                <div class="card-body text-center">
+                    <div class="score-ring mx-auto mb-2" id="ring" style="width:120px;height:120px;font-size:28px">—</div>
+                    <div class="fw-600" id="gradeOut">Grade —</div>
+                    <div class="text-muted small" id="ptsOut">0 / @maxScore points</div>
+                    <hr />
+                    <div class="text-start small">
+                        <div class="d-flex justify-content-between"><span>Passed items</span><span class="fw-600" id="passOut">0</span></div>
+                        <div class="d-flex justify-content-between"><span>Gaps (corrective actions)</span><span class="fw-600 text-danger" id="failOut">@Model.Items.Count</span></div>
+                    </div>
+                    <div class="formula text-start mt-3 text-xs">Score % = Σ(weight × pass) / Σ weight × 100<br />A ≥ 90 · B ≥ 75 · C ≥ 60 · D &lt; 60</div>
+                    <div class="d-flex gap-2 mt-3">
+                        <button type="button" class="btn btn-outline-secondary btn-sm flex-fill" id="allPass">Mark all pass</button>
+                        <button type="submit" class="btn btn-primary btn-sm flex-fill"><i class="bi bi-check2-circle me-1"></i>Save audit</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</form>
+
+@section Scripts {
+<script>
+(function () {
+    const max = @maxScore;
+    const boxes = Array.from(document.querySelectorAll('.bio-pass'));
+    function update() {
+        let score = 0, pass = 0; const cats = {};
+        boxes.forEach(b => {
+            const w = +b.dataset.weight, c = b.dataset.cat;
+            cats[c] = cats[c] || 0;
+            if (b.checked) { score += w; pass++; cats[c] += w; }
+            const lbl = b.parentElement.querySelector('.pass-lbl');
+            lbl.textContent = b.checked ? 'Pass' : 'Fail';
+            lbl.className = 'form-check-label small pass-lbl ' + (b.checked ? 'text-success' : 'text-danger');
+        });
+        document.querySelectorAll('.cat-score').forEach(el => {
+            el.textContent = (cats[el.dataset.cat] || 0) + ' / ' + el.textContent.split('/')[1].trim();
+        });
+        const pct = max > 0 ? score / max * 100 : 0;
+        const grade = pct >= 90 ? 'A' : pct >= 75 ? 'B' : pct >= 60 ? 'C' : 'D';
+        const col = { A: ppColors.green, B: ppColors.blue, C: ppColors.amber, D: ppColors.red }[grade];
+        const ring = document.getElementById('ring');
+        ring.textContent = pct.toFixed(0) + '%';
+        ring.style.background = `conic-gradient(${col} ${pct * 3.6}deg, #e5e7eb 0deg)`;
+        ring.style.boxShadow = 'inset 0 0 0 14px #fff';
+        ring.style.color = col;
+        document.getElementById('gradeOut').textContent = 'Grade ' + grade;
+        document.getElementById('gradeOut').style.color = col;
+        document.getElementById('ptsOut').textContent = score + ' / ' + max + ' points';
+        document.getElementById('passOut').textContent = pass;
+        document.getElementById('failOut').textContent = boxes.length - pass;
+    }
+    boxes.forEach(b => b.addEventListener('change', update));
+    document.getElementById('allPass').addEventListener('click', () => { boxes.forEach(b => b.checked = true); update(); });
+    update();
+})();
+</script>
+}

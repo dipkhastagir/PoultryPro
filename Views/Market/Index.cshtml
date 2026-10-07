@@ -1,0 +1,134 @@
+@model List<Order>
+@using PoultryPro.Controllers
+@{
+    var canEdit = User.IsAny(Roles.Finance);
+    string? status = ViewBag.Status;
+    string? payment = ViewBag.Payment;
+    string? q = ViewBag.Q;
+    var counts = ViewBag.StatusCounts as Dictionary<string, int> ?? new();
+    var openCount = (int)ViewBag.ActiveOrders;
+    var flow = new[] { "Pending", "Confirmed", "Processing", "Dispatched", "Out for Delivery", "Delivered" };
+    var isFiltered = !string.IsNullOrEmpty(status) || !string.IsNullOrEmpty(payment) || !string.IsNullOrWhiteSpace(q);
+}
+
+<div class="page-head">
+    <div>
+        <h4><i class="bi bi-bag-check text-primary me-2"></i>Sales Orders</h4>
+        <p>Orders, deliveries, invoices and collections.</p>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+        <a asp-action="Customers" class="btn btn-sm btn-outline-secondary"><i class="bi bi-people me-1"></i>Customers</a>
+        <a asp-controller="Reports" asp-action="Market" class="btn btn-sm btn-outline-secondary"><i class="bi bi-graph-up me-1"></i>Sales report</a>
+        @if (canEdit) { <a asp-action="Create" class="btn btn-sm btn-primary"><i class="bi bi-plus-lg me-1"></i>New order</a> }
+    </div>
+</div>
+
+<div class="stat-grid mb-4">
+    <div class="stat-tile tone-blue">
+        <div class="st-label">Open orders</div>
+        <div class="st-value">@openCount</div>
+        <div class="st-sub">@ViewBag.LateCount late for delivery</div>
+        <div class="st-icon"><i class="bi bi-truck"></i></div>
+    </div>
+    <div class="stat-tile tone-green">
+        <div class="st-label">Sales this month</div>
+        <div class="st-value">@Fmt.MoneyShort((decimal)ViewBag.MonthSales)</div>
+        <div class="st-sub">@DateTime.Today.ToString("MMMM yyyy")</div>
+        <div class="st-icon"><i class="bi bi-graph-up-arrow"></i></div>
+    </div>
+    <div class="stat-tile tone-violet">
+        <div class="st-label">Delivered revenue</div>
+        <div class="st-value">@Fmt.MoneyShort((decimal)ViewBag.TotalRevenue)</div>
+        <div class="st-sub">@ViewBag.CustomerCount customers served</div>
+        <div class="st-icon"><i class="bi bi-cash-stack"></i></div>
+    </div>
+    <div class="stat-tile tone-amber">
+        <div class="st-label">Receivables</div>
+        <div class="st-value">@Fmt.MoneyShort((decimal)ViewBag.Receivable)</div>
+        <div class="st-sub"><a asp-action="Index" asp-route-payment="Unpaid" class="text-reset">unpaid</a> · <a asp-action="Index" asp-route-payment="Partial" class="text-reset">partial</a></div>
+        <div class="st-icon"><i class="bi bi-hourglass-split"></i></div>
+    </div>
+</div>
+
+<ul class="nav nav-pills mb-3 flex-wrap gap-1 small">
+    <li class="nav-item"><a asp-action="Index" class="nav-link py-1 px-3 @(string.IsNullOrEmpty(status) ? "active" : "")">All</a></li>
+    <li class="nav-item"><a asp-action="Index" asp-route-status="open" class="nav-link py-1 px-3 @(status == "open" ? "active" : "")">Open <span class="badge bg-light text-dark ms-1">@openCount</span></a></li>
+    @foreach (var s in MarketController.OrderStatuses)
+    {
+        <li class="nav-item"><a asp-action="Index" asp-route-status="@s" class="nav-link py-1 px-3 @(status == s ? "active" : "")">@s <span class="badge bg-light text-dark ms-1">@(counts.TryGetValue(s, out var n) ? n : 0)</span></a></li>
+    }
+</ul>
+
+<form method="get" asp-action="Index" class="filter-bar mb-3">
+    <input type="hidden" name="status" value="@status" />
+    <div class="row g-2 align-items-end">
+        <div class="col-md-5">
+            <label class="form-label small mb-1">Search</label>
+            <input name="q" value="@q" class="form-control form-control-sm" placeholder="Order code, customer, product or batch" />
+        </div>
+        <div class="col-md-3">
+            <label class="form-label small mb-1">Payment</label>
+            <select name="payment" class="form-select form-select-sm">
+                <option value="">Any payment status</option>
+                @foreach (var p in new[] { "Unpaid", "Partial", "Paid" }) { <option value="@p" selected="@(p == payment)">@p</option> }
+            </select>
+        </div>
+        <div class="col-md-2 d-flex gap-1">
+            <button class="btn btn-sm btn-primary flex-fill"><i class="bi bi-funnel me-1"></i>Filter</button>
+            @if (isFiltered) { <a asp-action="Index" class="btn btn-sm btn-outline-secondary" title="Clear"><i class="bi bi-x-lg"></i></a> }
+        </div>
+    </div>
+</form>
+
+<div class="card">
+    @if (Model.Count == 0)
+    {
+        <div class="card-body">
+            <div class="empty-state">
+                <i class="bi bi-bag"></i>
+                <h6>No orders @(isFiltered ? "match these filters" : "yet")</h6>
+                <p class="text-muted small">@(isFiltered ? "Clear the filters to see all orders." : "Create a sales order from a ready flock or egg stock.")</p>
+                @if (canEdit && !isFiltered) { <a asp-action="Create" class="btn btn-sm btn-primary"><i class="bi bi-plus-lg me-1"></i>New order</a> }
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead>
+                    <tr><th>Order</th><th>Customer</th><th>Product</th><th class="text-end">Qty</th><th class="text-end">Total</th><th class="text-end">Due</th><th>Delivery</th><th>Status</th><th>Payment</th><th></th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var o in Model)
+                    {
+                        var idx = Array.IndexOf(flow, o.Status);
+                        var next = idx >= 0 && idx < flow.Length - 1 ? flow[idx + 1] : null;
+                        <tr class="@(o.Status == "Cancelled" ? "text-muted" : "")">
+                            <td><a asp-action="Detail" asp-route-id="@o.Id" class="mono fw-600">@o.OrderCode</a><div class="text-xs text-muted">@Fmt.Date(o.OrderDate)</div></td>
+                            <td><a asp-action="CustomerDetail" asp-route-id="@o.CustomerId" class="text-reset text-decoration-none">@o.CustomerName</a><div class="text-xs text-muted">@o.FarmName</div></td>
+                            <td>@o.Product @if (!string.IsNullOrEmpty(o.BatchCode)) { <div class="text-xs"><a asp-controller="Batch" asp-action="Detail" asp-route-id="@o.BatchId" class="mono">@o.BatchCode</a></div> }</td>
+                            <td class="text-end small">@Fmt.Num(o.Quantity, 1) @o.Unit</td>
+                            <td class="text-end fw-600">@Fmt.Money(o.TotalAmount)</td>
+                            <td class="text-end @(o.BalanceDue > 0 && o.Status != "Cancelled" ? "text-danger" : "text-muted")">@(o.Status == "Cancelled" ? "—" : Fmt.Money(o.BalanceDue))</td>
+                            <td class="small text-nowrap @(o.IsLate ? "text-danger fw-600" : "")">@Fmt.Date(o.DeliveryDate)@if (o.IsLate) { <i class="bi bi-exclamation-circle ms-1" title="Late"></i> }</td>
+                            <td><span class="badge @Fmt.Badge(o.Status)">@o.Status</span></td>
+                            <td><span class="badge @Fmt.Badge(o.PaymentStatus)">@o.PaymentStatus</span></td>
+                            <td class="text-end text-nowrap">
+                                <a asp-action="Invoice" asp-route-id="@o.Id" class="btn btn-xs btn-outline-secondary" title="Invoice"><i class="bi bi-file-earmark-text"></i></a>
+                                @if (canEdit && next != null)
+                                {
+                                    <form asp-action="UpdateStatus" method="post" class="d-inline">
+                                        <input type="hidden" name="id" value="@o.Id" />
+                                        <input type="hidden" name="status" value="@next" />
+                                        <button class="btn btn-xs btn-outline-primary" title="Advance status">→ @next</button>
+                                    </form>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>

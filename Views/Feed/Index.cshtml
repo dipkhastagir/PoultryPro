@@ -1,0 +1,190 @@
+@model List<FeedFormulation>
+@using System.Text.Json
+@{
+    var canWrite = User.IsAny(Roles.AdminOrManager + "," + Roles.Veterinarian);
+    var type = ViewBag.Type as string;
+    var inactive = (bool)(ViewBag.Inactive ?? false);
+    var types = ((ViewBag.Types as IEnumerable<string>)?.ToList() ?? new List<string>());
+    var inv = System.Globalization.CultureInfo.InvariantCulture;
+    var active = Model.Where(f => f.IsActive).ToList();
+    var groups = Model.GroupBy(f => f.BatchType).ToList();
+    string Opt(decimal? v, string fmt = "0.00") => v.HasValue ? v.Value.ToString(fmt, inv) : "—";
+}
+
+<div class="page-head">
+    <div>
+        <h4><i class="bi bi-basket text-success me-2"></i>Feed Formulations</h4>
+        <p>@ViewData["Subtitle"]</p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+        <a asp-action="Planner" class="btn btn-outline-secondary btn-sm"><i class="bi bi-calendar2-week me-1"></i>Feed planner</a>
+        @if (canWrite)
+        {
+            <a asp-action="Create" asp-route-type="@type" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg me-1"></i>New formulation</a>
+        }
+    </div>
+</div>
+
+<div class="filter-bar">
+    <div class="d-flex gap-1 flex-wrap">
+        <a asp-action="Index" asp-route-inactive="@inactive" class="btn btn-sm @(string.IsNullOrEmpty(type) ? "btn-primary" : "btn-outline-secondary")">All types</a>
+        @foreach (var t in types)
+        {
+            <a asp-action="Index" asp-route-type="@t" asp-route-inactive="@inactive" class="btn btn-sm @(type == t ? "btn-primary" : "btn-outline-secondary")">@t</a>
+        }
+    </div>
+    <div class="form-check form-switch ms-auto">
+        <input class="form-check-input" type="checkbox" id="showInactive" @(inactive ? "checked" : "")
+               onchange="location.href='@Url.Action("Index", new { type })' + (this.checked ? '@(string.IsNullOrEmpty(type) ? "?" : "&")inactive=true' : '')" />
+        <label class="form-check-label small" for="showInactive">Show inactive (@((int)ViewBag.AllCount - (int)ViewBag.ActiveCount))</label>
+    </div>
+</div>
+
+<div class="stat-grid">
+    <div class="stat-tile tone-green">
+        <div class="st-label">Active rations</div>
+        <div class="st-value">@active.Count</div>
+        <div class="st-sub">@string.Join(" · ", active.GroupBy(f => f.BatchType).Select(g => $"{g.Key} {g.Count()}"))</div>
+        <div class="st-icon"><i class="bi bi-basket"></i></div>
+    </div>
+    <div class="stat-tile tone-blue">
+        <div class="st-label">Crude protein range</div>
+        <div class="st-value">@(active.Count > 0 ? $"{active.Min(f => f.CrudeProteinPct):0.#}–{active.Max(f => f.CrudeProteinPct):0.#}%" : "—")</div>
+        <div class="st-sub">highest in pre-starter, lowest in finisher</div>
+        <div class="st-icon"><i class="bi bi-capsule"></i></div>
+    </div>
+    <div class="stat-tile tone-amber">
+        <div class="st-label">Average cost</div>
+        <div class="st-value">@(active.Count > 0 ? Fmt.Money(active.Average(f => f.CostPerKg), 2) : "—")</div>
+        <div class="st-sub">per kg · @(active.Count > 0 ? $"{Fmt.Money(active.Min(f => f.CostPerKg))}–{Fmt.Money(active.Max(f => f.CostPerKg))}" : "")</div>
+        <div class="st-icon"><i class="bi bi-cash-coin"></i></div>
+    </div>
+    <div class="stat-tile tone-violet">
+        <div class="st-label">Cheapest protein</div>
+        @{ var bestCp = active.Where(f => f.CrudeProteinPct > 0).OrderBy(f => f.CostPerKg / f.CrudeProteinPct).FirstOrDefault(); }
+        <div class="st-value">@(bestCp != null ? Fmt.Money(bestCp.CostPerKg / bestCp.CrudeProteinPct, 2) : "—")</div>
+        <div class="st-sub">@(bestCp != null ? "per CP-% point · " + bestCp.Name : "no data")</div>
+        <div class="st-icon"><i class="bi bi-graph-down"></i></div>
+    </div>
+</div>
+
+@if (Model.Count == 0)
+{
+    <div class="card"><div class="card-body">
+        <div class="empty-state"><i class="bi bi-basket"></i>No feed formulations@(string.IsNullOrEmpty(type) ? "" : " for " + type) yet.
+            @if (canWrite) { <div class="mt-2"><a asp-action="Create" asp-route-type="@type" class="btn btn-primary btn-sm">Add the first ration</a></div> }
+        </div>
+    </div></div>
+}
+else
+{
+    <div class="row g-3 mb-3">
+        <div class="col-lg-7">
+            <div class="card h-100">
+                <div class="card-header"><h6><i class="bi bi-bar-chart text-primary me-2"></i>Protein &amp; energy by stage</h6></div>
+                <div class="card-body"><div style="height:280px"><canvas id="nutChart"></canvas></div></div>
+            </div>
+        </div>
+        <div class="col-lg-5">
+            <div class="card h-100">
+                <div class="card-header"><h6><i class="bi bi-calendar-range text-success me-2"></i>Feeding programme timeline</h6></div>
+                <div class="card-body">
+                    @foreach (var g in groups)
+                    {
+                        var maxDay = Math.Max(1, g.Max(f => f.ToAgeDay));
+                        <div class="mb-3">
+                            <div class="small fw-600 mb-1">@g.Key <span class="text-muted fw-normal">· day 0–@maxDay</span></div>
+                            <div class="position-relative rounded" style="height:26px;background:#f1f5f9">
+                                @{ var i = 0; }
+                                @foreach (var f in g.OrderBy(f => f.FromAgeDay))
+                                {
+                                    var left = f.FromAgeDay * 100m / (maxDay + 1);
+                                    var width = Math.Max(2m, (f.ToAgeDay - f.FromAgeDay + 1) * 100m / (maxDay + 1));
+                                    var colors = new[] { "#0d9e75", "#3b82f6", "#f59e0b", "#8b5cf6", "#ef4444", "#14b8a6" };
+                                    <div title="@f.Name: day @f.FromAgeDay–@f.ToAgeDay" class="position-absolute text-white text-xs d-flex align-items-center justify-content-center overflow-hidden rounded"
+                                         style="top:0;bottom:0;left:@left.ToString("0.##", inv)%;width:@width.ToString("0.##", inv)%;background:@colors[i++ % colors.Length];opacity:@(f.IsActive ? "1" : ".4")">@f.Stage</div>
+                                }
+                            </div>
+                        </div>
+                    }
+                    <div class="text-xs text-muted">Bar width = age range in days. The planner picks the ration whose range covers each flock's age.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <h6><i class="bi bi-table text-primary me-2"></i>Formulations</h6>
+            <input data-table-filter="#tblFeed" class="form-control form-control-sm" style="max-width:220px" placeholder="Filter…" />
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover mb-0" id="tblFeed">
+                <thead>
+                    <tr><th>Name</th><th>Type</th><th>Stage</th><th class="text-end">Age (days)</th><th class="text-end">CP %</th><th class="text-end">ME kcal/kg</th>
+                        <th class="text-end">ME:CP</th><th class="text-end">Ca %</th><th class="text-end">P %</th><th class="text-end">Ca:P</th><th class="text-end">Lys %</th>
+                        <th class="text-end">Cost/kg</th><th>Status</th>@if (canWrite) { <th></th> }</tr>
+                </thead>
+                <tbody>
+                    @foreach (var f in Model)
+                    {
+                        <tr class="@(f.IsActive ? "" : "text-muted")">
+                            <td>
+                                <div class="fw-600">@f.Name</div>
+                                @if (!string.IsNullOrWhiteSpace(f.Ingredients))
+                                {
+                                    <div class="text-xs text-muted text-truncate" style="max-width:280px" title="@f.Ingredients">@f.Ingredients</div>
+                                }
+                            </td>
+                            <td><span class="chip">@f.BatchType</span></td>
+                            <td>@f.Stage</td>
+                            <td class="text-end text-nowrap">@f.FromAgeDay – @f.ToAgeDay</td>
+                            <td class="text-end fw-600">@f.CrudeProteinPct.ToString("0.0#", inv)</td>
+                            <td class="text-end">@Fmt.Num(f.EnergyKcalPerKg)</td>
+                            <td class="text-end">@(f.EnergyProteinRatio > 0 ? f.EnergyProteinRatio.ToString("0", inv) : "—")</td>
+                            <td class="text-end">@Opt(f.CalciumPct)</td>
+                            <td class="text-end">@Opt(f.PhosphorusPct)</td>
+                            <td class="text-end">@Opt(f.CaPRatio, "0.0")</td>
+                            <td class="text-end">@Opt(f.LysinePct)</td>
+                            <td class="text-end">@Fmt.Money(f.CostPerKg, 2)</td>
+                            <td><span class="badge @(f.IsActive ? "badge-healthy" : "badge-gray")">@(f.IsActive ? "Active" : "Inactive")</span></td>
+                            @if (canWrite)
+                            {
+                                <td class="text-end"><a asp-action="Edit" asp-route-id="@f.Id" class="btn btn-xs btn-outline-secondary"><i class="bi bi-pencil"></i></a></td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <div class="card-body border-top">
+            <div class="text-xs text-muted">ME:CP = metabolisable energy per % crude protein (broiler target ≈ 135–175; higher in finisher). Ca:P ≈ 2:1 for growing birds, 8–10:1 for layers in lay.</div>
+        </div>
+    </div>
+}
+
+@section Scripts {
+@if (Model.Count > 0)
+{
+<script>
+(function () {
+    const rows = @Html.Raw(JsonSerializer.Serialize(Model.Where(f => f.IsActive || inactive).Select(f => new { n = f.BatchType + " · " + f.Stage, cp = f.CrudeProteinPct, me = f.EnergyKcalPerKg })));
+    new Chart(document.getElementById('nutChart'), {
+        type: 'bar',
+        data: {
+            labels: rows.map(r => r.n),
+            datasets: [
+                { type: 'bar', label: 'Crude protein %', data: rows.map(r => r.cp), backgroundColor: ppColors.greenSoft, borderColor: ppColors.green, borderWidth: 1, yAxisID: 'y' },
+                { type: 'line', label: 'ME kcal/kg', data: rows.map(r => r.me), borderColor: ppColors.amber, backgroundColor: ppColors.amber, pointRadius: 4, tension: .2, yAxisID: 'y1' }
+            ]
+        },
+        options: {
+            scales: { y: { beginAtZero: true, title: { display: true, text: 'CP %' } },
+                      y1: { position: 'right', min: 2500, grid: { drawOnChartArea: false }, title: { display: true, text: 'kcal/kg' } } },
+            plugins: { legend: { position: 'bottom' } }
+        }
+    });
+})();
+</script>
+}
+}

@@ -1,0 +1,53 @@
+@model Batch
+@{
+    ViewData["Title"] = "New Batch";
+    var farms = ViewBag.Farms as IEnumerable<Farm> ?? new List<Farm>();
+}
+<div class="row justify-content-center"><div class="col-lg-7">
+<div class="form-card">
+    <h6 class="fw-semibold mb-4"><i class="bi bi-feather2 text-success me-2"></i>Register New Batch</h6>
+    <form asp-action="Create" method="post">
+        @Html.AntiForgeryToken()
+        <div asp-validation-summary="All" class="alert alert-danger py-2 small"></div>
+        <div class="row g-3">
+            <div class="col-md-4">
+                <label class="form-label">Batch Code *</label>
+                <input asp-for="BatchCode" class="form-control" placeholder="e.g. B-12" required />
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Breed *</label>
+                <select asp-for="Breed" class="form-select">
+                    <option>Cobb 500</option><option>Ross 308</option>
+                    <option>Sonali</option><option>Layer White</option><option>Hubbard</option>
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Farm *</label>
+                <select asp-for="FarmId" class="form-select">
+                    @foreach (var f in farms)
+                    { <option value="@f.Id">@f.Name</option> }
+                </select>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Initial Count *</label>
+                <input asp-for="InitialCount" type="number" class="form-control" min="1" required />
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Placement Date *</label>
+                <input asp-for="PlacementDate" type="date" class="form-control" required />
+            </div>
+            <div class="col-12">
+                <label class="form-label">Health Status</label>
+                <select asp-for="HealthStatus" class="form-select">
+                    <option>Healthy</option><option>Vaccination Due</option>
+                    <option>Under Treatment</option><option>Monitoring</option>
+                </select>
+            </div>
+        </div>
+        <div class="d-flex gap-2 mt-4">
+            <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Create Batch</button>
+            <a asp-action="Index" class="btn btn-outline-secondary">Cancel</a>
+        </div>
+    </form>
+</div>
+</div></div>

@@ -1,0 +1,165 @@
+@model SensorIndexVm
+@{
+    var canEdit = User.IsAny(Roles.AdminOrManager);
+    var cards = Model.Cards;
+    var online = cards.Count(c => c.Device.IsOnline);
+    var inactive = cards.Count(c => !c.Device.IsActive);
+    var stressed = cards.Count(c => c.Device.IsOnline && c.Band != "Normal" && c.Band != "—");
+    var nh3High = cards.Count(c => c.Device.IsOnline && c.Last?.AmmoniaPpm >= Model.AmmoniaLimit);
+    string BandBadge(string band) => band switch
+    {
+        "Normal" => "badge-healthy",
+        "Alert" => "badge-warning-soft",
+        "Danger" or "Emergency" => "badge-danger-soft",
+        _ => "badge-gray"
+    };
+    string Val(decimal? v, string fmt, string unit) => v.HasValue ? v.Value.ToString(fmt) + unit : "—";
+}
+
+<div class="page-head">
+    <div>
+        <h4>IoT Sensor Network</h4>
+        <p>@cards.Count device(s) · @online online · @Fmt.Num(Model.ReadingsLast24h) readings in the last 24 h · THI warning @Model.ThiWarning.ToString("0") / critical @Model.ThiCritical.ToString("0")</p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+        <a asp-action="Readings" asp-route-farmId="@Model.FarmId" class="btn btn-sm btn-outline-secondary"><i class="bi bi-graph-up me-1"></i>Readings &amp; charts</a>
+        <a asp-action="ApiDocs" class="btn btn-sm btn-outline-secondary"><i class="bi bi-code-slash me-1"></i>Integration guide</a>
+        @if (canEdit)
+        {
+            <a asp-action="Create" asp-route-farmId="@Model.FarmId" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg me-1"></i>Register sensor</a>
+        }
+    </div>
+</div>
+
+<div class="stat-grid">
+    <div class="stat-tile tone-blue">
+        <div class="st-label">Devices</div>
+        <div class="st-value">@cards.Count</div>
+        <div class="st-sub">@inactive deactivated</div>
+        <div class="st-icon"><i class="bi bi-cpu"></i></div>
+    </div>
+    <div class="stat-tile @(online == cards.Count - inactive ? "tone-green" : "tone-amber")">
+        <div class="st-label">Online now</div>
+        <div class="st-value">@online <span class="text-xs text-muted">/ @(cards.Count - inactive)</span></div>
+        <div class="st-sub">reported within the last hour</div>
+        <div class="st-icon"><i class="bi bi-wifi"></i></div>
+    </div>
+    <div class="stat-tile @(stressed > 0 ? "tone-red" : "tone-green")">
+        <div class="st-label">Heat stress</div>
+        <div class="st-value">@stressed</div>
+        <div class="st-sub">sheds at THI ≥ @Model.ThiWarning.ToString("0")</div>
+        <div class="st-icon"><i class="bi bi-thermometer-sun"></i></div>
+    </div>
+    <div class="stat-tile @(nh3High > 0 ? "tone-amber" : "tone-slate")">
+        <div class="st-label">Ammonia high</div>
+        <div class="st-value">@nh3High</div>
+        <div class="st-sub">sheds at NH₃ ≥ @Model.AmmoniaLimit.ToString("0") ppm</div>
+        <div class="st-icon"><i class="bi bi-wind"></i></div>
+    </div>
+</div>
+
+<form method="get" class="filter-bar">
+    <div>
+        <label class="form-label">Farm</label>
+        <select name="farmId" class="form-select" onchange="this.form.submit()">
+            <option value="">All farms</option>
+            @foreach (var f in Model.Farms) { <option value="@f.Id" selected="@(Model.FarmId == f.Id)">@f.Name</option> }
+        </select>
+    </div>
+    @if (Model.FarmId.HasValue)
+    {
+        <a asp-action="Index" class="btn btn-sm btn-outline-secondary">Clear</a>
+    }
+    <div class="ms-auto text-xs text-muted align-self-center">
+        THI = 0.8·T + (RH/100)·(T − 14.4) + 46.4 · bands: Normal &lt; @Model.ThiWarning.ToString("0") ≤ Alert &lt; @Model.ThiCritical.ToString("0") ≤ Danger &lt; @((Model.ThiCritical + 5).ToString("0")) ≤ Emergency
+    </div>
+</form>
+
+@if (cards.Count == 0)
+{
+    <div class="card">
+        <div class="empty-state">
+            <i class="bi bi-cpu"></i>
+            No sensor devices @(Model.FarmId.HasValue ? "at this farm" : "registered yet").
+            <div class="mt-2">
+                @if (canEdit)
+                {
+                    <a asp-action="Create" asp-route-farmId="@Model.FarmId" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg me-1"></i>Register the first node</a>
+                }
+                <a asp-action="ApiDocs" class="btn btn-outline-secondary btn-sm">See the integration guide</a>
+            </div>
+        </div>
+    </div>
+}
+else
+{
+    <div class="row g-3">
+        @foreach (var c in cards)
+        {
+            var d = c.Device;
+            var r = c.Last;
+            var status = !d.IsActive ? "Inactive" : d.IsOnline ? "Online" : "Offline";
+            var statusCls = !d.IsActive ? "badge-gray" : d.IsOnline ? "badge-healthy" : "badge-danger-soft";
+            var nh3Bad = r?.AmmoniaPpm >= Model.AmmoniaLimit;
+            <div class="col-md-6 col-xl-4">
+                <div class="card h-100 @(d.IsActive ? "" : "opacity-75")">
+                    <div class="card-header">
+                        <h6 class="text-truncate">
+                            <i class="bi bi-broadcast-pin @(d.IsOnline ? "text-success" : "text-muted") me-2"></i>@d.Name
+                        </h6>
+                        <span class="badge @statusCls"><i class="bi @(d.IsOnline ? "bi-circle-fill" : "bi-circle") me-1" style="font-size:8px"></i>@status</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="d-flex flex-wrap gap-1 mb-2">
+                            <span class="chip mono">@d.DeviceCode</span>
+                            <span class="chip"><i class="bi bi-house"></i>@d.FarmName</span>
+                            @if (!string.IsNullOrEmpty(d.ShedNo)) { <span class="chip"><i class="bi bi-grid-3x3-gap"></i>Shed @d.ShedNo</span> }
+                        </div>
+                        <div class="text-xs text-muted mb-3">@d.DeviceType · firmware @(d.FirmwareVersion ?? "—") · last seen @(d.LastSeenAt.HasValue ? Fmt.Ago(d.LastSeenAt) : "never")</div>
+
+                        @if (r == null)
+                        {
+                            <div class="empty-state py-3"><i class="bi bi-hourglass"></i>No readings received yet.</div>
+                        }
+                        else
+                        {
+                            <div class="d-flex align-items-center gap-3 mb-3">
+                                <div class="score-ring" style="background:@(c.Band == "Normal" ? "#e1f5ee" : c.Band == "Alert" ? "#fef3c7" : "#fee2e2");color:@(c.Band == "Normal" ? "#0a7d5e" : c.Band == "Alert" ? "#b45309" : "#b91c1c")">
+                                    @Val(c.Thi, "0", "")
+                                </div>
+                                <div>
+                                    <div class="text-xs text-muted">Temperature-Humidity Index</div>
+                                    <span class="badge @BandBadge(c.Band)">@c.Band</span>
+                                    <div class="text-xs text-muted mt-1">@Fmt.DateTime(r.ReadingTime)</div>
+                                </div>
+                            </div>
+                            <div class="row g-2 text-center" style="font-size:12.5px">
+                                <div class="col-4"><div class="text-muted text-xs"><i class="bi bi-thermometer-half"></i> Temp</div><div class="fw-600">@Val(r.TemperatureC, "0.0", " °C")</div></div>
+                                <div class="col-4"><div class="text-muted text-xs"><i class="bi bi-droplet-half"></i> RH</div><div class="fw-600">@Val(r.HumidityPercent, "0", " %")</div></div>
+                                <div class="col-4"><div class="text-muted text-xs"><i class="bi bi-wind"></i> NH₃</div><div class="fw-600 @(nh3Bad ? "text-danger" : "")">@Val(r.AmmoniaPpm, "0.0", " ppm")</div></div>
+                                <div class="col-4"><div class="text-muted text-xs"><i class="bi bi-cloud-haze2"></i> CO₂</div><div class="fw-600 @(r.Co2Ppm >= 3000 ? "text-danger" : "")">@Val(r.Co2Ppm, "0", " ppm")</div></div>
+                                <div class="col-4"><div class="text-muted text-xs"><i class="bi bi-moisture"></i> Water</div><div class="fw-600">@Val(r.WaterFlowLtr, "0.0", " L")</div></div>
+                                <div class="col-4"><div class="text-muted text-xs"><i class="bi bi-basket"></i> Feed</div><div class="fw-600 @(r.FeedLevelPct < 15 ? "text-warning" : "")">@Val(r.FeedLevelPct, "0", " %")</div></div>
+                            </div>
+                        }
+                    </div>
+                    <div class="card-body border-top py-2 d-flex gap-2 flex-wrap">
+                        <a asp-action="Readings" asp-route-deviceId="@d.Id" class="btn btn-xs btn-outline-primary"><i class="bi bi-graph-up me-1"></i>Readings</a>
+                        @if (canEdit)
+                        {
+                            <a asp-action="Edit" asp-route-id="@d.Id" class="btn btn-xs btn-outline-secondary"><i class="bi bi-pencil me-1"></i>Edit</a>
+                            @if (d.IsActive)
+                            {
+                                <form asp-action="Simulate" method="post" class="d-inline">
+                                    <input type="hidden" name="deviceId" value="@d.Id" />
+                                    <input type="hidden" name="returnTo" value="index" />
+                                    <button class="btn btn-xs btn-outline-secondary" title="Insert a realistic simulated reading"><i class="bi bi-lightning me-1"></i>Test reading</button>
+                                </form>
+                            }
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}

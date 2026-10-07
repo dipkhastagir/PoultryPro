@@ -1,0 +1,163 @@
+@model SensorDeviceFormVm
+@{
+    var farms = ((ViewBag.Farms as IEnumerable<Farm>)?.ToList() ?? new List<Farm>());
+    var device = ViewBag.Device as SensorDevice;
+    var isNew = Model.Id == 0;
+    var deviceTypes = new[]
+    {
+        "ESP32 Climate Node (DHT22 + MQ-137 + MH-Z19)",
+        "ESP32 Climate Node",
+        "ESP32 + DHT22 (temp/humidity only)",
+        "ESP8266 + SHT31",
+        "Water flow meter (YF-S201)",
+        "Feed hopper level (ultrasonic)",
+        "Raspberry Pi gateway"
+    };
+}
+
+<div class="row justify-content-center g-4">
+    <div class="col-lg-7">
+        <a asp-action="Index" class="text-xs text-decoration-none"><i class="bi bi-arrow-left me-1"></i>All sensors</a>
+        <div class="form-card mt-2">
+            <h6 class="fw-semibold mb-1"><i class="bi bi-cpu text-primary me-2"></i>@(isNew ? "Register sensor device" : "Edit " + Model.DeviceCode)</h6>
+            <p class="text-muted small mb-4">
+                @(isNew ? "A unique 64-character API key is generated when you save. Flash it into the node's firmware together with the device code."
+                        : "Device code and API key must match what is flashed into the firmware.")
+            </p>
+            <form asp-action="@(isNew ? "Create" : "Edit")" method="post" novalidate>
+                <input type="hidden" asp-for="Id" />
+                <div asp-validation-summary="ModelOnly" class="alert alert-danger py-2 small"></div>
+                <div class="row g-3">
+                    <div class="col-md-5">
+                        <label class="form-label">Device code *</label>
+                        <input asp-for="DeviceCode" class="form-control mono" maxlength="40" required placeholder="PP-NODE-001" />
+                        <span asp-validation-for="DeviceCode" class="text-danger small"></span>
+                        <div class="form-text">Letters, digits, <code>.</code> <code>-</code> <code>_</code> — used in API URLs.</div>
+                    </div>
+                    <div class="col-md-7">
+                        <label class="form-label">Name *</label>
+                        <input asp-for="Name" class="form-control" maxlength="150" required placeholder="Shed 1 climate node" />
+                        <span asp-validation-for="Name" class="text-danger small"></span>
+                    </div>
+                    <div class="col-md-8">
+                        <label class="form-label">Farm *</label>
+                        <select asp-for="FarmId" class="form-select">
+                            <option value="0">— Select farm —</option>
+                            @foreach (var f in farms)
+                            {
+                                <option value="@f.Id" selected="@(Model.FarmId == f.Id)">@f.Name · @f.Location</option>
+                            }
+                        </select>
+                        <span asp-validation-for="FarmId" class="text-danger small"></span>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Shed no.</label>
+                        <input asp-for="ShedNo" class="form-control" maxlength="20" placeholder="S-1" />
+                    </div>
+                    <div class="col-md-8">
+                        <label class="form-label">Device type</label>
+                        <input asp-for="DeviceType" class="form-control" maxlength="60" list="deviceTypes" />
+                        <datalist id="deviceTypes">
+                            @foreach (var t in deviceTypes) { <option value="@t"></option> }
+                        </datalist>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Firmware version</label>
+                        <input asp-for="FirmwareVersion" class="form-control mono" maxlength="20" placeholder="v1.0.0" />
+                    </div>
+                    <div class="col-12">
+                        <div class="form-check form-switch">
+                            <input asp-for="IsActive" class="form-check-input" type="checkbox" role="switch" />
+                            <label asp-for="IsActive" class="form-check-label">Active — accept readings from this device</label>
+                        </div>
+                        <div class="form-text">Deactivated devices are rejected by <code>POST api/sensors/ingest</code> with HTTP 403.</div>
+                    </div>
+                </div>
+                <div class="d-flex gap-2 mt-4">
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>@(isNew ? "Register device" : "Save changes")</button>
+                    <a asp-action="Index" class="btn btn-outline-secondary">Cancel</a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="col-lg-5">
+        @if (!isNew)
+        {
+            <div class="card mb-4 mt-lg-4">
+                <div class="card-header">
+                    <h6><i class="bi bi-key text-primary me-2"></i>Device API key</h6>
+                    <span class="badge @(device?.IsOnline == true ? "badge-healthy" : "badge-gray")">@(device?.IsOnline == true ? "Online" : "Offline")</span>
+                </div>
+                <div class="card-body">
+                    <p class="text-xs text-muted mb-2">Send this key in the <code>X-Device-Key</code> header with every request. Keep it secret — anyone holding it can post readings as this device.</p>
+                    <div class="input-group input-group-sm mb-2">
+                        <input id="apiKey" type="password" class="form-control mono" value="@Model.ApiKey" readonly />
+                        <button class="btn btn-outline-secondary" type="button" id="toggleKey" title="Show / hide"><i class="bi bi-eye"></i></button>
+                        <button class="btn btn-outline-secondary" type="button" id="copyKey" title="Copy"><i class="bi bi-clipboard"></i></button>
+                    </div>
+                    <dl class="kv mt-3">
+                        <dt>Last seen</dt><dd>@(Model.LastSeenAt.HasValue ? Fmt.DateTime(Model.LastSeenAt) + " (" + Fmt.Ago(Model.LastSeenAt) + ")" : "Never")</dd>
+                        <dt>Readings stored</dt><dd>@Fmt.Num(device?.ReadingCount ?? 0)</dd>
+                        <dt>Registered</dt><dd>@Fmt.Date(device?.CreatedAt)</dd>
+                    </dl>
+                    <form asp-action="RegenerateKey" method="post" class="mt-3" data-confirm="Generate a new API key? The current key stops working immediately and the device must be re-flashed.">
+                        <input type="hidden" name="id" value="@Model.Id" />
+                        <button class="btn btn-sm btn-outline-warning"><i class="bi bi-arrow-repeat me-1"></i>Regenerate key</button>
+                    </form>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header"><h6><i class="bi bi-lightning text-primary me-2"></i>Quick actions</h6></div>
+                <div class="card-body d-flex flex-wrap gap-2">
+                    <a asp-action="Readings" asp-route-deviceId="@Model.Id" class="btn btn-sm btn-outline-primary"><i class="bi bi-graph-up me-1"></i>View readings</a>
+                    <a asp-action="ApiDocs" class="btn btn-sm btn-outline-secondary"><i class="bi bi-code-slash me-1"></i>Firmware sketch</a>
+                    @if (Model.IsActive)
+                    {
+                        <form asp-action="Simulate" method="post">
+                            <input type="hidden" name="deviceId" value="@Model.Id" />
+                            <input type="hidden" name="returnTo" value="readings" />
+                            <button class="btn btn-sm btn-outline-secondary"><i class="bi bi-send me-1"></i>Send test reading</button>
+                        </form>
+                    }
+                    <form asp-action="Delete" method="post" data-confirm="Delete @Model.DeviceCode and all of its @(device?.ReadingCount ?? 0) readings? This cannot be undone.">
+                        <input type="hidden" name="id" value="@Model.Id" />
+                        <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash me-1"></i>Delete device</button>
+                    </form>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="info-callout mt-lg-4">
+                <div class="fw-600 mb-1"><i class="bi bi-info-circle me-1"></i>How provisioning works</div>
+                <ol class="mb-0 ps-3">
+                    <li>Register the device here — the API key is created on save.</li>
+                    <li>Copy the device code and key into the ESP32 sketch from the <a asp-action="ApiDocs">integration guide</a>.</li>
+                    <li>The node posts JSON to <code>/api/sensors/ingest</code> every few minutes; it shows as <b>online</b> once it reports within the last hour.</li>
+                </ol>
+            </div>
+        }
+    </div>
+</div>
+
+@section Scripts {
+<script>
+(function () {
+    const key = document.getElementById('apiKey');
+    if (!key) return;
+    document.getElementById('toggleKey').addEventListener('click', function () {
+        key.type = key.type === 'password' ? 'text' : 'password';
+        this.querySelector('i').className = key.type === 'password' ? 'bi bi-eye' : 'bi bi-eye-slash';
+    });
+    document.getElementById('copyKey').addEventListener('click', function () {
+        const btn = this;
+        navigator.clipboard.writeText(key.value).then(() => {
+            btn.innerHTML = '<i class="bi bi-check2"></i>';
+            setTimeout(() => btn.innerHTML = '<i class="bi bi-clipboard"></i>', 1500);
+        });
+    });
+})();
+</script>
+}

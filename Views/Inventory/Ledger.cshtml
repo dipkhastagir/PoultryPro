@@ -1,0 +1,191 @@
+@model StockLedgerVm
+@{
+    var item = Model.Item;
+    var unit = item?.Unit ?? "";
+    var canEdit = User.IsAny(Roles.Finance);
+    var chartRows = item != null ? Model.Entries.AsEnumerable().Reverse().ToList() : new List<StockLedgerEntry>();
+}
+
+<form method="get" class="filter-bar">
+    <div style="min-width:240px">
+        <label class="form-label">Item</label>
+        <select name="itemId" class="form-select">
+            <option value="">All items</option>
+            @foreach (var g in Model.Items.GroupBy(i => i.Category))
+            {
+                <optgroup label="@g.Key">
+                    @foreach (var i in g)
+                    {
+                        <option value="@i.Id" selected="@(i.Id == Model.ItemId)">@i.Name@(string.IsNullOrEmpty(i.SKU) ? "" : $" [{i.SKU}]")</option>
+                    }
+                </optgroup>
+            }
+        </select>
+    </div>
+    <div>
+        <label class="form-label">Movement</label>
+        <select name="type" class="form-select">
+            <option value="">IN &amp; OUT</option>
+            <option value="IN" selected="@(Model.Type == "IN")">IN only</option>
+            <option value="OUT" selected="@(Model.Type == "OUT")">OUT only</option>
+        </select>
+    </div>
+    <div>
+        <label class="form-label">From</label>
+        <input type="date" name="from" class="form-control" value="@Model.From?.ToString("yyyy-MM-dd")" />
+    </div>
+    <div>
+        <label class="form-label">To</label>
+        <input type="date" name="to" class="form-control" value="@Model.To?.ToString("yyyy-MM-dd")" />
+    </div>
+    <div class="d-flex gap-2">
+        <button class="btn btn-primary btn-sm"><i class="bi bi-funnel me-1"></i>Apply</button>
+        <a asp-action="Ledger" class="btn btn-outline-secondary btn-sm">Reset</a>
+    </div>
+    <div class="ms-auto d-flex gap-2">
+        <a asp-action="ExportLedger" asp-route-itemId="@Model.ItemId" asp-route-type="@Model.Type" asp-route-from="@Model.From?.ToString("yyyy-MM-dd")" asp-route-to="@Model.To?.ToString("yyyy-MM-dd")" class="btn btn-outline-success btn-sm"><i class="bi bi-filetype-csv me-1"></i>Export CSV</a>
+        <a asp-action="Index" class="btn btn-outline-secondary btn-sm"><i class="bi bi-box-seam me-1"></i>Inventory</a>
+    </div>
+</form>
+
+@if (item != null)
+{
+    <div class="card mb-3">
+        <div class="card-body d-flex flex-wrap gap-4 align-items-center">
+            <div>
+                <div class="fw-600 fs-6">@item.Name <span class="chip ms-1">@item.Category</span></div>
+                <div class="text-xs text-muted mono">@(item.SKU ?? "no SKU") · supplier: @(item.SupplierName ?? "—")</div>
+            </div>
+            <div><div class="text-xs text-muted">On hand</div><div class="fw-600">@Fmt.Num(item.Quantity, 2) @unit</div></div>
+            <div><div class="text-xs text-muted">Re-order level</div><div class="fw-600">@Fmt.Num(item.MinimumLevel, 2) @unit</div></div>
+            <div><div class="text-xs text-muted">Unit cost</div><div class="fw-600">@Fmt.Money(item.UnitCost, 2)</div></div>
+            <div><span class="badge @Fmt.Badge(item.StockStatus)">@item.StockStatus</span></div>
+            @if (canEdit)
+            {
+                <div class="ms-auto d-flex gap-2">
+                    <a asp-action="Edit" asp-route-id="@item.Id" class="btn btn-sm btn-outline-secondary"><i class="bi bi-pencil me-1"></i>Edit item</a>
+                    <a asp-controller="Purchase" asp-action="Create" asp-route-itemId="@item.Id" class="btn btn-sm btn-primary"><i class="bi bi-cart-plus me-1"></i>Create PO</a>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+<div class="stat-grid">
+    @if (item != null)
+    {
+        <div class="stat-tile tone-slate">
+            <div class="st-label">Opening balance</div>
+            <div class="st-value">@Fmt.Num(Model.OpeningBalance ?? 0, 2) <small class="text-muted fs-6">@unit</small></div>
+            <div class="st-sub">@(Model.From.HasValue ? "as of " + Fmt.Date(Model.From) : "before first movement")</div>
+            <div class="st-icon"><i class="bi bi-skip-start"></i></div>
+        </div>
+    }
+    <div class="stat-tile tone-green">
+        <div class="st-label">Total IN</div>
+        <div class="st-value">@Fmt.Num(Model.TotalIn, 2) <small class="text-muted fs-6">@unit</small></div>
+        <div class="st-sub">Value @Fmt.Money(Model.ValueIn)</div>
+        <div class="st-icon"><i class="bi bi-box-arrow-in-down"></i></div>
+    </div>
+    <div class="stat-tile tone-amber">
+        <div class="st-label">Total OUT</div>
+        <div class="st-value">@Fmt.Num(Model.TotalOut, 2) <small class="text-muted fs-6">@unit</small></div>
+        <div class="st-sub">Value @Fmt.Money(Model.ValueOut)</div>
+        <div class="st-icon"><i class="bi bi-box-arrow-up"></i></div>
+    </div>
+    @if (item != null)
+    {
+        <div class="stat-tile tone-blue">
+            <div class="st-label">Closing balance</div>
+            <div class="st-value">@Fmt.Num(Model.ClosingBalance ?? 0, 2) <small class="text-muted fs-6">@unit</small></div>
+            <div class="st-sub">@(Model.To.HasValue ? "as of " + Fmt.Date(Model.To) : "current")</div>
+            <div class="st-icon"><i class="bi bi-skip-end"></i></div>
+        </div>
+    }
+    else
+    {
+        <div class="stat-tile tone-blue">
+            <div class="st-label">Movements</div>
+            <div class="st-value">@Model.Entries.Count</div>
+            <div class="st-sub">Select an item to see balances</div>
+            <div class="st-icon"><i class="bi bi-arrow-left-right"></i></div>
+        </div>
+    }
+</div>
+
+@if (item != null && chartRows.Count > 1)
+{
+    <div class="card mb-3">
+        <div class="card-header"><h6><i class="bi bi-graph-up text-primary me-2"></i>Balance over time</h6></div>
+        <div class="card-body"><div style="height:220px"><canvas id="balChart"></canvas></div></div>
+    </div>
+}
+
+<div class="card">
+    <div class="card-header">
+        <h6><i class="bi bi-journal-text text-primary me-2"></i>Movements</h6>
+        <input type="search" class="form-control form-control-sm" style="width:200px" placeholder="Filter rows…" data-table-filter="#ledgerTbl" />
+    </div>
+    @if (Model.Entries.Count == 0)
+    {
+        <div class="empty-state"><i class="bi bi-journal"></i>No stock movements for this selection.</div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-hover table-sm mb-0" id="ledgerTbl">
+                <thead><tr><th>Date</th>@if (item == null) { <th>Item</th> }<th>Type</th><th class="text-end">In</th><th class="text-end">Out</th><th class="text-end">Balance</th><th class="text-end">Unit cost</th><th class="text-end">Value</th><th>Farm / batch</th><th>Reference</th><th>Reason</th><th>By</th></tr></thead>
+                <tbody>
+                @foreach (var e in Model.Entries)
+                {
+                    <tr>
+                        <td class="text-nowrap">@Fmt.Date(e.TxnDate)</td>
+                        @if (item == null)
+                        {
+                            <td><a asp-action="Ledger" asp-route-itemId="@e.ItemId" class="text-reset fw-600">@e.ItemName</a><div class="text-xs text-muted">@e.Category</div></td>
+                        }
+                        <td><span class="badge @(e.TxnType == "IN" ? "badge-healthy" : "badge-warning-soft")">@e.TxnType</span></td>
+                        <td class="text-end text-success">@(e.TxnType == "IN" ? Fmt.Num(e.Quantity, 2) : "")</td>
+                        <td class="text-end text-danger">@(e.TxnType == "OUT" ? Fmt.Num(e.Quantity, 2) : "")</td>
+                        <td class="text-end fw-600 @(e.RunningBalance < 0 ? "text-danger" : "")">@Fmt.Num(e.RunningBalance, 2) <span class="text-xs text-muted">@e.Unit</span></td>
+                        <td class="text-end">@Fmt.Money(e.UnitCost, 2)</td>
+                        <td class="text-end">@Fmt.Money(e.Value)</td>
+                        <td class="small">@(e.FarmName ?? "Central store")@if (!string.IsNullOrEmpty(e.BatchCode)) { <span class="chip ms-1">@e.BatchCode</span> }</td>
+                        <td class="mono">
+                            @if (!string.IsNullOrEmpty(e.Reference) && e.Reference.StartsWith("PO-"))
+                            {
+                                <a asp-controller="Purchase" asp-action="Index" asp-route-q="@e.Reference">@e.Reference</a>
+                            }
+                            else { @(e.Reference ?? "—") }
+                        </td>
+                        <td class="small text-muted">@(e.Reason ?? "—")</td>
+                        <td class="small text-muted">@(e.CreatedBy ?? "—")</td>
+                    </tr>
+                }
+                </tbody>
+                <tfoot>
+                    <tr><td colspan="@(item == null ? 3 : 2)">Totals (@Model.Entries.Count movements)</td><td class="text-end">@Fmt.Num(Model.TotalIn, 2)</td><td class="text-end">@Fmt.Num(Model.TotalOut, 2)</td><td class="text-end">@(item != null ? Fmt.Num(Model.ClosingBalance ?? 0, 2) : "")</td><td></td><td class="text-end">@Fmt.Money(Model.ValueIn - Model.ValueOut)</td><td colspan="4" class="text-xs text-muted">net value</td></tr>
+                </tfoot>
+            </table>
+        </div>
+    }
+</div>
+
+@section Scripts {
+@if (item != null && chartRows.Count > 1)
+{
+<script>
+new Chart(document.getElementById('balChart'), {
+    type: 'line',
+    data: {
+        labels: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(chartRows.Select(e => e.TxnDate.ToString("dd MMM")))),
+        datasets: [
+            { label: 'Balance (@unit)', data: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(chartRows.Select(e => e.RunningBalance))), borderColor: ppColors.blue, backgroundColor: ppColors.blueSoft, fill: true, stepped: true, pointRadius: 2 },
+            { label: 'Re-order level', data: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(chartRows.Select(e => item.MinimumLevel))), borderColor: ppColors.red, borderDash: [5, 4], pointRadius: 0, fill: false }
+        ]
+    },
+    options: { plugins: { legend: { position: 'top' } }, scales: { y: { beginAtZero: true } } }
+});
+</script>
+}
+}

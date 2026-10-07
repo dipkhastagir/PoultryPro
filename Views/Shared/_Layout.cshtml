@@ -1,0 +1,206 @@
+@using PoultryPro.Infrastructure
+@inject IAlertService AlertSvc
+@{
+    var ctrl = ViewContext.RouteData.Values["controller"]?.ToString() ?? "";
+    var act  = ViewContext.RouteData.Values["action"]?.ToString() ?? "";
+    int openAlerts = 0;
+    try { openAlerts = await AlertSvc.CountOpenAsync(); } catch { }
+
+    string Active(string c, string? a = null) =>
+        string.Equals(ctrl, c, StringComparison.OrdinalIgnoreCase) && (a == null || string.Equals(act, a, StringComparison.OrdinalIgnoreCase)) ? "active" : "";
+
+    bool Can(string roles) => User.IsAny(roles);
+    var all = string.Join(",", Roles.All);
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"] — PoultryPro</title>
+    <link rel="icon" href="~/img/favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/css/bootstrap.min.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css" />
+    @await RenderSectionAsync("Head", required: false)
+    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
+</head>
+<body>
+
+<div class="app-wrapper">
+
+    <!-- ═══════════════ SIDEBAR ═══════════════ -->
+    <nav class="sidebar" id="sidebar">
+        <div class="sidebar-brand">
+            <div class="brand-icon"><i class="bi bi-egg-fried"></i></div>
+            <div>
+                <div class="brand-name">PoultryPro</div>
+                <div class="brand-sub">Precision Poultry Platform</div>
+            </div>
+        </div>
+
+        <div class="sidebar-section" data-key="overview">
+            <div class="sidebar-section-label">Overview <i class="bi bi-chevron-down chev"></i></div>
+            <a asp-controller="Dashboard" asp-action="Index" class="nav-link @Active("Dashboard")"><i class="bi bi-speedometer2"></i> Dashboard</a>
+            <a asp-controller="Alerts" asp-action="Index" class="nav-link @Active("Alerts")"><i class="bi bi-bell"></i> Early-Warning Alerts
+                @if (openAlerts > 0) { <span class="nav-count">@openAlerts</span> }</a>
+            <a asp-controller="Calendar" asp-action="Index" class="nav-link @Active("Calendar")"><i class="bi bi-calendar3"></i> Farm Calendar</a>
+            <a asp-controller="Tasks" asp-action="Index" class="nav-link @Active("Tasks")"><i class="bi bi-kanban"></i> Tasks</a>
+        </div>
+
+        <div class="sidebar-section" data-key="farm">
+            <div class="sidebar-section-label">Farm Operations <i class="bi bi-chevron-down chev"></i></div>
+            <a asp-controller="Farm" asp-action="Index" class="nav-link @(Active("Farm") != "" && act != "Map" ? "active" : "")"><i class="bi bi-house-gear"></i> Farms</a>
+            <a asp-controller="Farm" asp-action="Map" class="nav-link @Active("Farm", "Map")"><i class="bi bi-map"></i> Farm Map</a>
+            <a asp-controller="Batch" asp-action="Index" class="nav-link @Active("Batch")"><i class="bi bi-collection"></i> Flocks / Batches</a>
+            <a asp-controller="Bird" asp-action="Index" class="nav-link @Active("Bird")"><i class="bi bi-feather"></i> Bird Management</a>
+            <a asp-controller="DailyRecord" asp-action="Index" class="nav-link @Active("DailyRecord")"><i class="bi bi-journal-text"></i> Daily Records</a>
+            @if (Can(Roles.Operations + "," + Roles.Viewer))
+            {
+                <a asp-controller="Visit" asp-action="Index" class="nav-link @Active("Visit")"><i class="bi bi-geo-alt"></i> Field Visits</a>
+                <a asp-controller="FieldOfficers" asp-action="Index" class="nav-link @Active("FieldOfficers")"><i class="bi bi-person-badge"></i> Field Officers</a>
+            }
+        </div>
+
+        <div class="sidebar-section" data-key="health">
+            <div class="sidebar-section-label">Health &amp; Welfare <i class="bi bi-chevron-down chev"></i></div>
+            <a asp-controller="Health" asp-action="Index" class="nav-link @Active("Health")"><i class="bi bi-heart-pulse"></i> Health Monitoring</a>
+            <a asp-controller="VaccineSchedule" asp-action="Index" class="nav-link @Active("VaccineSchedule")"><i class="bi bi-eyedropper"></i> Vaccine Programmes</a>
+            <a asp-controller="Biosecurity" asp-action="Index" class="nav-link @Active("Biosecurity")"><i class="bi bi-shield-check"></i> Biosecurity Audits</a>
+            <a asp-controller="DiseaseLibrary" asp-action="Index" class="nav-link @Active("DiseaseLibrary")"><i class="bi bi-book"></i> Disease Library</a>
+        </div>
+
+        <div class="sidebar-section" data-key="production">
+            <div class="sidebar-section-label">Production &amp; IoT <i class="bi bi-chevron-down chev"></i></div>
+            <a asp-controller="EggProduction" asp-action="Index" class="nav-link @Active("EggProduction")"><i class="bi bi-egg"></i> Egg Production</a>
+            <a asp-controller="Feed" asp-action="Index" class="nav-link @Active("Feed")"><i class="bi bi-basket"></i> Feed Formulations</a>
+            <a asp-controller="Sensors" asp-action="Index" class="nav-link @Active("Sensors")"><i class="bi bi-cpu"></i> IoT Sensors</a>
+            <a asp-controller="Trace" asp-action="Index" class="nav-link @Active("Trace")"><i class="bi bi-qr-code"></i> Traceability</a>
+        </div>
+
+        <div class="sidebar-section" data-key="intel">
+            <div class="sidebar-section-label">Intelligence &amp; Research <i class="bi bi-chevron-down chev"></i></div>
+            <a asp-controller="Analytics" asp-action="Index" class="nav-link @Active("Analytics", "Index")"><i class="bi bi-graph-up-arrow"></i> Analytics Hub</a>
+            <a asp-controller="Analytics" asp-action="GrowthCurve" class="nav-link @Active("Analytics", "GrowthCurve")"><i class="bi bi-activity"></i> Growth vs Standard</a>
+            <a asp-controller="Analytics" asp-action="RiskScore" class="nav-link @Active("Analytics", "RiskScore")"><i class="bi bi-radar"></i> Flock Risk Score</a>
+            <a asp-controller="Analytics" asp-action="Forecast" class="nav-link @Active("Analytics", "Forecast")"><i class="bi bi-magic"></i> Harvest Forecast</a>
+            <a asp-controller="Trials" asp-action="Index" class="nav-link @Active("Trials")"><i class="bi bi-clipboard2-data"></i> Field Trials</a>
+            <a asp-controller="Research" asp-action="Index" class="nav-link @Active("Research")"><i class="bi bi-database-down"></i> Research Data</a>
+            <a asp-controller="BreedStandards" asp-action="Index" class="nav-link @Active("BreedStandards")"><i class="bi bi-rulers"></i> Breed Standards</a>
+        </div>
+
+        @if (Can(Roles.Finance + "," + Roles.Viewer))
+        {
+            <div class="sidebar-section" data-key="business">
+                <div class="sidebar-section-label">Business <i class="bi bi-chevron-down chev"></i></div>
+                <a asp-controller="Inventory" asp-action="Index" class="nav-link @Active("Inventory")"><i class="bi bi-box-seam"></i> Inventory</a>
+                <a asp-controller="Purchase" asp-action="Index" class="nav-link @Active("Purchase")"><i class="bi bi-truck"></i> Purchase Orders</a>
+                <a asp-controller="Supplier" asp-action="Index" class="nav-link @Active("Supplier")"><i class="bi bi-buildings"></i> Suppliers</a>
+                <a asp-controller="Market" asp-action="Index" class="nav-link @(Active("Market") != "" && !act.Contains("Customer") ? "active" : "")"><i class="bi bi-cart3"></i> Sales Orders</a>
+                <a asp-controller="Market" asp-action="Customers" class="nav-link @(Active("Market") != "" && act.Contains("Customer") ? "active" : "")"><i class="bi bi-people"></i> Customers</a>
+                <a asp-controller="Finance" asp-action="Index" class="nav-link @(Active("Finance") != "" && !act.Contains("Budget") ? "active" : "")"><i class="bi bi-cash-coin"></i> Finance</a>
+                <a asp-controller="Finance" asp-action="Budget" class="nav-link @(Active("Finance") != "" && act.Contains("Budget") ? "active" : "")"><i class="bi bi-pie-chart"></i> Budgets</a>
+            </div>
+        }
+
+        <div class="sidebar-section" data-key="people">
+            <div class="sidebar-section-label">People &amp; Reports <i class="bi bi-chevron-down chev"></i></div>
+            <a asp-controller="Employee" asp-action="Index" class="nav-link @Active("Employee")"><i class="bi bi-person-vcard"></i> Employees</a>
+            @if (Can(Roles.Finance))
+            {
+                <a asp-controller="Attendance" asp-action="Index" class="nav-link @Active("Attendance")"><i class="bi bi-calendar-check"></i> Attendance</a>
+                <a asp-controller="Payroll" asp-action="Index" class="nav-link @Active("Payroll")"><i class="bi bi-wallet2"></i> Payroll</a>
+            }
+            <a asp-controller="Reports" asp-action="Index" class="nav-link @Active("Reports")"><i class="bi bi-file-earmark-bar-graph"></i> Reports</a>
+        </div>
+
+        @if (Can(Roles.Admin))
+        {
+            <div class="sidebar-section" data-key="admin">
+                <div class="sidebar-section-label">Administration <i class="bi bi-chevron-down chev"></i></div>
+                <a asp-controller="Users" asp-action="Index" class="nav-link @Active("Users")"><i class="bi bi-person-lock"></i> Users &amp; Roles</a>
+                <a asp-controller="AuditLog" asp-action="Index" class="nav-link @Active("AuditLog")"><i class="bi bi-clock-history"></i> Audit Log</a>
+                <a asp-controller="Settings" asp-action="Index" class="nav-link @Active("Settings")"><i class="bi bi-sliders"></i> Settings</a>
+            </div>
+        }
+        <div class="sidebar-footer">
+            <a asp-controller="Home" asp-action="About" class="text-reset text-decoration-none"><i class="bi bi-info-circle me-1"></i>About PoultryPro v2.0</a>
+        </div>
+    </nav>
+
+    <!-- ═══════════════ MAIN ═══════════════ -->
+    <div class="main-content">
+        <div class="topbar">
+            <div class="topbar-left">
+                <button class="sidebar-toggle d-lg-none" onclick="toggleSidebar()"><i class="bi bi-list"></i></button>
+                <div>
+                    <h5 class="topbar-title mb-0">@ViewData["Title"]</h5>
+                    <small class="text-muted">@ViewData["Subtitle"]</small>
+                </div>
+            </div>
+            <div class="topbar-right">
+                <form asp-controller="Search" asp-action="Index" method="get" class="topbar-search">
+                    <i class="bi bi-search"></i>
+                    <input name="q" class="form-control" placeholder="Search batches, farms, orders…" value="@Context.Request.Query["q"]" />
+                </form>
+                <a asp-controller="Alerts" asp-action="Index" class="icon-btn" title="Alerts">
+                    <i class="bi bi-bell"></i>
+                    @if (openAlerts > 0) { <span class="dot">@(openAlerts > 99 ? "99+" : openAlerts.ToString())</span> }
+                </a>
+                <div class="dropdown">
+                    <div class="user-chip" data-bs-toggle="dropdown">
+                        <div class="avatar">@User.Initials()</div>
+                        <div class="d-none d-md-block">
+                            <div class="uc-name">@User.FullName()</div>
+                            <div class="uc-role">@User.Role()</div>
+                        </div>
+                        <i class="bi bi-chevron-down text-muted" style="font-size:11px"></i>
+                    </div>
+                    <ul class="dropdown-menu dropdown-menu-end shadow-sm" style="font-size:13px">
+                        <li><span class="dropdown-item-text text-muted text-xs">Signed in as <b>@User.UserName()</b></span></li>
+                        <li><a class="dropdown-item" asp-controller="Account" asp-action="Profile"><i class="bi bi-person me-2"></i>My profile</a></li>
+                        <li><a class="dropdown-item" asp-controller="Account" asp-action="ChangePassword"><i class="bi bi-key me-2"></i>Change password</a></li>
+                        <li><hr class="dropdown-divider" /></li>
+                        <li>
+                            <form asp-controller="Account" asp-action="Logout" method="post">
+                                @Html.AntiForgeryToken()
+                                <button class="dropdown-item text-danger"><i class="bi bi-box-arrow-right me-2"></i>Sign out</button>
+                            </form>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="page-content">
+            @RenderBody()
+        </div>
+    </div>
+</div>
+
+<div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+
+<div class="toast-stack">
+    @if (TempData["Success"] != null)
+    {
+        <div class="pp-toast" data-autohide><i class="bi bi-check-circle-fill text-success"></i>@TempData["Success"]</div>
+    }
+    @if (TempData["Error"] != null)
+    {
+        <div class="pp-toast error" data-autohide><i class="bi bi-exclamation-triangle-fill"></i>@TempData["Error"]</div>
+    }
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="~/js/site.js" asp-append-version="true"></script>
+<script>
+function toggleSidebar() {
+    document.getElementById('sidebar').classList.toggle('open');
+    document.getElementById('sidebarOverlay').classList.toggle('show');
+}
+</script>
+@await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

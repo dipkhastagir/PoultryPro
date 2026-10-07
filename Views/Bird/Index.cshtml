@@ -1,0 +1,65 @@
+@model List<Batch>
+@{
+    ViewData["Title"] = "Bird Management";
+    ViewData["Subtitle"] = "Batches, breeds, weight tracking and mortality";
+    var canWrite = User.IsAny(Roles.AdminOrManager + "," + Roles.Veterinarian);
+    var logs = ((ViewBag.MortalityLogs as IEnumerable<MortalityLog>)?.ToList() ?? new List<MortalityLog>());
+}
+
+<div class="section-header">
+    <h5 class="section-title">Active Batches</h5>
+    @if (canWrite)
+    {
+        <a asp-action="Create" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg me-1"></i>New Batch</a>
+    }
+</div>
+
+<div class="card mb-4">
+    <div class="table-responsive">
+        <table class="table table-hover mb-0">
+            <thead>
+                <tr>
+                    <th>Batch</th><th>Breed</th><th>Farm</th>
+                    <th>Count</th><th>Mortality</th><th>Age</th>
+                    <th>Avg Weight</th><th>FCR</th><th>Status</th><th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var b in Model)
+                {
+                    <tr>
+                        <td><a asp-action="Detail" asp-route-id="@b.Id" class="fw-semibold text-decoration-none">@b.BatchCode</a></td>
+                        <td>@b.Breed</td>
+                        <td><small class="text-muted">@b.FarmName</small></td>
+                        <td>@b.CurrentCount.ToString("N0")</td>
+                        <td>
+                            <span class="@(b.MortalityRate > 2 ? "text-danger fw-semibold" : "")">
+                                @b.MortalityCount (@b.MortalityRate%)
+                            </span>
+                        </td>
+                        <td>@b.AgeInDays d</td>
+                        <td>@b.AverageWeightKg kg</td>
+                        <td>@b.FCR</td>
+                        <td>
+                            @{
+                                var cls = b.HealthStatus switch {
+                                    "Healthy" => "badge-healthy",
+                                    "Ready for Sale" => "badge-ready",
+                                    "Vaccination Due" => "badge-warning-soft",
+                                    _ => "badge-info-soft"
+                                };
+                            }
+                            <span class="badge @cls">@b.HealthStatus</span>
+                        </td>
+                        <td>
+                            <a asp-action="Detail" asp-route-id="@b.Id" class="btn btn-xs btn-outline-primary"><i class="bi bi-eye"></i></a>
+                            @if (canWrite) { <a asp-action="Edit" asp-route-id="@b.Id" class="btn btn-xs btn-outline-secondary"><i class="bi bi-pencil"></i></a> }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+

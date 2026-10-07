@@ -1,0 +1,145 @@
+@model FieldOfficerEditVm
+@{
+    ViewData["Title"] = "Edit Field Officer";
+    var allFarms = ViewBag.AllFarms as IEnumerable<Farm> ?? new List<Farm>();
+}
+
+<div class="row justify-content-center">
+<div class="col-lg-8">
+<div class="form-card">
+    <h6 class="fw-semibold mb-4">
+        <i class="bi bi-person-gear text-primary me-2"></i>Edit Field Officer
+    </h6>
+
+    <form asp-action="Edit" method="post">
+        @Html.AntiForgeryToken()
+        <input type="hidden" asp-for="Id" />
+
+        <!-- Personal Info -->
+        <div class="mb-3" style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">
+            Personal Information
+        </div>
+        <div class="row g-3 mb-4">
+            <div class="col-md-6">
+                <label class="form-label">Full Name *</label>
+                <input asp-for="FullName" class="form-control" required />
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Designation</label>
+                <select asp-for="Designation" class="form-select">
+                    <option>Field Officer</option>
+                    <option>Senior Field Officer</option>
+                    <option>Area Manager</option>
+                    <option>Veterinary Officer</option>
+                    <option>Technical Officer</option>
+                </select>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Phone</label>
+                <input asp-for="Phone" class="form-control" placeholder="017XXXXXXXX" />
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Zone / Area</label>
+                <input asp-for="Zone" class="form-control" placeholder="e.g. Dhaka North" />
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Email</label>
+                <input asp-for="Email" type="email" class="form-control" />
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Account Status</label>
+                <select asp-for="IsActive" class="form-select">
+                    <option value="True">Active</option>
+                    <option value="False">Inactive</option>
+                </select>
+            </div>
+        </div>
+
+        <hr class="my-3" />
+
+        <!-- Credentials -->
+        <div class="mb-3" style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">
+            Login Credentials
+        </div>
+        <div class="row g-3 mb-4">
+            <div class="col-md-6">
+                <label class="form-label">Username *</label>
+                <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-person"></i></span>
+                    <input asp-for="Username" class="form-control" required />
+                </div>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">New Password <small class="text-muted fw-normal">(leave blank to keep current)</small></label>
+                <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-lock"></i></span>
+                    <input asp-for="NewPassword" type="password" class="form-control"
+                           placeholder="Leave blank to keep current" autocomplete="new-password" />
+                    <button type="button" class="btn btn-outline-secondary"
+                            onclick="togglePwd(this)" tabindex="-1">
+                        <i class="bi bi-eye"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <hr class="my-3" />
+
+        <!-- Farm Assignments -->
+        <div class="mb-3" style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">
+            Farm Assignments
+        </div>
+        <div class="mb-4">
+            <div class="form-text mb-2">Currently assigned farms (uncheck to remove):</div>
+            <div class="row g-2">
+                @foreach (var farm in allFarms)
+                {
+                    <div class="col-md-6">
+                        <div class="form-check farm-check-card p-3 border rounded"
+                             style="cursor:pointer"
+                             onclick="if (event.target === this) this.querySelector('input').click()">
+                            <input class="form-check-input" type="checkbox"
+                                   name="AssignedFarmIds" value="@farm.Id"
+                                   id="farm_@farm.Id"
+                                   @(Model.AssignedFarmIds.Contains(farm.Id) ? "checked" : "") />
+                            <label class="form-check-label w-100 ms-1" for="farm_@farm.Id" style="cursor:pointer">
+                                <div class="fw-semibold" style="font-size:13px">@farm.Name</div>
+                                <small class="text-muted">
+                                    <i class="bi bi-geo-alt me-1"></i>@farm.Location
+                                    &nbsp;·&nbsp;Capacity: @farm.Capacity.ToString("N0")
+                                </small>
+                            </label>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary">
+                <i class="bi bi-check-lg me-1"></i>Save Changes
+            </button>
+            <a asp-action="Index" class="btn btn-outline-secondary">Cancel</a>
+        </div>
+    </form>
+</div>
+</div>
+</div>
+
+@section Scripts {
+<script>
+function togglePwd(btn) {
+    const input = btn.previousElementSibling;
+    const isText = input.type === 'text';
+    input.type = isText ? 'password' : 'text';
+    btn.querySelector('i').className = isText ? 'bi bi-eye' : 'bi bi-eye-slash';
+}
+</script>
+<style>
+.farm-check-card:has(input:checked) {
+    border-color: var(--primary) !important;
+    background: var(--primary-light);
+}
+.farm-check-card:hover { border-color: var(--primary) !important; }
+</style>
+}

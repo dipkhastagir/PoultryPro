@@ -1,0 +1,127 @@
+@model List<FieldTrial>
+@{
+    var canEdit = User.IsAny(Roles.Health);
+    int Count(string s) => Model.Count(t => t.Status == s);
+}
+
+<div class="page-head">
+    <div>
+        <h4><i class="bi bi-clipboard2-pulse me-2"></i>Field Trials</h4>
+        <p>Controlled on-farm experiments: one treatment flock versus one control flock, compared with Welch t-tests on age-aligned daily data.</p>
+    </div>
+    @if (canEdit)
+    {
+        <a asp-action="Create" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg me-1"></i>Register trial</a>
+    }
+</div>
+
+<div class="stat-grid">
+    <div class="stat-tile tone-blue">
+        <div class="st-label">Running</div>
+        <div class="st-value">@Count("Running")</div>
+        <div class="st-sub">collecting data</div>
+        <div class="st-icon"><i class="bi bi-play-circle"></i></div>
+    </div>
+    <div class="stat-tile tone-amber">
+        <div class="st-label">Planned</div>
+        <div class="st-value">@Count("Planned")</div>
+        <div class="st-sub">not yet started</div>
+        <div class="st-icon"><i class="bi bi-calendar-event"></i></div>
+    </div>
+    <div class="stat-tile tone-green">
+        <div class="st-label">Completed</div>
+        <div class="st-value">@Count("Completed")</div>
+        <div class="st-sub">with conclusion</div>
+        <div class="st-icon"><i class="bi bi-check2-circle"></i></div>
+    </div>
+    <div class="stat-tile tone-slate">
+        <div class="st-label">Abandoned</div>
+        <div class="st-value">@Count("Abandoned")</div>
+        <div class="st-sub">stopped early</div>
+        <div class="st-icon"><i class="bi bi-x-circle"></i></div>
+    </div>
+</div>
+
+<div class="card mb-3">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h6 class="mb-0">All trials</h6>
+        @if (Model.Count > 0) { <input class="form-control form-control-sm" style="max-width:220px" placeholder="Search trials…" data-table-filter="#tblTrials" /> }
+    </div>
+    @if (Model.Count == 0)
+    {
+        <div class="card-body">
+            <div class="empty-state">
+                <i class="bi bi-clipboard2-pulse"></i>
+                <p>No field trials yet. Register one to compare an intervention (e.g. a probiotic, new feed, ventilation change) against a control flock.</p>
+                @if (canEdit) { <a asp-action="Create" class="btn btn-primary btn-sm">Register the first trial</a> }
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0" id="tblTrials">
+                <thead>
+                    <tr><th>Trial</th><th>Treatment flock</th><th>Control flock</th><th>Primary metric</th><th>Period</th><th>Status</th><th></th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var t in Model)
+                    {
+                        <tr>
+                            <td>
+                                <a asp-action="Detail" asp-route-id="@t.Id" class="fw-600 text-decoration-none">@t.TrialCode</a>
+                                <div class="small">@t.Title</div>
+                                @if (!string.IsNullOrEmpty(t.Intervention)) { <div class="text-xs text-muted text-truncate" style="max-width:320px">@t.Intervention</div> }
+                            </td>
+                            <td class="small">
+                                <a asp-controller="Batch" asp-action="Detail" asp-route-id="@t.TreatmentBatchId" class="mono text-decoration-none">@t.TreatmentBatchCode</a>
+                                <div class="text-xs text-muted">@t.TreatmentBreed · @t.TreatmentFarmName</div>
+                            </td>
+                            <td class="small">
+                                <a asp-controller="Batch" asp-action="Detail" asp-route-id="@t.ControlBatchId" class="mono text-decoration-none">@t.ControlBatchCode</a>
+                                <div class="text-xs text-muted">@t.ControlBreed · @t.ControlFarmName</div>
+                            </td>
+                            <td><span class="chip">@t.PrimaryMetric</span></td>
+                            <td class="small text-nowrap">@Fmt.Date(t.StartDate)<div class="text-xs text-muted">→ @(t.EndDate.HasValue ? Fmt.Date(t.EndDate) : "open")</div></td>
+                            <td><span class="badge @Fmt.Badge(t.Status)">@t.Status</span></td>
+                            <td class="text-end text-nowrap">
+                                <a asp-action="Detail" asp-route-id="@t.Id" class="btn btn-xs btn-outline-primary"><i class="bi bi-bar-chart me-1"></i>Analyse</a>
+                                @if (canEdit) { <a asp-action="Edit" asp-route-id="@t.Id" class="btn btn-xs btn-outline-secondary"><i class="bi bi-pencil"></i></a> }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+<div class="row g-3">
+    <div class="col-lg-7">
+        <div class="card h-100">
+            <div class="card-header"><h6 class="mb-0">Statistical method</h6></div>
+            <div class="card-body small">
+                <p class="mb-2">Daily observations of both flocks are aligned by <strong>age in days</strong>, and only ages recorded in both flocks are compared.
+                    Daily weight gain, daily mortality % and daily feed intake are tested with Welch's unequal-variance t-test:</p>
+                <div class="formula mb-2">t = (x̄₁ − x̄₂) / √(s₁²/n₁ + s₂²/n₂) &nbsp;&nbsp; df ≈ (s₁²/n₁ + s₂²/n₂)² / [ (s₁²/n₁)²/(n₁−1) + (s₂²/n₂)²/(n₂−1) ]</div>
+                <p class="mb-0">A result is called significant when the two-sided p &lt; 0.05. Effect size is reported as Cohen's d
+                    (0.2 small, 0.5 medium, 0.8 large). The primary-metric effect is checked against any numeric threshold written in the
+                    hypothesis (e.g. “reduces FCR by 3%” or “raises EPEF by 20 points”).</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-5">
+        <div class="card h-100">
+            <div class="card-header"><h6 class="mb-0">Good trial design</h6></div>
+            <div class="card-body small">
+                <ul class="ps-3 mb-2">
+                    <li>Same breed, hatchery and placement week for both flocks.</li>
+                    <li>Change <em>one</em> factor only (the intervention).</li>
+                    <li>State the hypothesis with a measurable threshold before data are seen.</li>
+                    <li>Record daily weights — they power the t-tests.</li>
+                </ul>
+                <div class="warn-callout text-xs mb-0">Single-flock comparisons have one experimental unit per arm; replicate across several pens or cycles before publishing causal claims.</div>
+            </div>
+        </div>
+    </div>
+</div>

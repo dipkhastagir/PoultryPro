@@ -1,0 +1,253 @@
+@model List<InventoryItem>
+@{
+    var categories = ((ViewBag.Categories as IEnumerable<string>)?.ToList() ?? new List<string>());
+    var farms = ((ViewBag.Farms as IEnumerable<Farm>)?.ToList() ?? new List<Farm>());
+    var valueByCat = ((ViewBag.ValueByCategory as IEnumerable<(string Category, decimal Value)>)?.ToList() ?? new List<(string Category, decimal Value)>());
+    string? selCat = ViewBag.SelectedCategory;
+    string? selStatus = ViewBag.SelectedStatus;
+    var canEdit = User.IsAny(Roles.Finance);
+    var lowItems = Model.Where(i => i.StockStatus != "In Stock").ToList();
+}
+
+<div class="stat-grid">
+    <div class="stat-tile tone-blue">
+        <div class="st-label">Stock items</div>
+        <div class="st-value">@ViewBag.AllCount</div>
+        <div class="st-sub">@categories.Count categories</div>
+        <div class="st-icon"><i class="bi bi-box-seam"></i></div>
+    </div>
+    <div class="stat-tile tone-amber">
+        <div class="st-label">Low / out of stock</div>
+        <div class="st-value">@ViewBag.LowCount</div>
+        <div class="st-sub">@ViewBag.OutCount completely out</div>
+        <div class="st-icon"><i class="bi bi-exclamation-triangle"></i></div>
+    </div>
+    <div class="stat-tile tone-red">
+        <div class="st-label">Expiring ≤ 30 days</div>
+        <div class="st-value">@ViewBag.ExpiringCount</div>
+        <div class="st-sub">Use first (FEFO)</div>
+        <div class="st-icon"><i class="bi bi-calendar-x"></i></div>
+    </div>
+    <div class="stat-tile tone-green">
+        <div class="st-label">Stock value @(selCat != null || selStatus != null ? "(filtered)" : "")</div>
+        <div class="st-value">@Fmt.MoneyShort((decimal)ViewBag.TotalValue)</div>
+        <div class="st-sub">At current unit cost</div>
+        <div class="st-icon"><i class="bi bi-cash-stack"></i></div>
+    </div>
+</div>
+
+<form method="get" class="filter-bar">
+    <div class="d-flex gap-1 flex-wrap">
+        <a asp-action="Index" class="btn btn-sm @(selCat == null && selStatus == null ? "btn-primary" : "btn-outline-secondary")">All</a>
+        @foreach (var cat in categories)
+        {
+            <a asp-action="Index" asp-route-category="@cat" asp-route-status="@selStatus" class="btn btn-sm @(selCat == cat ? "btn-primary" : "btn-outline-secondary")">@cat</a>
+        }
+        <a asp-action="Index" asp-route-status="low" asp-route-category="@selCat" class="btn btn-sm @(selStatus == "low" ? "btn-warning" : "btn-outline-warning")"><i class="bi bi-exclamation-triangle me-1"></i>Low stock</a>
+        <a asp-action="Index" asp-route-status="expiring" asp-route-category="@selCat" class="btn btn-sm @(selStatus == "expiring" ? "btn-danger" : "btn-outline-danger")"><i class="bi bi-calendar-x me-1"></i>Expiring</a>
+    </div>
+    <div class="ms-auto d-flex gap-2">
+        <input type="hidden" name="category" value="@selCat" />
+        <input type="hidden" name="status" value="@selStatus" />
+        <input type="search" name="q" value="@ViewBag.Q" class="form-control" placeholder="Name, SKU, supplier…" style="width:200px" />
+        <a asp-action="Ledger" class="btn btn-outline-secondary btn-sm text-nowrap"><i class="bi bi-journal-text me-1"></i>Stock ledger</a>
+        @if (canEdit)
+        {
+            <a asp-controller="Purchase" asp-action="Create" class="btn btn-outline-primary btn-sm text-nowrap"><i class="bi bi-truck me-1"></i>New PO</a>
+            <a asp-action="Create" class="btn btn-primary btn-sm text-nowrap"><i class="bi bi-plus-lg me-1"></i>Add item</a>
+        }
+    </div>
+</form>
+
+@if (lowItems.Count > 0 && canEdit)
+{
+    <div class="warn-callout mb-3 d-flex flex-wrap align-items-center gap-2">
+        <i class="bi bi-exclamation-triangle-fill"></i>
+        <strong>@lowItems.Count item(s) at or below re-order level:</strong>
+        @foreach (var li in lowItems.Take(6))
+        {
+            <a asp-controller="Purchase" asp-action="Create" asp-route-itemId="@li.Id" class="chip text-decoration-none" title="Create purchase order"><i class="bi bi-cart-plus"></i>@li.Name</a>
+        }
+        @if (lowItems.Count > 6) { <span class="text-xs">+@(lowItems.Count - 6) more</span> }
+    </div>
+}
+
+<div class="row g-4">
+    <div class="col-xl-9">
+        <div class="card">
+            @if (Model.Count == 0)
+            {
+                <div class="empty-state"><i class="bi bi-box"></i>No items match this filter.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0 align-middle">
+                        <thead>
+                            <tr><th>Item</th><th>Category</th><th class="text-end">On hand</th><th class="text-end">Min</th><th>Expiry</th><th>Supplier</th><th class="text-end">Unit cost</th><th class="text-end">Value</th><th>Status</th><th></th></tr>
+                        </thead>
+                        <tbody>
+                        @foreach (var item in Model)
+                        {
+                            var pct = item.MinimumLevel > 0 ? (int)Math.Min(100m, item.Quantity / (item.MinimumLevel * 2) * 100) : 100;
+                            <tr>
+                                <td>
+                                    <a asp-action="Ledger" asp-route-itemId="@item.Id" class="fw-600 text-reset text-decoration-none">@item.Name</a>
+                                    <div class="text-xs mono text-muted">@(item.SKU ?? "no SKU")</div>
+                                </td>
+                                <td><span class="chip">@item.Category</span></td>
+                                <td class="text-end" style="min-width:110px">
+                                    <div class="fw-600">@Fmt.Num(item.Quantity, item.Quantity % 1 == 0 ? 0 : 2) <span class="text-muted text-xs">@item.Unit</span></div>
+                                    <div class="prog-bar-wrap mt-1"><div class="prog-bar-fill @(item.StockStatus == "Out of Stock" ? "danger" : item.StockStatus == "Low Stock" ? "warning" : "")" style="width:@pct%"></div></div>
+                                </td>
+                                <td class="text-end text-muted">@Fmt.Num(item.MinimumLevel, item.MinimumLevel % 1 == 0 ? 0 : 2)</td>
+                                <td>
+                                    @if (item.ExpiryDate.HasValue)
+                                    {
+                                        <div class="small">@Fmt.Date(item.ExpiryDate)</div>
+                                        @if (item.IsExpired) { <span class="badge badge-danger-soft">Expired</span> }
+                                        else if (item.IsExpiringSoon) { <span class="badge badge-warning-soft">@item.DaysToExpiry d left</span> }
+                                    }
+                                    else { <span class="text-muted">—</span> }
+                                </td>
+                                <td>
+                                    @if (item.SupplierId.HasValue)
+                                    {
+                                        <a asp-controller="Supplier" asp-action="Detail" asp-route-id="@item.SupplierId" class="small text-reset">@item.SupplierName</a>
+                                    }
+                                    else { <span class="text-muted small">—</span> }
+                                </td>
+                                <td class="text-end">@Fmt.Money(item.UnitCost, 2)</td>
+                                <td class="text-end">@Fmt.Money(item.TotalValue)</td>
+                                <td><span class="badge @Fmt.Badge(item.StockStatus)">@item.StockStatus</span></td>
+                                <td class="text-end text-nowrap">
+                                    <a asp-action="Ledger" asp-route-itemId="@item.Id" class="btn btn-xs btn-outline-secondary" title="Stock ledger"><i class="bi bi-journal-text"></i></a>
+                                    @if (canEdit)
+                                    {
+                                        <button type="button" class="btn btn-xs btn-outline-success adj-btn" data-id="@item.Id" data-name="@item.Name" data-type="IN" data-unit="@item.Unit" data-qty="@item.Quantity.ToString(System.Globalization.CultureInfo.InvariantCulture)" title="Stock IN"><i class="bi bi-plus-circle"></i></button>
+                                        <button type="button" class="btn btn-xs btn-outline-warning adj-btn" data-id="@item.Id" data-name="@item.Name" data-type="OUT" data-unit="@item.Unit" data-qty="@item.Quantity.ToString(System.Globalization.CultureInfo.InvariantCulture)" title="Stock OUT / issue"><i class="bi bi-dash-circle"></i></button>
+                                        @if (item.StockStatus != "In Stock")
+                                        {
+                                            <a asp-controller="Purchase" asp-action="Create" asp-route-itemId="@item.Id" class="btn btn-xs btn-primary" title="Create purchase order"><i class="bi bi-cart-plus"></i> PO</a>
+                                        }
+                                        <a asp-action="Edit" asp-route-id="@item.Id" class="btn btn-xs btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></a>
+                                        <form asp-action="Delete" method="post" class="d-inline" data-confirm="Delete @item.Name and its stock history?">
+                                            <input type="hidden" name="id" value="@item.Id" />
+                                            <button class="btn btn-xs btn-outline-danger" title="Delete"><i class="bi bi-trash"></i></button>
+                                        </form>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                        </tbody>
+                        <tfoot><tr><td colspan="7">@Model.Count item(s)</td><td class="text-end">@Fmt.Money(Model.Sum(i => i.TotalValue))</td><td colspan="2"></td></tr></tfoot>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+    <div class="col-xl-3">
+        <div class="card">
+            <div class="card-header"><h6><i class="bi bi-pie-chart text-primary me-2"></i>Value by category</h6></div>
+            <div class="card-body">
+                @if (valueByCat.Count == 0 || valueByCat.Sum(v => v.Value) == 0)
+                {
+                    <div class="empty-state py-3"><i class="bi bi-pie-chart"></i>No stock value yet.</div>
+                }
+                else
+                {
+                    <div style="height:220px"><canvas id="valChart"></canvas></div>
+                    <table class="table table-sm mt-3 mb-0 small">
+                        @foreach (var v in valueByCat)
+                        {
+                            <tr><td>@v.Category</td><td class="text-end">@Fmt.MoneyShort(v.Value)</td></tr>
+                        }
+                    </table>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (canEdit)
+{
+    <div class="modal fade" id="adjustModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <form asp-action="StockAdjust" method="post">
+                    <input type="hidden" name="itemId" id="adjustItemId" />
+                    <input type="hidden" name="type" id="adjustType" />
+                    <input type="hidden" name="returnUrl" value="@(Context.Request.Path + Context.Request.QueryString)" />
+                    <div class="modal-header">
+                        <h6 class="modal-title" id="adjustTitle">Stock adjustment</h6>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="text-xs text-muted mb-2" id="adjustOnHand"></div>
+                        <div class="row g-2">
+                            <div class="col-6">
+                                <label class="form-label">Quantity *</label>
+                                <div class="input-group">
+                                    <input type="number" name="qty" id="adjustQty" class="form-control" step="0.01" min="0.01" required />
+                                    <span class="input-group-text" id="adjustUnit"></span>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label">Farm</label>
+                                <select name="farmId" class="form-select">
+                                    <option value="">Central store</option>
+                                    @foreach (var f in farms) { <option value="@f.Id">@f.Name</option> }
+                                </select>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">Reason</label>
+                                <input type="text" name="reason" id="adjustReason" class="form-control" maxlength="200" list="reasonList" />
+                                <datalist id="reasonList">
+                                    <option value="Stock received"></option><option value="Issued to shed"></option><option value="Used in vaccination"></option>
+                                    <option value="Damaged / spoiled"></option><option value="Expired — written off"></option><option value="Transfer between farms"></option><option value="Stock count correction"></option>
+                                </datalist>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">Reference</label>
+                                <input type="text" name="reference" class="form-control" maxlength="60" placeholder="Challan / batch / requisition no." />
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-sm btn-primary">Post movement</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+}
+
+@section Scripts {
+<script>
+document.querySelectorAll('.adj-btn').forEach(b => b.addEventListener('click', () =>
+    openAdjust(b.dataset.id, b.dataset.name, b.dataset.type, b.dataset.unit, b.dataset.qty)));
+function openAdjust(id, name, type, unit, onHand) {
+    document.getElementById('adjustItemId').value = id;
+    document.getElementById('adjustType').value = type;
+    document.getElementById('adjustUnit').textContent = unit;
+    document.getElementById('adjustTitle').textContent = (type === 'IN' ? 'Stock IN — ' : 'Stock OUT — ') + name;
+    document.getElementById('adjustOnHand').textContent = 'On hand: ' + Number(onHand).toLocaleString() + ' ' + unit;
+    const qty = document.getElementById('adjustQty');
+    qty.value = ''; qty.max = type === 'OUT' ? onHand : '';
+    document.getElementById('adjustReason').value = type === 'IN' ? 'Stock received' : 'Issued to shed';
+    new bootstrap.Modal(document.getElementById('adjustModal')).show();
+}
+@if (valueByCat.Count > 0 && valueByCat.Sum(v => v.Value) > 0)
+{
+    <text>
+    new Chart(document.getElementById('valChart'), {
+        type: 'doughnut',
+        data: { labels: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(valueByCat.Select(v => v.Category))),
+                datasets: [{ data: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(valueByCat.Select(v => v.Value))), backgroundColor: ppColors.series, borderWidth: 0 }] },
+        options: { cutout: '62%', plugins: { legend: { position: 'bottom' }, tooltip: { callbacks: { label: c => c.label + ': ' + ppMoney(c.raw) } } } }
+    });
+    </text>
+}
+</script>
+}

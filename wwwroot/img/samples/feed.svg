@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="420" viewBox="0 0 640 420">
+<defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#b45309" stop-opacity=".18"/><stop offset="1" stop-color="#b45309" stop-opacity=".45"/></linearGradient></defs>
+<rect width="640" height="420" fill="#f8fafc"/><rect width="640" height="420" fill="url(#g)"/>
+<rect x="60" y="250" width="520" height="16" rx="8" fill="#64748b"/><g transform="translate(90,200)"><path d="M0 50 L20 0 L60 0 L80 50 Z" fill="#f59e0b"/><ellipse cx="40" cy="52" rx="44" ry="10" fill="#b45309"/></g><g transform="translate(210,200)"><path d="M0 50 L20 0 L60 0 L80 50 Z" fill="#f59e0b"/><ellipse cx="40" cy="52" rx="44" ry="10" fill="#b45309"/></g><g transform="translate(330,200)"><path d="M0 50 L20 0 L60 0 L80 50 Z" fill="#f59e0b"/><ellipse cx="40" cy="52" rx="44" ry="10" fill="#b45309"/></g><g transform="translate(450,200)"><path d="M0 50 L20 0 L60 0 L80 50 Z" fill="#f59e0b"/><ellipse cx="40" cy="52" rx="44" ry="10" fill="#b45309"/></g><rect x="80" y="110" width="140" height="70" rx="8" fill="#fde68a"/><text x="100" y="152" font-family="Arial" font-size="20" fill="#92400e">FEED 50kg</text>
+<rect x="0" y="372" width="640" height="48" fill="#0f172a" opacity=".72"/>
+<text x="20" y="403" font-family="Segoe UI, Arial" font-size="18" fill="#fff">Feeder line · sample field photo</text>
+</svg>

@@ -1,0 +1,302 @@
+@model TrialDetailVm
+@{
+    var t = Model.Trial;
+    var T = Model.Treatment;
+    var C = Model.Control;
+    var canEdit = User.IsAny(Roles.Health);
+    var isOpen = t.Status is "Running" or "Planned";
+    var primary = Model.Metrics.FirstOrDefault(m => m.IsPrimary);
+    var gainTest = Model.Tests.FirstOrDefault();
+    var commonDays = Model.Tests.Count > 1 ? Math.Min(Model.Tests[1].NTreatment, Model.Tests[1].NControl) : 0;
+    var hasSeries = Model.Ages.Count > 0 && (Model.WeightT.Any(v => v.HasValue) || Model.WeightC.Any(v => v.HasValue) || Model.CumMortT.Any(v => v.HasValue));
+    var supported = Model.HypothesisVerdict.StartsWith("Supported");
+    var notSupported = Model.HypothesisVerdict.StartsWith("Not");
+}
+
+<div class="page-head">
+    <div>
+        <a asp-action="Index" class="text-xs text-decoration-none no-print"><i class="bi bi-arrow-left me-1"></i>All trials</a>
+        <h4 class="mt-1"><span class="mono">@t.TrialCode</span> <span class="badge @Fmt.Badge(t.Status) ms-1">@t.Status</span></h4>
+        <p>@t.Title</p>
+    </div>
+    <div class="d-flex gap-2 no-print">
+        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="window.print()"><i class="bi bi-printer me-1"></i>Print</button>
+        @if (canEdit)
+        {
+            <a asp-action="Edit" asp-route-id="@t.Id" class="btn btn-outline-secondary btn-sm"><i class="bi bi-pencil me-1"></i>Edit</a>
+            @if (isOpen)
+            {
+                <a href="#closeTrial" class="btn btn-primary btn-sm"><i class="bi bi-flag me-1"></i>Close trial</a>
+            }
+        }
+    </div>
+</div>
+
+<div class="row g-3 mb-3">
+    <div class="col-lg-7">
+        <div class="card h-100">
+            <div class="card-header"><h6 class="mb-0">Protocol</h6></div>
+            <div class="card-body">
+                <dl class="kv mb-0">
+                    <dt>Objective</dt><dd>@(t.Objective ?? "—")</dd>
+                    <dt>Hypothesis</dt><dd>@(t.Hypothesis ?? "—")</dd>
+                    <dt>Intervention</dt><dd>@(t.Intervention ?? "—")</dd>
+                    <dt>Primary metric</dt><dd><span class="chip">@t.PrimaryMetric</span> <span class="text-xs text-muted">(@Model.PrimaryDirection)</span></dd>
+                    <dt>Period</dt><dd>@Fmt.Date(t.StartDate) → @(t.EndDate.HasValue ? Fmt.Date(t.EndDate) : "open")</dd>
+                    <dt>Investigator</dt><dd>@(t.PrincipalInvestigator ?? "—")</dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-5">
+        <div class="card h-100">
+            <div class="card-header"><h6 class="mb-0">Flocks</h6></div>
+            <div class="card-body">
+                <div class="d-flex gap-3 mb-3">
+                    <div class="avatar" style="background:#0d9e75;color:#fff"><i class="bi bi-capsule"></i></div>
+                    <div>
+                        <div class="text-xs text-muted">Treatment</div>
+                        <a asp-controller="Batch" asp-action="Detail" asp-route-id="@t.TreatmentBatchId" class="fw-600 mono text-decoration-none">@t.TreatmentBatchCode</a>
+                        <div class="small">@t.TreatmentBreed · @t.TreatmentFarmName</div>
+                        @if (T != null) { <div class="text-xs text-muted">Placed @Fmt.Date(T.PlacementDate) · day @T.AgeInDays · @Fmt.Num(T.InitialCount) chicks · @(T.IsActive ? "active" : "closed")</div> }
+                    </div>
+                </div>
+                <div class="d-flex gap-3">
+                    <div class="avatar" style="background:#64748b;color:#fff"><i class="bi bi-dash-circle"></i></div>
+                    <div>
+                        <div class="text-xs text-muted">Control</div>
+                        <a asp-controller="Batch" asp-action="Detail" asp-route-id="@t.ControlBatchId" class="fw-600 mono text-decoration-none">@t.ControlBatchCode</a>
+                        <div class="small">@t.ControlBreed · @t.ControlFarmName</div>
+                        @if (C != null) { <div class="text-xs text-muted">Placed @Fmt.Date(C.PlacementDate) · day @C.AgeInDays · @Fmt.Num(C.InitialCount) chicks · @(C.IsActive ? "active" : "closed")</div> }
+                    </div>
+                </div>
+                @if (t.TreatmentBreed != t.ControlBreed)
+                {
+                    <div class="warn-callout text-xs mt-3 mb-0">Flocks are of different breeds; breed is confounded with the treatment.</div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (T == null || C == null)
+{
+    <div class="card"><div class="card-body"><div class="empty-state"><i class="bi bi-exclamation-circle"></i>
+        <p class="mb-0">Performance data for one of the flocks could not be loaded.</p></div></div></div>
+}
+else
+{
+    <div class="stat-grid">
+        <div class="stat-tile tone-violet">
+            <div class="st-label">Primary: @t.PrimaryMetric</div>
+            <div class="st-value">@(primary != null ? AnalyticsUi.D(primary.Treatment, primary.Decimals) : "—")</div>
+            <div class="st-sub">control @(primary != null ? AnalyticsUi.D(primary.Control, primary.Decimals) : "—")</div>
+            <div class="st-icon"><i class="bi bi-bullseye"></i></div>
+        </div>
+        <div class="stat-tile @(primary?.ImprovementPct > 0 ? "tone-green" : primary?.ImprovementPct < 0 ? "tone-red" : "tone-slate")">
+            <div class="st-label">Improvement vs control</div>
+            <div class="st-value">@AnalyticsUi.Signed(primary?.ImprovementPct, 1, "%")</div>
+            <div class="st-sub">positive = treatment better</div>
+            <div class="st-icon"><i class="bi bi-arrow-up-right"></i></div>
+        </div>
+        <div class="stat-tile tone-blue">
+            <div class="st-label">Age-matched days</div>
+            <div class="st-value">@commonDays</div>
+            <div class="st-sub">observations per arm</div>
+            <div class="st-icon"><i class="bi bi-calendar2-range"></i></div>
+        </div>
+        <div class="stat-tile @(gainTest?.Significant == true ? "tone-green" : "tone-amber")">
+            <div class="st-label">Weight-gain test</div>
+            <div class="st-value">p = @(gainTest != null && gainTest.NTreatment >= 2 && gainTest.NControl >= 2 ? AnalyticsUi.PValue(gainTest.P) : "—")</div>
+            <div class="st-sub">@(gainTest?.Significant == true ? "significant at α = 0.05" : "not significant")</div>
+            <div class="st-icon"><i class="bi bi-calculator"></i></div>
+        </div>
+    </div>
+
+    <div class="@(supported ? "info-callout" : notSupported ? "warn-callout" : "info-callout") mb-3">
+        <strong><i class="bi @(supported ? "bi-check2-circle" : "bi-clipboard-data") me-1"></i>Hypothesis check:</strong> @Model.HypothesisVerdict
+    </div>
+
+    <div class="row g-3 mb-3">
+        <div class="col-xl-5">
+            <div class="card h-100">
+                <div class="card-header"><h6 class="mb-0">Side-by-side performance</h6></div>
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead><tr><th>Metric</th><th class="text-end">Treatment</th><th class="text-end">Control</th><th class="text-end">Δ</th><th class="text-end">Better?</th></tr></thead>
+                        <tbody>
+                            @foreach (var m in Model.Metrics)
+                            {
+                                var imp = m.ImprovementPct;
+                                <tr class="@(m.IsPrimary ? "table-active" : "")">
+                                    <td>@m.Metric @if (m.IsPrimary) { <span class="badge badge-ready ms-1">primary</span> }
+                                        @if (!string.IsNullOrEmpty(m.Unit)) { <span class="text-xs text-muted">(@m.Unit)</span> }</td>
+                                    <td class="text-end fw-600">@AnalyticsUi.D(m.Treatment, m.Decimals)</td>
+                                    <td class="text-end">@AnalyticsUi.D(m.Control, m.Decimals)</td>
+                                    <td class="text-end text-xs">@AnalyticsUi.Signed(m.Diff, m.Decimals)<div class="text-muted">@AnalyticsUi.Signed(m.DiffPct, 1, "%")</div></td>
+                                    <td class="text-end">
+                                        @if (m.Metric == "Age" || !imp.HasValue || Math.Abs(imp.Value) < 0.5)
+                                        {
+                                            <span class="text-muted">—</span>
+                                        }
+                                        else if (imp > 0)
+                                        {
+                                            <i class="bi bi-arrow-up-circle-fill text-success" title="Treatment better"></i>
+                                        }
+                                        else
+                                        {
+                                            <i class="bi bi-arrow-down-circle-fill text-danger" title="Treatment worse"></i>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div class="card-body pt-2 text-xs text-muted">Δ = treatment − control. Arrows account for direction (lower FCR / mortality / intake is better).</div>
+            </div>
+        </div>
+        <div class="col-xl-7">
+            <div class="card mb-3">
+                <div class="card-header"><h6 class="mb-0">Body weight by age</h6></div>
+                <div class="card-body">
+                    @if (hasSeries)
+                    {
+                        <div style="height:240px"><canvas id="wChart"></canvas></div>
+                    }
+                    else
+                    {
+                        <div class="empty-state"><i class="bi bi-graph-up"></i><p class="mb-0">No daily records yet for these flocks.</p></div>
+                    }
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-header"><h6 class="mb-0">Cumulative mortality by age (%)</h6></div>
+                <div class="card-body">
+                    @if (hasSeries)
+                    {
+                        <div style="height:200px"><canvas id="mChart"></canvas></div>
+                    }
+                    else
+                    {
+                        <div class="empty-state"><i class="bi bi-activity"></i><p class="mb-0">No mortality data yet.</p></div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-header"><h6 class="mb-0">Welch two-sample t-tests (age-aligned daily data)</h6></div>
+        <div class="table-responsive">
+            <table class="table align-middle mb-0">
+                <thead>
+                    <tr><th>Variable</th><th class="text-end">n (T / C)</th><th class="text-end">Mean ± SD treatment</th><th class="text-end">Mean ± SD control</th>
+                        <th class="text-end">t</th><th class="text-end">df</th><th class="text-end">p</th><th class="text-end">Cohen's d</th><th>Interpretation</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var r in Model.Tests)
+                    {
+                        var dec = r.Unit.StartsWith("%") ? 3 : 1;
+                        var ok = r.NTreatment >= 2 && r.NControl >= 2;
+                        <tr>
+                            <td class="fw-600">@r.Variable<div class="text-xs text-muted fw-normal">@r.Unit</div></td>
+                            <td class="text-end">@r.NTreatment / @r.NControl</td>
+                            <td class="text-end mono">@(ok ? r.MeanTreatment.ToString("N" + dec) + " ± " + r.SdTreatment.ToString("N" + dec) : "—")</td>
+                            <td class="text-end mono">@(ok ? r.MeanControl.ToString("N" + dec) + " ± " + r.SdControl.ToString("N" + dec) : "—")</td>
+                            <td class="text-end mono">@(ok ? r.T.ToString("0.00") : "—")</td>
+                            <td class="text-end mono">@(ok ? r.Df.ToString("0.0") : "—")</td>
+                            <td class="text-end">@if (ok) { <span class="badge @(r.Significant ? "badge-healthy" : "badge-gray")">@AnalyticsUi.PValue(r.P)</span> } else { <span>—</span> }</td>
+                            <td class="text-end mono">@(ok ? r.CohensD.ToString("0.00") : "—")</td>
+                            <td class="small">@r.Interpretation</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-7">
+                    <div class="formula small">t = (x̄<sub>T</sub> − x̄<sub>C</sub>) / √(s<sub>T</sub>²/n<sub>T</sub> + s<sub>C</sub>²/n<sub>C</sub>) &nbsp;·&nbsp; d = (x̄<sub>T</sub> − x̄<sub>C</sub>) / √((s<sub>T</sub>² + s<sub>C</sub>²)/2)</div>
+                </div>
+                <div class="col-md-5 small">
+                    <strong>How to read this:</strong> p is the probability of seeing a difference at least this large if the intervention had no effect.
+                    p &lt; 0.05 → unlikely to be chance. Daily values within a flock are correlated, so treat p-values as indicative and confirm with replicated trials.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-3" id="closeTrial">
+        <div class="col-lg-@(canEdit && isOpen ? "7" : "12")">
+            <div class="card h-100">
+                <div class="card-header"><h6 class="mb-0">@(string.IsNullOrEmpty(t.Conclusion) ? "Auto-drafted summary" : "Conclusion")</h6></div>
+                <div class="card-body">
+                    @if (!string.IsNullOrEmpty(t.Conclusion))
+                    {
+                        <p class="mb-3" style="white-space:pre-line">@t.Conclusion</p>
+                        <div class="text-xs text-muted mb-1">Current automated summary (for reference):</div>
+                    }
+                    <p class="small text-muted mb-0">@Model.DraftConclusion</p>
+                </div>
+            </div>
+        </div>
+        @if (canEdit && isOpen)
+        {
+            <div class="col-lg-5 no-print">
+                <div class="card h-100">
+                    <div class="card-header"><h6 class="mb-0">Close this trial</h6></div>
+                    <div class="card-body">
+                        <form asp-action="Complete" method="post" data-confirm="Close trial @t.TrialCode? Status and conclusion will be saved.">
+                            <input type="hidden" name="id" value="@t.Id" />
+                            <label class="form-label small">Outcome</label>
+                            <select name="status" class="form-select form-select-sm mb-2">
+                                <option value="Completed">Completed</option>
+                                <option value="Abandoned">Abandoned</option>
+                            </select>
+                            <label class="form-label small">Conclusion *</label>
+                            <textarea name="conclusion" class="form-control form-control-sm mb-2" rows="6" required>@Model.DraftConclusion</textarea>
+                            <div class="form-text mb-2">Pre-filled from the analysis — edit before saving.</div>
+                            <button class="btn btn-primary btn-sm"><i class="bi bi-flag me-1"></i>Save &amp; close trial</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@section Scripts {
+@if (T != null && C != null && hasSeries)
+{
+<script>
+(function () {
+    const ages = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Ages));
+    const wT = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.WeightT));
+    const wC = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.WeightC));
+    const mT = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.CumMortT));
+    const mC = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.CumMortC));
+    const tName = @Html.Raw(System.Text.Json.JsonSerializer.Serialize("Treatment · " + t.TreatmentBatchCode));
+    const cName = @Html.Raw(System.Text.Json.JsonSerializer.Serialize("Control · " + t.ControlBatchCode));
+    const common = { maintainAspectRatio: false, spanGaps: true, interaction: { mode: 'index', intersect: false },
+                     plugins: { legend: { position: 'bottom', labels: { boxWidth: 10 } } } };
+    new Chart(document.getElementById('wChart'), {
+        type: 'line',
+        data: { labels: ages, datasets: [
+            { label: tName, data: wT, borderColor: ppColors.green, backgroundColor: ppColors.green, pointRadius: 2, tension: .3 },
+            { label: cName, data: wC, borderColor: ppColors.slate, backgroundColor: ppColors.slate, pointRadius: 2, borderDash: [5, 4], tension: .3 }
+        ] },
+        options: { ...common, scales: { x: { title: { display: true, text: 'Age (days)' } }, y: { beginAtZero: true, title: { display: true, text: 'Avg weight (g)' } } } }
+    });
+    new Chart(document.getElementById('mChart'), {
+        type: 'line',
+        data: { labels: ages, datasets: [
+            { label: tName, data: mT, borderColor: ppColors.red, backgroundColor: ppColors.redSoft, fill: true, pointRadius: 0, stepped: true },
+            { label: cName, data: mC, borderColor: ppColors.slate, pointRadius: 0, borderDash: [5, 4], stepped: true }
+        ] },
+        options: { ...common, scales: { x: { title: { display: true, text: 'Age (days)' } }, y: { beginAtZero: true, title: { display: true, text: 'Cum. mortality %' } } } }
+    });
+})();
+</script>
+}
+}

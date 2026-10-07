@@ -1,0 +1,174 @@
+@model EfficiencyVm
+@using System.Text.Json
+@{
+    var rows = Model.Rows;
+    var ranked = rows.Where(r => r.EPEF > 0).ToList();
+    var chartLabels = ranked.Select(r => r.BatchCode).ToList();
+    var chartEpef = ranked.Select(r => Math.Round(r.EPEF, 1)).ToList();
+    var chartFcr = ranked.Select(r => r.FCR > 0 ? Math.Round(r.FCR, 3) : (decimal?)null).ToList();
+    var chartColors = ranked.Select(r => AnalyticsUi.EpefColor(r.EPEF)).ToList();
+    var best = ranked.FirstOrDefault();
+    int rank = 0;
+}
+
+<partial name="_AnalyticsNav" />
+
+<div class="page-head">
+    <div>
+        <h4>EPEF ranking — all meat flocks</h4>
+        <p>Active and closed broiler / Sonali flocks ranked by the European Production Efficiency Factor. Layer flocks are excluded (judged on egg output).</p>
+    </div>
+    <div class="d-flex gap-2 align-items-center">
+        <input type="search" class="form-control form-control-sm" placeholder="Filter flocks…" data-table-filter="#tblEff" style="width:200px" />
+    </div>
+</div>
+
+<div class="stat-grid">
+    <div class="stat-tile tone-violet">
+        <div class="st-label">Mean EPEF</div>
+        <div class="st-value">@(Model.MeanEpef > 0 ? Fmt.Num(Model.MeanEpef, 0) : "—")</div>
+        <div class="st-sub">median @(Model.MedianEpef > 0 ? Fmt.Num(Model.MedianEpef, 0) : "—") · @ranked.Count flock(s) scored</div>
+        <div class="st-icon"><i class="bi bi-trophy"></i></div>
+    </div>
+    <div class="stat-tile tone-blue">
+        <div class="st-label">Mean FCR</div>
+        <div class="st-value">@(Model.MeanFcr > 0 ? Fmt.Num(Model.MeanFcr, 2) : "—")</div>
+        <div class="st-sub">kg feed ÷ kg live weight</div>
+        <div class="st-icon"><i class="bi bi-arrow-left-right"></i></div>
+    </div>
+    <div class="stat-tile tone-green">
+        <div class="st-label">Excellent (&gt; 400)</div>
+        <div class="st-value">@Model.Excellent</div>
+        <div class="st-sub">@(best != null ? $"best: {best.BatchCode} ({Fmt.Num(best.EPEF, 0)})" : "no scored flock")</div>
+        <div class="st-icon"><i class="bi bi-award"></i></div>
+    </div>
+    <div class="stat-tile tone-amber">
+        <div class="st-label">Good (300–400)</div>
+        <div class="st-value">@Model.Good</div>
+        <div class="st-sub">commercially acceptable</div>
+        <div class="st-icon"><i class="bi bi-hand-thumbs-up"></i></div>
+    </div>
+    <div class="stat-tile tone-red">
+        <div class="st-label">Poor (&lt; 300)</div>
+        <div class="st-value">@Model.Poor</div>
+        <div class="st-sub">includes flocks without data</div>
+        <div class="st-icon"><i class="bi bi-hand-thumbs-down"></i></div>
+    </div>
+</div>
+
+@if (rows.Count == 0)
+{
+    <div class="card"><div class="empty-state"><i class="bi bi-trophy"></i>No meat flocks yet. EPEF is calculated once a broiler or Sonali flock has feed records and at least one weighing.</div></div>
+}
+else
+{
+    <div class="row g-3 mb-3">
+        <div class="col-xl-8">
+            <div class="card h-100">
+                <div class="card-header"><h6 class="mb-0"><i class="bi bi-bar-chart me-1"></i>EPEF (bars) and FCR (line) by flock</h6></div>
+                <div class="card-body">
+                    @if (ranked.Count == 0)
+                    {
+                        <div class="empty-state"><i class="bi bi-bar-chart"></i>No flock has enough data for EPEF yet.</div>
+                    }
+                    else
+                    {
+                        <div style="height:320px"><canvas id="chEff"></canvas></div>
+                    }
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-4">
+            <div class="card h-100">
+                <div class="card-header"><h6 class="mb-0"><i class="bi bi-calculator me-1"></i>Method</h6></div>
+                <div class="card-body">
+                    <div class="formula mb-2">EPEF = L × W × 100 ÷ (A × FCR)</div>
+                    <div class="text-xs text-muted mb-3">
+                        L = livability % (alive ÷ placed × 100) · W = mean live weight (kg) · A = age (days; age at closing for closed flocks) ·
+                        FCR = total feed (kg) ÷ live mass (kg).
+                    </div>
+                    <div class="formula mb-2">ADG = W(g) ÷ A</div>
+                    <div class="info-callout text-xs">
+                        <b>How to read this.</b> EPEF combines survival, growth speed and feed efficiency in one number, so a higher value is
+                        better. Bands: <span class="badge badge-healthy">&gt; 400 excellent</span> <span class="badge badge-ready">300–400 good</span>
+                        <span class="badge badge-danger-soft">&lt; 300 poor</span>. The FCR line should move opposite to EPEF; a flock with good EPEF but
+                        high FCR is winning on speed or livability, not on feed efficiency. Compare active flocks with caution — EPEF of a young flock
+                        rises as it approaches market age.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header"><h6 class="mb-0"><i class="bi bi-list-ol me-1"></i>Ranking table</h6></div>
+        <div class="table-responsive">
+            <table class="table table-hover mb-0" id="tblEff">
+                <thead>
+                    <tr><th>#</th><th>Flock</th><th>Farm</th><th>Breed</th><th>Status</th><th class="text-end">Age (d)</th><th class="text-end">Livability</th>
+                        <th class="text-end">Live wt (kg)</th><th class="text-end">Feed (kg)</th><th class="text-end">FCR</th><th class="text-end">ADG (g)</th><th class="text-end">EPEF</th><th>Band</th></tr>
+                </thead>
+                <tbody>
+                @foreach (var r in rows)
+                {
+                    rank++;
+                    <tr>
+                        <td class="text-muted">@(r.EPEF > 0 ? rank.ToString() : "—")</td>
+                        <td><a asp-controller="Batch" asp-action="Detail" asp-route-id="@r.Id" class="fw-600 text-decoration-none">@r.BatchCode</a></td>
+                        <td>@r.FarmName</td>
+                        <td>@r.Breed <span class="text-xs text-muted">@r.BatchType</span></td>
+                        <td><span class="badge @(r.IsActive ? "badge-info-soft" : "badge-gray")">@(r.IsActive ? "Active" : "Closed")</span></td>
+                        <td class="text-end">@r.AgeInDays</td>
+                        <td class="text-end">@Fmt.Pct(r.LivabilityPct)</td>
+                        <td class="text-end">@(r.AverageWeightKg > 0 ? Fmt.Num(r.AverageWeightKg, 3) : "—")</td>
+                        <td class="text-end">@Fmt.Num(r.TotalFeedKg, 0)</td>
+                        <td class="text-end">@(r.FCR > 0 ? Fmt.Num(r.FCR, 2) : "—")</td>
+                        <td class="text-end">@(r.AvgDailyGainGm > 0 ? Fmt.Num(r.AvgDailyGainGm, 1) : "—")</td>
+                        <td class="text-end fw-600" style="color:@AnalyticsUi.EpefColor(r.EPEF)">@(r.EPEF > 0 ? Fmt.Num(r.EPEF, 0) : "—")</td>
+                        <td>@if (r.EPEF > 0) { <span class="badge @AnalyticsUi.EpefBadge(r.EPEF)">@AnalyticsUi.EpefBand(r.EPEF)</span> } else { <span class="badge badge-gray">No data</span> }</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+@section Scripts {
+<script>
+(function () {
+    const el = document.getElementById('chEff');
+    if (!el) return;
+    const labels = @Html.Raw(JsonSerializer.Serialize(chartLabels));
+    const epef = @Html.Raw(JsonSerializer.Serialize(chartEpef));
+    const fcr = @Html.Raw(JsonSerializer.Serialize(chartFcr));
+    const colors = @Html.Raw(JsonSerializer.Serialize(chartColors));
+    new Chart(el, {
+        data: { labels, datasets: [
+            { type: 'line', label: 'FCR', data: fcr, yAxisID: 'y2', borderColor: ppColors.slate, backgroundColor: ppColors.slate, pointRadius: 3, borderWidth: 2, tension: .2, spanGaps: true },
+            { type: 'bar', label: 'EPEF', data: epef, yAxisID: 'y', backgroundColor: colors, borderRadius: 4 }
+        ] },
+        options: {
+            interaction: { mode: 'index', intersect: false },
+            scales: {
+                x: { grid: { display: false } },
+                y: { beginAtZero: true, title: { display: true, text: 'EPEF' } },
+                y2: { position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'FCR' } }
+            }
+        },
+        plugins: [{
+            id: 'bands', beforeDatasetsDraw(chart) {
+                const { ctx, chartArea: a, scales: { y } } = chart;
+                [[300, 'good'], [400, 'excellent']].forEach(([v, t]) => {
+                    if (v > y.max) return;
+                    const py = y.getPixelForValue(v);
+                    ctx.save(); ctx.setLineDash([4, 4]); ctx.strokeStyle = '#94a3b8';
+                    ctx.beginPath(); ctx.moveTo(a.left, py); ctx.lineTo(a.right, py); ctx.stroke();
+                    ctx.fillStyle = '#94a3b8'; ctx.font = '10px sans-serif'; ctx.fillText(v + ' ' + t, a.left + 4, py - 3); ctx.restore();
+                });
+            }
+        }]
+    });
+})();
+</script>
+}

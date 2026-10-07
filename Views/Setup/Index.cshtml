@@ -1,0 +1,35 @@
+@model DbStatus
+@{
+    Layout = "_AuthLayout";
+    ViewData["Title"] = "Database setup";
+}
+<div class="container py-5" style="max-width:860px">
+    <div class="d-flex align-items-center gap-2 mb-4">
+        <div class="brand-icon"><i class="bi bi-egg-fried"></i></div>
+        <div><div class="fw-bold">PoultryPro</div><div class="text-muted text-xs">Database connection required</div></div>
+    </div>
+    <div class="form-card">
+        <h4 class="fw-bold"><i class="bi bi-database-exclamation text-danger me-2"></i>SQL Server could not be reached</h4>
+        <p class="text-muted">PoultryPro creates its database automatically, but it first needs a running SQL Server instance.</p>
+        <div class="warn-callout mb-3"><b>Last error:</b> @Model.Error</div>
+
+        <h6 class="fw-semibold mt-4">How to fix</h6>
+        <ol style="font-size:14px">
+            <li>Open <b>SQL Server Management Studio</b> and note the <i>Server name</i> you connect with (for example <code>localhost</code>, <code>.\SQLEXPRESS</code> or <code>DESKTOP-ABC\SQLEXPRESS</code>).</li>
+            <li>Open <code>appsettings.json</code> in Visual Studio and put that server name in <code>ConnectionStrings:Default</code>, e.g.<br />
+                <code>Server=.\\SQLEXPRESS;Database=PoultryProDB;Trusted_Connection=True;TrustServerCertificate=True;</code></li>
+            <li>Make sure the <b>SQL Server (MSSQLSERVER / SQLEXPRESS)</b> service is running (Windows → Services).</li>
+            <li>Press <b>Retry</b> below (or restart the app). The database, tables, views and demo data are created automatically.</li>
+        </ol>
+        <p class="small text-muted mb-1">Configured connection string:</p>
+        <div class="formula mb-3">@ViewBag.Configured</div>
+
+        <form asp-action="Retry" method="post">
+            @Html.AntiForgeryToken()
+            <button class="btn btn-primary"><i class="bi bi-arrow-repeat me-1"></i>Retry connection</button>
+        </form>
+
+        <h6 class="fw-semibold mt-4">Start-up log</h6>
+        <pre class="formula" style="white-space:pre-wrap;max-height:260px;overflow:auto">@string.Join("\n", Model.Log)</pre>
+    </div>
+</div>

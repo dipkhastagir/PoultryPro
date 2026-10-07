@@ -1,0 +1,277 @@
+@model SensorReadingsVm
+@{
+    var epoch = new DateTime(1970, 1, 1);
+    var devicesInScope = Model.Devices.Where(d => !Model.FarmId.HasValue || d.FarmId == Model.FarmId).ToList();
+    var series = Model.Readings
+        .GroupBy(r => r.DeviceCode ?? ("#" + r.DeviceId))
+        .Select(g => new
+        {
+            label = g.Key + (string.IsNullOrEmpty(g.First().ShedNo) ? "" : " · " + g.First().ShedNo),
+            pts = g.Select(r => new
+            {
+                x = (long)(r.ReadingTime - epoch).TotalMilliseconds,
+                t = r.TemperatureC, h = r.HumidityPercent, thi = r.Thi, nh3 = r.AmmoniaPpm,
+                co2 = r.Co2Ppm, lux = r.LightLux, w = r.WaterFlowLtr, f = r.FeedLevelPct
+            }).ToList()
+        }).ToList();
+    var latestRows = Model.Readings.OrderByDescending(r => r.ReadingTime).Take(50).ToList();
+    var lastReading = latestRows.FirstOrDefault();
+    var heatBreaches = Model.Readings.Count(r => r.Thi >= Model.ThiWarning);
+    var canEdit = User.IsAny(Roles.AdminOrManager);
+    string Num(decimal? v, string fmt = "0.0") => v.HasValue ? v.Value.ToString(fmt) : "—";
+}
+
+<div class="page-head">
+    <div>
+        <a asp-action="Index" asp-route-farmId="@Model.FarmId" class="text-xs text-decoration-none"><i class="bi bi-arrow-left me-1"></i>All sensors</a>
+        <h4 class="mt-1">Sensor Readings</h4>
+        <p>@Fmt.Num(Model.Readings.Count) readings from @series.Count device(s)@(lastReading != null ? " · latest " + Fmt.Ago(lastReading.ReadingTime) : "")</p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+        <a asp-action="Export" asp-route-farmId="@Model.FarmId" asp-route-deviceId="@Model.DeviceId" asp-route-hours="@Model.Hours"
+           class="btn btn-sm btn-outline-secondary @(Model.Readings.Count == 0 ? "disabled" : "")"><i class="bi bi-filetype-csv me-1"></i>Export CSV</a>
+        @if (canEdit && Model.DeviceId.HasValue)
+        {
+            <form asp-action="Simulate" method="post" class="d-flex gap-1">
+                <input type="hidden" name="deviceId" value="@Model.DeviceId" />
+                <input type="hidden" name="returnTo" value="readings" />
+                <input type="hidden" name="count" value="6" />
+                <button class="btn btn-sm btn-outline-primary"><i class="bi bi-lightning me-1"></i>Simulate 6 readings</button>
+            </form>
+        }
+    </div>
+</div>
+
+<form method="get" class="filter-bar">
+    <div>
+        <label class="form-label">Farm</label>
+        <select name="farmId" class="form-select" onchange="this.form.deviceId.value='';this.form.submit()">
+            <option value="">All farms</option>
+            @foreach (var f in Model.Farms) { <option value="@f.Id" selected="@(Model.FarmId == f.Id)">@f.Name</option> }
+        </select>
+    </div>
+    <div>
+        <label class="form-label">Device</label>
+        <select name="deviceId" class="form-select" onchange="this.form.submit()">
+            <option value="">All devices</option>
+            @foreach (var d in devicesInScope) { <option value="@d.Id" selected="@(Model.DeviceId == d.Id)">@d.DeviceCode — @d.Name</option> }
+        </select>
+    </div>
+    <div>
+        <label class="form-label">Window</label>
+        <div class="btn-group btn-group-sm" role="group">
+            @foreach (var h in new[] { 24, 72, 168 })
+            {
+                <button type="submit" name="hours" value="@h" class="btn @(Model.Hours == h ? "btn-primary" : "btn-outline-secondary")">@(h == 168 ? "7 days" : h + " h")</button>
+            }
+        </div>
+    </div>
+    @if (Model.FarmId.HasValue || Model.DeviceId.HasValue)
+    {
+        <a asp-action="Readings" asp-route-hours="@Model.Hours" class="btn btn-sm btn-outline-secondary">Clear</a>
+    }
+    @* keeps the window when a dropdown submits; a clicked window button comes earlier in the form and wins *@
+    <input type="hidden" name="hours" value="@Model.Hours" />
+</form>
+
+@if (Model.Readings.Count == 0)
+{
+    <div class="card">
+        <div class="empty-state">
+            <i class="bi bi-activity"></i>
+            No readings in the selected window.
+            <div class="text-xs mt-1">Devices post to <code>/api/sensors/ingest</code>; you can also send a simulated reading from the <a asp-action="ApiDocs">integration guide</a>.</div>
+        </div>
+    </div>
+}
+else
+{
+    <div class="stat-grid">
+        @foreach (var s in Model.Stats.Take(4))
+        {
+            var tone = s.Limit.HasValue && s.Breaches > 0 ? "tone-red" : s.Metric == "THI" ? "tone-amber" : s.Metric == "Humidity" ? "tone-blue" : "tone-green";
+            <div class="stat-tile @tone">
+                <div class="st-label">@s.Metric avg</div>
+                <div class="st-value">@Num(s.Avg) <span class="text-xs text-muted">@s.Unit</span></div>
+                <div class="st-sub">min @Num(s.Min) · max @Num(s.Max)@(s.Limit.HasValue ? $" · {s.Breaches} ≥ {s.Limit:0}" : "")</div>
+                <div class="st-icon"><i class="bi @s.Icon"></i></div>
+            </div>
+        }
+    </div>
+
+    @if (heatBreaches > 0)
+    {
+        <div class="warn-callout mb-3">
+            <i class="bi bi-thermometer-sun me-1"></i>
+            <b>@heatBreaches</b> reading(s) (@Fmt.Pct((decimal)heatBreaches / Model.Readings.Count * 100)) were at or above the THI warning level of @Model.ThiWarning.ToString("0").
+            Consider tunnel ventilation, foggers and shifting feeding to cooler hours.
+        </div>
+    }
+
+    <div class="row g-4 mb-4">
+        <div class="col-xl-6">
+            <div class="card h-100">
+                <div class="card-header"><h6><i class="bi bi-thermometer-half text-primary me-2"></i>Temperature &amp; humidity</h6><span class="text-xs text-muted">solid °C · dashed %RH</span></div>
+                <div class="card-body"><div style="height:260px"><canvas id="chTempHum"></canvas></div></div>
+            </div>
+        </div>
+        <div class="col-xl-6">
+            <div class="card h-100">
+                <div class="card-header"><h6><i class="bi bi-sun text-primary me-2"></i>Temperature-Humidity Index</h6><span class="text-xs text-muted">warning @Model.ThiWarning.ToString("0") · critical @Model.ThiCritical.ToString("0")</span></div>
+                <div class="card-body"><div style="height:260px"><canvas id="chThi"></canvas></div></div>
+            </div>
+        </div>
+        <div class="col-xl-6">
+            <div class="card h-100">
+                <div class="card-header"><h6><i class="bi bi-wind text-primary me-2"></i>Ammonia (NH₃)</h6><span class="text-xs text-muted">limit @Model.AmmoniaLimit.ToString("0") ppm</span></div>
+                <div class="card-body"><div style="height:220px"><canvas id="chNh3"></canvas></div></div>
+            </div>
+        </div>
+        <div class="col-xl-6">
+            <div class="card h-100">
+                <div class="card-header"><h6><i class="bi bi-cloud-haze2 text-primary me-2"></i>Carbon dioxide (CO₂)</h6><span class="text-xs text-muted">limit 3000 ppm</span></div>
+                <div class="card-body"><div style="height:220px"><canvas id="chCo2"></canvas></div></div>
+            </div>
+        </div>
+        <div class="col-xl-4">
+            <div class="card h-100">
+                <div class="card-header"><h6><i class="bi bi-lightbulb text-primary me-2"></i>Light intensity (lux)</h6></div>
+                <div class="card-body"><div style="height:200px"><canvas id="chLux"></canvas></div></div>
+            </div>
+        </div>
+        <div class="col-xl-4">
+            <div class="card h-100">
+                <div class="card-header"><h6><i class="bi bi-moisture text-primary me-2"></i>Water flow (L)</h6></div>
+                <div class="card-body"><div style="height:200px"><canvas id="chWater"></canvas></div></div>
+            </div>
+        </div>
+        <div class="col-xl-4">
+            <div class="card h-100">
+                <div class="card-header"><h6><i class="bi bi-basket text-primary me-2"></i>Feed hopper level (%)</h6></div>
+                <div class="card-body"><div style="height:200px"><canvas id="chFeed"></canvas></div></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <div class="col-xl-5">
+            <div class="card h-100">
+                <div class="card-header"><h6><i class="bi bi-table text-primary me-2"></i>Summary statistics</h6></div>
+                <div class="table-responsive">
+                    <table class="table table-hover table-sm mb-0">
+                        <thead><tr><th>Metric</th><th class="text-end">Min</th><th class="text-end">Avg</th><th class="text-end">Max</th><th class="text-end">n</th><th class="text-end">≥ limit</th></tr></thead>
+                        <tbody>
+                        @foreach (var s in Model.Stats)
+                        {
+                            <tr>
+                                <td><i class="bi @s.Icon text-muted me-1"></i>@s.Metric <span class="text-muted text-xs">@s.Unit</span></td>
+                                <td class="text-end">@Num(s.Min)</td>
+                                <td class="text-end fw-600">@Num(s.Avg)</td>
+                                <td class="text-end">@Num(s.Max)</td>
+                                <td class="text-end text-muted">@s.Samples</td>
+                                <td class="text-end">
+                                    @if (s.Limit.HasValue)
+                                    {
+                                        <span class="badge @(s.Breaches > 0 ? "badge-danger-soft" : "badge-healthy")">@s.Breaches</span>
+                                    }
+                                    else { <span class="text-muted">—</span> }
+                                </td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-7">
+            <div class="card h-100">
+                <div class="card-header"><h6><i class="bi bi-list-ul text-primary me-2"></i>Latest readings</h6><span class="text-xs text-muted">newest @latestRows.Count of @Fmt.Num(Model.Readings.Count)</span></div>
+                <div class="table-responsive" style="max-height:420px">
+                    <table class="table table-hover table-sm mb-0">
+                        <thead><tr><th>Time</th><th>Device</th><th class="text-end">°C</th><th class="text-end">%RH</th><th class="text-end">THI</th><th class="text-end">NH₃</th><th class="text-end">CO₂</th><th class="text-end">Feed</th></tr></thead>
+                        <tbody>
+                        @foreach (var r in latestRows)
+                        {
+                            var band = r.Thi.HasValue ? PoultryMath.HeatBand(r.Thi.Value, Model.ThiWarning, Model.ThiCritical) : "";
+                            <tr>
+                                <td class="text-nowrap">@r.ReadingTime.ToString("dd MMM HH:mm")</td>
+                                <td><a asp-action="Readings" asp-route-deviceId="@r.DeviceId" asp-route-hours="@Model.Hours" class="mono">@r.DeviceCode</a></td>
+                                <td class="text-end">@Num(r.TemperatureC)</td>
+                                <td class="text-end">@Num(r.HumidityPercent, "0")</td>
+                                <td class="text-end"><span class="badge @(band == "Normal" ? "badge-healthy" : band == "Alert" ? "badge-warning-soft" : band == "" ? "badge-gray" : "badge-danger-soft")">@Num(r.Thi)</span></td>
+                                <td class="text-end @(r.AmmoniaPpm >= Model.AmmoniaLimit ? "text-danger fw-600" : "")">@Num(r.AmmoniaPpm)</td>
+                                <td class="text-end">@Num(r.Co2Ppm, "0")</td>
+                                <td class="text-end">@Num(r.FeedLevelPct, "0")</td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@section Scripts {
+@if (Model.Readings.Count > 0)
+{
+<script>
+(function () {
+    const series = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(series));
+    const WARN = @Model.ThiWarning.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    const CRIT = @Model.ThiCritical.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    const NH3 = @Model.AmmoniaLimit.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    const HOURS = @Model.Hours;
+    const palette = (window.ppColors && ppColors.series) || ['#0d9e75', '#3b82f6', '#f59e0b', '#8b5cf6', '#ef4444', '#64748b'];
+    const allX = series.flatMap(s => s.pts.map(p => p.x));
+    const xMin = Math.min(...allX), xMax = Math.max(...allX);
+    const pad = n => String(n).padStart(2, '0');
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const fmtX = ms => { const d = new Date(ms); return (HOURS > 24 ? d.getUTCDate() + ' ' + months[d.getUTCMonth()] + ' ' : '') + pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes()); };
+
+    function lineSets(key, opts) {
+        return series.map((s, i) => Object.assign({
+            label: s.label,
+            data: s.pts.filter(p => p[key] !== null).map(p => ({ x: p.x, y: p[key] })),
+            borderColor: palette[i % palette.length], backgroundColor: palette[i % palette.length],
+            borderWidth: 1.6, pointRadius: 0, pointHoverRadius: 3, tension: .25
+        }, opts || {}));
+    }
+    function limitLine(label, y, color) {
+        return { label: label, data: [{ x: xMin, y: y }, { x: xMax, y: y }], borderColor: color, borderDash: [6, 4], borderWidth: 1.5, pointRadius: 0, fill: false };
+    }
+    function chart(id, datasets, extraScales, yTitle) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const scales = Object.assign({
+            x: { type: 'linear', min: xMin, max: xMax, ticks: { callback: fmtX, maxTicksLimit: 8 }, grid: { display: false } },
+            y: { title: { display: !!yTitle, text: yTitle } }
+        }, extraScales || {});
+        new Chart(el, {
+            type: 'line',
+            data: { datasets: datasets },
+            options: {
+                responsive: true, maintainAspectRatio: false, animation: false, parsing: true,
+                interaction: { mode: 'nearest', axis: 'x', intersect: false },
+                plugins: {
+                    legend: { display: datasets.length > 1, labels: { boxWidth: 10, font: { size: 11 } } },
+                    tooltip: { callbacks: { title: items => items.length ? fmtX(items[0].parsed.x) : '' } }
+                },
+                scales: scales
+            }
+        });
+    }
+
+    chart('chTempHum',
+        lineSets('t', { yAxisID: 'y' }).concat(lineSets('h', { yAxisID: 'y1', borderDash: [4, 3], borderWidth: 1.2 }).map(d => Object.assign(d, { label: d.label + ' RH' }))),
+        { y1: { position: 'right', title: { display: true, text: '% RH' }, grid: { drawOnChartArea: false }, min: 0, max: 100 } }, '°C');
+    chart('chThi', lineSets('thi').concat([limitLine('Warning', WARN, '#f59e0b'), limitLine('Critical', CRIT, '#ef4444')]), null, 'THI');
+    chart('chNh3', lineSets('nh3').concat([limitLine('Limit', NH3, '#ef4444')]), null, 'ppm');
+    chart('chCo2', lineSets('co2').concat([limitLine('Limit', 3000, '#ef4444')]), null, 'ppm');
+    chart('chLux', lineSets('lux'), null, 'lux');
+    chart('chWater', lineSets('w', { stepped: true }), null, 'L');
+    chart('chFeed', lineSets('f', { fill: false }), { y: { min: 0, max: 100, title: { display: true, text: '%' } } });
+})();
+</script>
+}
+}

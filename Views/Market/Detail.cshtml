@@ -1,0 +1,288 @@
+@model OrderDetailVm
+@using PoultryPro.Controllers
+@{
+    var o = Model.Order;
+    var c = Model.Customer;
+    var canEdit = User.IsAny(Roles.Finance);
+    var flow = new[] { "Pending", "Confirmed", "Processing", "Dispatched", "Out for Delivery", "Delivered" };
+    var reached = Array.IndexOf(flow, o.Status);
+    var nextStatus = reached >= 0 && reached < flow.Length - 1 ? flow[reached + 1] : null;
+    var paidPct = o.TotalAmount > 0 ? Math.Min(100m, Math.Round(o.PaidAmount * 100m / o.TotalAmount, 1)) : 0;
+    var canPay = canEdit && o.Status != "Cancelled" && o.BalanceDue > 0;
+    var inv = System.Globalization.CultureInfo.InvariantCulture;
+    var returnUrl = Url.Action("Detail", new { id = o.Id });
+    var cancelMsg = $"Cancel order {o.OrderCode}?" + (o.PaidAmount > 0 ? $" {Fmt.Money(o.PaidAmount)} has already been received — refund it separately in Finance." : "");
+}
+
+<div class="page-head">
+    <div>
+        <h4><i class="bi bi-receipt text-primary me-2"></i><span class="mono">@o.OrderCode</span>
+            <span class="badge @Fmt.Badge(o.Status) ms-1 align-middle">@o.Status</span>
+            <span class="badge @Fmt.Badge(o.PaymentStatus) align-middle">@o.PaymentStatus</span>
+            @if (o.IsLate) { <span class="badge badge-danger-soft align-middle">Late</span> }
+        </h4>
+        <p>
+            <a asp-action="CustomerDetail" asp-route-id="@o.CustomerId">@o.CustomerName</a> · @o.Product · ordered @Fmt.Date(o.OrderDate), delivery @Fmt.Date(o.DeliveryDate)
+        </p>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+        <a asp-action="Index" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Orders</a>
+        <a asp-action="Invoice" asp-route-id="@o.Id" class="btn btn-sm btn-outline-primary"><i class="bi bi-file-earmark-text me-1"></i>Invoice</a>
+        @if (canEdit)
+        {
+            <a asp-action="Edit" asp-route-id="@o.Id" class="btn btn-sm btn-outline-secondary"><i class="bi bi-pencil me-1"></i>Edit</a>
+            if (nextStatus != null)
+            {
+                <form asp-action="UpdateStatus" method="post" class="d-inline">
+                    <input type="hidden" name="id" value="@o.Id" />
+                    <input type="hidden" name="status" value="@nextStatus" />
+                    <button class="btn btn-sm btn-primary"><i class="bi bi-arrow-right-circle me-1"></i>Mark @nextStatus</button>
+                </form>
+            }
+            if (o.IsOpen)
+            {
+                <form asp-action="UpdateStatus" method="post" class="d-inline" data-confirm="@cancelMsg">
+                    <input type="hidden" name="id" value="@o.Id" />
+                    <input type="hidden" name="status" value="Cancelled" />
+                    <button class="btn btn-sm btn-outline-danger"><i class="bi bi-x-circle me-1"></i>Cancel</button>
+                </form>
+            }
+        }
+    </div>
+</div>
+
+@if (o.Status == "Cancelled")
+{
+    <div class="warn-callout mb-3"><i class="bi bi-x-circle me-1"></i>This order is cancelled and excluded from sales totals and receivables.
+        @if (canEdit) { <span>Use <a asp-action="Edit" asp-route-id="@o.Id">Edit</a> to re-open it.</span> }
+    </div>
+}
+else
+{
+    <div class="card mb-4">
+        <div class="card-body py-3">
+            <div class="d-flex justify-content-between align-items-center">
+                @for (var i = 0; i < flow.Length; i++)
+                {
+                    var done = i <= reached;
+                    <div class="text-center" style="min-width:70px">
+                        <div class="mx-auto rounded-circle d-flex align-items-center justify-content-center"
+                             style="width:30px;height:30px;background:@(done ? "var(--primary)" : "#e2e8f0");color:@(done ? "#fff" : "#64748b")">
+                            <i class="bi @(done ? "bi-check-lg" : "bi-circle")"></i>
+                        </div>
+                        <div class="text-xs mt-1 @(done ? "fw-600" : "text-muted")">@flow[i]</div>
+                    </div>
+                    if (i < flow.Length - 1)
+                    {
+                        <div class="flex-fill" style="height:2px;background:@(i < reached ? "var(--primary)" : "#e2e8f0");margin-bottom:18px"></div>
+                    }
+                }
+            </div>
+        </div>
+    </div>
+}
+
+<div class="stat-grid mb-4">
+    <div class="stat-tile tone-blue">
+        <div class="st-label">Order value</div>
+        <div class="st-value">@Fmt.Money(o.TotalAmount)</div>
+        <div class="st-sub">@Fmt.Num(o.Quantity, 2) @o.Unit × @Fmt.Money(o.UnitPrice, 2)</div>
+        <div class="st-icon"><i class="bi bi-bag-check"></i></div>
+    </div>
+    <div class="stat-tile tone-green">
+        <div class="st-label">Received</div>
+        <div class="st-value">@Fmt.Money(o.PaidAmount)</div>
+        <div class="st-sub">@Model.Payments.Count payment@(Model.Payments.Count == 1 ? "" : "s") · @Fmt.Pct(paidPct, 0)</div>
+        <div class="st-icon"><i class="bi bi-cash-coin"></i></div>
+    </div>
+    <div class="stat-tile @(o.BalanceDue > 0 ? "tone-amber" : "tone-slate")">
+        <div class="st-label">Balance due</div>
+        <div class="st-value">@Fmt.Money(o.BalanceDue)</div>
+        <div class="st-sub">@(o.BalanceDue > 0 ? (o.DeliveryDate.Date < DateTime.Today ? $"{(DateTime.Today - o.DeliveryDate.Date).Days} days since delivery date" : "due on delivery") : "settled")</div>
+        <div class="st-icon"><i class="bi bi-hourglass-split"></i></div>
+    </div>
+    <div class="stat-tile tone-violet">
+        <div class="st-label">@(o.BirdCount is > 0 ? "Birds" : "Grade")</div>
+        <div class="st-value">@(o.BirdCount is > 0 ? Fmt.Num(o.BirdCount.Value) : o.Grade)</div>
+        <div class="st-sub">@(o.AvgKgPerBird.HasValue ? Fmt.Num(o.AvgKgPerBird.Value, 2) + " kg / bird" : "Grade " + o.Grade)</div>
+        <div class="st-icon"><i class="bi bi-egg"></i></div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-7">
+        <div class="card mb-4">
+            <div class="card-header"><h6><i class="bi bi-card-list text-primary me-2"></i>Order details</h6></div>
+            <div class="card-body">
+                <dl class="kv mb-0">
+                    <dt>Order code</dt><dd class="mono">@o.OrderCode</dd>
+                    <dt>Product</dt><dd>@o.Product <span class="badge badge-info-soft ms-1">Grade @o.Grade</span></dd>
+                    <dt>Quantity</dt><dd>@Fmt.Num(o.Quantity, 2) @o.Unit</dd>
+                    @if (o.BirdCount is > 0) { <dt>Bird count</dt><dd>@Fmt.Num(o.BirdCount.Value)</dd> }
+                    <dt>Unit price</dt><dd>@Fmt.Money(o.UnitPrice, 2) / @o.Unit</dd>
+                    <dt>Total</dt><dd class="fw-600">@Fmt.Money(o.TotalAmount, 2)</dd>
+                    <dt>Source farm</dt><dd><a asp-controller="Farm" asp-action="Detail" asp-route-id="@o.FarmId">@o.FarmName</a>@(string.IsNullOrEmpty(o.FarmLocation) ? "" : " · " + o.FarmLocation)</dd>
+                    <dt>Order date</dt><dd>@Fmt.Date(o.OrderDate)</dd>
+                    <dt>Delivery date</dt><dd class="@(o.IsLate ? "text-danger fw-600" : "")">@Fmt.Date(o.DeliveryDate)@(o.IsLate ? " (late)" : "")</dd>
+                    <dt>Created</dt><dd>@Fmt.DateTime(o.CreatedAt)</dd>
+                    @if (!string.IsNullOrWhiteSpace(o.Notes)) { <dt>Notes</dt><dd>@o.Notes</dd> }
+                </dl>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header"><h6><i class="bi bi-diagram-3 text-success me-2"></i>Source flock</h6></div>
+            <div class="card-body">
+                @if (o.BatchId.HasValue)
+                {
+                    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+                        <div>
+                            <a asp-controller="Batch" asp-action="Detail" asp-route-id="@o.BatchId" class="fw-600 mono fs-6">@(Model.Batch?.BatchCode ?? o.BatchCode)</a>
+                            @if (Model.Batch != null)
+                            {
+                                <div class="small text-muted">@Model.Batch.Breed · @Model.Batch.BatchType · day @Model.Batch.AgeInDays · @Fmt.Num(Model.Batch.CurrentCount) live birds · avg @Fmt.Num(Model.Batch.AverageWeightKg, 2) kg</div>
+                            }
+                            else
+                            {
+                                <div class="small text-muted">Flock is closed / harvested.</div>
+                            }
+                        </div>
+                        <div class="d-flex gap-2">
+                            <a asp-controller="Batch" asp-action="Detail" asp-route-id="@o.BatchId" class="btn btn-xs btn-outline-primary"><i class="bi bi-box-arrow-up-right me-1"></i>Flock</a>
+                            <a href="/Trace/Timeline/@o.BatchId" class="btn btn-xs btn-outline-secondary"><i class="bi bi-qr-code me-1"></i>Traceability</a>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <div class="text-muted small"><i class="bi bi-dash-circle me-1"></i>No source flock linked. Linking a batch enables traceability and per-flock revenue in reports.
+                        @if (canEdit) { <a asp-action="Edit" asp-route-id="@o.Id">Link a batch</a> }
+                    </div>
+                }
+            </div>
+        </div>
+
+        @if (canEdit && o.Status != "Cancelled")
+        {
+            <div class="card mb-4">
+                <div class="card-header"><h6><i class="bi bi-arrow-repeat text-primary me-2"></i>Change status</h6></div>
+                <div class="card-body">
+                    <form asp-action="UpdateStatus" method="post" class="d-flex flex-wrap gap-2 align-items-end">
+                        <input type="hidden" name="id" value="@o.Id" />
+                        <div>
+                            <label class="form-label small mb-1">Order status</label>
+                            <select name="status" class="form-select form-select-sm">
+                                @foreach (var s in MarketController.OrderStatuses) { <option value="@s" selected="@(s == o.Status)">@s</option> }
+                            </select>
+                        </div>
+                        <button class="btn btn-sm btn-outline-primary">Update</button>
+                    </form>
+                </div>
+            </div>
+        }
+    </div>
+
+    <div class="col-lg-5">
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h6><i class="bi bi-wallet2 text-success me-2"></i>Payment</h6>
+                <span class="badge @Fmt.Badge(o.PaymentStatus)">@o.PaymentStatus</span>
+            </div>
+            <div class="card-body">
+                <div class="d-flex justify-content-between small mb-1"><span>Paid @Fmt.Money(o.PaidAmount)</span><span class="text-muted">of @Fmt.Money(o.TotalAmount)</span></div>
+                <div class="prog-bar-wrap mb-3" style="height:10px"><div class="prog-bar-fill @(paidPct < 50 && o.IsLate ? "danger" : paidPct < 100 ? "warning" : "")" style="width:@paidPct.ToString(inv)%"></div></div>
+
+                @if (canPay)
+                {
+                    <form asp-action="RecordPayment" method="post" class="border rounded p-3 mb-3 bg-light" novalidate>
+                        <input type="hidden" name="orderId" value="@o.Id" />
+                        <input type="hidden" name="returnUrl" value="@returnUrl" />
+                        <div class="fw-600 small mb-2"><i class="bi bi-plus-circle me-1"></i>Record payment</div>
+                        <div class="row g-2">
+                            <div class="col-7">
+                                <label class="form-label small mb-1">Amount (৳)</label>
+                                <div class="input-group input-group-sm">
+                                    <input type="number" name="amount" step="0.01" min="0.01" max="@o.BalanceDue.ToString(inv)" value="@o.BalanceDue.ToString("0.##", inv)" class="form-control" required />
+                                    <button type="button" class="btn btn-outline-secondary" onclick="this.previousElementSibling.value='@o.BalanceDue.ToString("0.##", inv)'">Full</button>
+                                </div>
+                            </div>
+                            <div class="col-5">
+                                <label class="form-label small mb-1">Date</label>
+                                <input type="date" name="paymentDate" value="@DateTime.Today.ToString("yyyy-MM-dd")" max="@DateTime.Today.ToString("yyyy-MM-dd")" class="form-control form-control-sm" />
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label small mb-1">Method</label>
+                                <select name="paymentMethod" class="form-select form-select-sm">
+                                    @foreach (var m in MarketController.PaymentMethods) { <option>@m</option> }
+                                </select>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label small mb-1">Note / Txn ID</label>
+                                <input name="note" class="form-control form-control-sm" maxlength="200" placeholder="bKash TrxID…" />
+                            </div>
+                        </div>
+                        <button class="btn btn-sm btn-success mt-3 w-100"><i class="bi bi-check2-circle me-1"></i>Save payment</button>
+                        <div class="text-xs text-muted mt-2">Posts a <strong>Sale</strong> transaction in Finance (category "Customer Payment", reference @o.OrderCode).</div>
+                    </form>
+                }
+
+                <div class="fw-600 small mb-2">Payment history</div>
+                @if (Model.Payments.Count == 0)
+                {
+                    <div class="empty-state py-3"><i class="bi bi-cash"></i><p class="text-muted small mb-0">No payments received yet.</p></div>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-sm mb-0 small">
+                            <thead><tr><th>Date</th><th>Method</th><th>Note</th><th class="text-end">Amount</th></tr></thead>
+                            <tbody>
+                                @foreach (var p in Model.Payments)
+                                {
+                                    <tr>
+                                        <td>@Fmt.Date(p.TxnDate)</td>
+                                        <td>@(p.PaymentMethod ?? "—")</td>
+                                        <td class="text-muted" style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="@p.Description">@p.Description</td>
+                                        <td class="text-end fw-600 text-success">@Fmt.Money(p.Amount)</td>
+                                    </tr>
+                                }
+                            </tbody>
+                            <tfoot><tr class="fw-600"><td colspan="3">Total received</td><td class="text-end">@Fmt.Money(Model.Payments.Sum(p => p.Amount))</td></tr></tfoot>
+                        </table>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h6><i class="bi bi-person-vcard text-primary me-2"></i>Customer</h6>
+                <a asp-action="CustomerDetail" asp-route-id="@o.CustomerId" class="btn btn-xs btn-outline-primary">Statement</a>
+            </div>
+            <div class="card-body">
+                <div class="d-flex align-items-center gap-2 mb-2">
+                    <div class="avatar">@(string.IsNullOrEmpty(o.CustomerName) ? "?" : o.CustomerName.Substring(0, 1).ToUpper())</div>
+                    <div>
+                        <div class="fw-600">@o.CustomerName</div>
+                        <div class="text-xs text-muted">@(o.CustomerType ?? c?.CustomerType)</div>
+                    </div>
+                </div>
+                <dl class="kv mb-2">
+                    <dt>Phone</dt><dd>@(string.IsNullOrEmpty(o.CustomerPhone) ? "—" : o.CustomerPhone)</dd>
+                    <dt>Address</dt><dd>@(o.CustomerAddress ?? "—")</dd>
+                    @if (c != null)
+                    {
+                        <dt>Orders</dt><dd>@c.OrderCount (@c.OpenOrders open)</dd>
+                        <dt>Outstanding</dt><dd class="@(c.OverLimit ? "text-danger fw-600" : "")">@Fmt.Money(c.Outstanding)</dd>
+                        <dt>Credit limit</dt><dd>@(c.CreditLimit > 0 ? Fmt.Money(c.CreditLimit) : "Cash only")</dd>
+                    }
+                </dl>
+                @if (c != null && c.CreditLimit > 0)
+                {
+                    <div class="d-flex justify-content-between text-xs text-muted mb-1"><span>Credit used</span><span>@Fmt.Pct(c.CreditUsedPct)</span></div>
+                    <div class="prog-bar-wrap"><div class="prog-bar-fill @(c.CreditUsedPct > 100 ? "danger" : c.CreditUsedPct > 80 ? "warning" : "")" style="width:@Math.Min(100m, c.CreditUsedPct).ToString(inv)%"></div></div>
+                }
+            </div>
+        </div>
+    </div>
+</div>

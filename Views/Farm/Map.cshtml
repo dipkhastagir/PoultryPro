@@ -1,0 +1,170 @@
+@model FarmMapVm
+@{
+    var farmsJson = Model.Farms.Select(p => new
+    {
+        p.Id, p.Name, p.Location, p.FarmType, p.Zone,
+        lat = (double)p.Lat, lng = (double)p.Lng,
+        p.Capacity, p.CurrentBirds, util = (double)p.UtilizationPct, p.ActiveBatches,
+        fcr = (double)p.AvgFCR, epef = (double)p.AvgEPEF, mort = (double)p.AvgMortalityRate,
+        bio = p.BiosecurityPct.HasValue ? (double?)p.BiosecurityPct.Value : null,
+        crit = p.CriticalAlerts, warn = p.WarningAlerts, info = p.InfoAlerts, level = p.AlertLevel,
+        url = Url.Action("Detail", "Farm", new { id = p.Id })
+    });
+    var visitsJson = Model.CheckIns.Select(v => new
+    {
+        v.Id, v.FarmName, officer = v.FieldOfficerName, date = v.VisitDate.ToString("dd MMM yyyy"),
+        v.VisitPurpose, v.VisitStatus, lat = (double)v.Lat, lng = (double)v.Lng,
+        acc = v.GpsAccuracyMeters.HasValue ? (double?)v.GpsAccuracyMeters.Value : null,
+        url = Url.Action("Detail", "Visit", new { id = v.Id })
+    });
+}
+@section Head {
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+    <style>
+        #farmMap { height: calc(100vh - 290px); min-height: 460px; border-radius: 12px; border: 1px solid var(--border); }
+        .map-legend { background: #fff; padding: 8px 10px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.2); font-size: 12px; line-height: 1.7; }
+        .map-legend .sw { display: inline-block; width: 11px; height: 11px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+        .farm-pop .kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 14px; font-size: 12px; margin: 6px 0; }
+        .farm-pop .kpis b { font-weight: 600; }
+    </style>
+}
+
+<div class="page-head">
+    <div>
+        <h4>Farm Map</h4>
+        <p>@Model.Farms.Count farm(s) mapped · @Model.CheckIns.Count recent GPS check-ins@(Model.FarmsWithoutGps > 0 ? $" · {Model.FarmsWithoutGps} farm(s) without coordinates" : "")</p>
+    </div>
+    <div class="d-flex gap-2 align-items-center flex-wrap">
+        <div class="btn-group btn-group-sm" role="group" aria-label="Colour farms by">
+            <input type="radio" class="btn-check" name="colorBy" id="cbAlerts" value="alerts" checked />
+            <label class="btn btn-outline-secondary" for="cbAlerts"><i class="bi bi-bell me-1"></i>Alerts</label>
+            <input type="radio" class="btn-check" name="colorBy" id="cbUtil" value="util" />
+            <label class="btn btn-outline-secondary" for="cbUtil"><i class="bi bi-pie-chart me-1"></i>Utilization</label>
+        </div>
+        <div class="form-check form-switch mb-0 ms-2">
+            <input class="form-check-input" type="checkbox" id="tglVisits" checked />
+            <label class="form-check-label small" for="tglVisits">Visit check-ins</label>
+        </div>
+        <a asp-action="Index" class="btn btn-sm btn-outline-secondary"><i class="bi bi-grid me-1"></i>Farm list</a>
+    </div>
+</div>
+
+@if (!Model.Farms.Any())
+{
+    <div class="card"><div class="empty-state">
+        <i class="bi bi-map"></i>
+        <div class="fw-600">No farm has GPS coordinates yet</div>
+        <div class="text-xs">Edit a farm and click on the map to set its location.</div>
+        <a asp-action="Index" class="btn btn-sm btn-primary mt-3">Go to farms</a>
+    </div></div>
+}
+else
+{
+    <div class="row g-3">
+        <div class="col-xl-9">
+            <div id="farmMap"></div>
+        </div>
+        <div class="col-xl-3">
+            <div class="card" style="max-height:calc(100vh - 290px);min-height:460px;overflow:auto">
+                <div class="card-header"><h6><i class="bi bi-list-ul me-2 text-primary"></i>Farms</h6></div>
+                <div class="card-body py-1">
+                    @foreach (var p in Model.Farms.OrderByDescending(p => p.CriticalAlerts).ThenByDescending(p => p.WarningAlerts).ThenBy(p => p.Name))
+                    {
+                        <div class="alert-item-row" role="button" data-focus="@p.Id" style="cursor:pointer">
+                            <i class="bi @(p.AlertLevel == "None" ? "bi-check-circle-fill text-success" : Fmt.SeverityIcon(p.AlertLevel)) fs-5"></i>
+                            <div class="flex-grow-1">
+                                <div class="fw-600" style="font-size:13px">@p.Name</div>
+                                <div class="text-xs text-muted">@p.FarmType · @Fmt.Num(p.CurrentBirds) birds · @Fmt.Pct(p.UtilizationPct, 0)</div>
+                                @if (p.CriticalAlerts + p.WarningAlerts + p.InfoAlerts > 0)
+                                {
+                                    <div class="text-xs">
+                                        @if (p.CriticalAlerts > 0) { <span class="text-danger me-2">@p.CriticalAlerts critical</span> }
+                                        @if (p.WarningAlerts > 0) { <span class="text-warning me-2">@p.WarningAlerts warning</span> }
+                                        @if (p.InfoAlerts > 0) { <span class="text-info">@p.InfoAlerts info</span> }
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@section Scripts {
+@if (Model.Farms.Any())
+{
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+(function () {
+    const farms = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(farmsJson));
+    const visits = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(visitsJson));
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const map = L.map('farmMap');
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
+
+    const alertColor = f => f.level === 'Critical' ? ppColors.red : f.level === 'Warning' ? ppColors.amber : f.level === 'Info' ? ppColors.blue : ppColors.green;
+    const utilColor = f => f.util > 90 ? ppColors.red : f.util > 75 ? ppColors.amber : f.util > 40 ? ppColors.green : ppColors.slate;
+    let mode = 'alerts';
+
+    const farmLayer = L.layerGroup().addTo(map), markers = {};
+    function popup(f) {
+        return `<div class="farm-pop"><div style="font-weight:700;font-size:14px">${esc(f.Name)}</div>
+            <div style="font-size:12px;color:#64748b">${esc(f.Location)}${f.Zone ? ' · ' + esc(f.Zone) : ''} · ${esc(f.FarmType)}</div>
+            <div class="kpis">
+              <span>Birds <b>${f.CurrentBirds.toLocaleString()}</b></span><span>Util. <b>${f.util.toFixed(0)}%</b></span>
+              <span>Flocks <b>${f.ActiveBatches}</b></span><span>Mort. <b>${f.mort.toFixed(1)}%</b></span>
+              <span>FCR <b>${f.fcr > 0 ? f.fcr.toFixed(2) : '—'}</b></span><span>EPEF <b>${f.epef > 0 ? f.epef.toFixed(0) : '—'}</b></span>
+              <span>Biosec. <b>${f.bio != null ? f.bio.toFixed(0) + '%' : '—'}</b></span>
+              <span>Alerts <b style="color:${alertColor(f)}">${f.crit + f.warn + f.info}</b></span>
+            </div>
+            <a href="${f.url}">Open farm profile →</a> · <a href="/Sensors/Readings?farmId=${f.Id}">Climate</a></div>`;
+    }
+    function draw() {
+        farmLayer.clearLayers();
+        farms.forEach(f => {
+            const color = mode === 'alerts' ? alertColor(f) : utilColor(f);
+            const radius = 9 + Math.min(14, Math.sqrt(Math.max(f.Capacity, 1)) / 12);
+            const m = L.circleMarker([f.lat, f.lng], { radius, color: '#fff', weight: 2, fillColor: color, fillOpacity: .9 })
+                .bindPopup(popup(f)).bindTooltip(esc(f.Name), { direction: 'top', offset: [0, -8] });
+            m.addTo(farmLayer); markers[f.Id] = m;
+        });
+        legend.update();
+    }
+
+    const visitLayer = L.layerGroup().addTo(map);
+    visits.forEach(v => {
+        L.circleMarker([v.lat, v.lng], { radius: 4, color: ppColors.violet, weight: 1, fillColor: ppColors.violet, fillOpacity: .55 })
+            .bindPopup(`<div style="font-size:12px"><b>${esc(v.FarmName)}</b><br>${esc(v.officer)} · ${v.date}<br>${esc(v.VisitPurpose)} · ${esc(v.VisitStatus)}${v.acc != null ? '<br>GPS ±' + v.acc.toFixed(0) + ' m' : ''}<br><a href="${v.url}">Open visit →</a></div>`)
+            .addTo(visitLayer);
+    });
+
+    const legend = L.control({ position: 'bottomright' });
+    legend.onAdd = function () { this._div = L.DomUtil.create('div', 'map-legend'); this.update(); return this._div; };
+    legend.update = function () {
+        if (!this._div) return;
+        const rows = mode === 'alerts'
+            ? [[ppColors.red, 'Critical alert'], [ppColors.amber, 'Warning alert'], [ppColors.blue, 'Info alert'], [ppColors.green, 'No open alert']]
+            : [[ppColors.red, '> 90% utilized'], [ppColors.amber, '75 – 90%'], [ppColors.green, '40 – 75%'], [ppColors.slate, '< 40%']];
+        this._div.innerHTML = `<b>${mode === 'alerts' ? 'Open alerts' : 'Capacity utilization'}</b><br>` +
+            rows.map(r => `<span class="sw" style="background:${r[0]}"></span>${r[1]}`).join('<br>') +
+            (visits.length ? `<br><span class="sw" style="background:${ppColors.violet};width:8px;height:8px"></span>Visit check-in` : '');
+    };
+    legend.addTo(map);
+
+    draw();
+    const pts = farms.map(f => [f.lat, f.lng]).concat(visits.map(v => [v.lat, v.lng]));
+    if (pts.length === 1) map.setView(pts[0], 12); else map.fitBounds(pts, { padding: [40, 40] });
+
+    document.querySelectorAll('input[name=colorBy]').forEach(r => r.addEventListener('change', e => { mode = e.target.value; draw(); }));
+    document.getElementById('tglVisits').addEventListener('change', e => e.target.checked ? visitLayer.addTo(map) : map.removeLayer(visitLayer));
+    document.querySelectorAll('[data-focus]').forEach(el => el.addEventListener('click', () => {
+        const m = markers[el.dataset.focus]; if (!m) return;
+        map.setView(m.getLatLng(), 12); m.openPopup();
+    }));
+    setTimeout(() => map.invalidateSize(), 200);
+})();
+</script>
+}
+}

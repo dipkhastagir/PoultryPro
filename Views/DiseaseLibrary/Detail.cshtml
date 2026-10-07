@@ -1,0 +1,205 @@
+@model DiseaseLibraryDetailVm
+@{
+    var e = Model.Entry;
+    var canEdit = User.IsAny(Roles.Health);
+    var cases = Model.Cases;
+    var affected = cases.Sum(c => c.AffectedCount);
+    var deaths = cases.Sum(c => c.DeathCount);
+    var open = cases.Count(c => c.Status != "Resolved");
+    var resolved = cases.Where(c => c.ResolvedDate.HasValue).ToList();
+    var avgDuration = resolved.Any() ? resolved.Average(c => c.DurationDays) : (double?)null;
+    var byFarm = cases.GroupBy(c => c.FarmName).Select(g => new { Farm = g.Key, Cases = g.Count(), Affected = g.Sum(x => x.AffectedCount) })
+                      .OrderByDescending(x => x.Cases).ToList();
+}
+
+<div class="page-head">
+    <div>
+        <a asp-action="Index" class="text-xs text-decoration-none"><i class="bi bi-arrow-left me-1"></i>Disease library</a>
+        <h4 class="mt-1">@e.Name
+            @if (!string.IsNullOrWhiteSpace(e.LocalName)) { <span class="text-muted fw-normal" style="font-size:15px">(@e.LocalName)</span> }
+        </h4>
+        <p class="d-flex flex-wrap gap-1 align-items-center">
+            <span class="chip">@e.Category</span>
+            <span class="badge @Fmt.Badge(e.Severity)">@e.Severity severity</span>
+            @if (e.IsZoonotic) { <span class="badge badge-danger-soft"><i class="bi bi-person-exclamation me-1"></i>Zoonotic</span> }
+            @if (e.IsNotifiable) { <span class="badge badge-warning-soft"><i class="bi bi-megaphone me-1"></i>Notifiable</span> }
+        </p>
+    </div>
+    <div class="d-flex gap-2 no-print">
+        @if (canEdit)
+        {
+            <a asp-controller="Health" asp-action="Index" class="btn btn-outline-primary btn-sm"><i class="bi bi-heart-pulse me-1"></i>Health module</a>
+            <a asp-action="Edit" asp-route-id="@e.Id" class="btn btn-outline-secondary btn-sm"><i class="bi bi-pencil me-1"></i>Edit</a>
+        }
+        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="window.print()"><i class="bi bi-printer me-1"></i>Print</button>
+    </div>
+</div>
+
+@if (e.IsZoonotic || e.IsNotifiable)
+{
+    <div class="warn-callout mb-3">
+        <i class="bi bi-exclamation-triangle-fill me-1"></i>
+        @if (e.IsNotifiable)
+        {
+            <span><strong>Notifiable disease</strong> — suspected cases must be reported to the Upazila Livestock Officer / Department of Livestock Services without delay. Restrict bird and vehicle movement until confirmed.</span>
+        }
+        @if (e.IsZoonotic)
+        {
+            <span><strong>Zoonotic</strong> — can infect people. Use gloves, masks and eye protection when handling sick or dead birds.</span>
+        }
+    </div>
+}
+
+<div class="stat-grid">
+    <div class="stat-tile tone-blue">
+        <div class="st-label">Farm cases</div>
+        <div class="st-value">@cases.Count</div>
+        <div class="st-sub">@open open · @byFarm.Count farm(s)</div>
+        <div class="st-icon"><i class="bi bi-clipboard2-pulse"></i></div>
+    </div>
+    <div class="stat-tile tone-amber">
+        <div class="st-label">Birds affected</div>
+        <div class="st-value">@Fmt.Num(affected)</div>
+        <div class="st-sub">across all recorded cases</div>
+        <div class="st-icon"><i class="bi bi-heart-pulse"></i></div>
+    </div>
+    <div class="stat-tile tone-red">
+        <div class="st-label">Case fatality</div>
+        <div class="st-value">@(affected > 0 ? Fmt.Pct((decimal)deaths / affected * 100) : "—")</div>
+        <div class="st-sub">@Fmt.Num(deaths) death(s) · literature @(e.MortalityRange ?? "n/a")</div>
+        <div class="st-icon"><i class="bi bi-activity"></i></div>
+    </div>
+    <div class="stat-tile tone-green">
+        <div class="st-label">Avg. duration</div>
+        <div class="st-value">@(avgDuration.HasValue ? avgDuration.Value.ToString("0.#") + " d" : "—")</div>
+        <div class="st-sub">@resolved.Count resolved case(s)</div>
+        <div class="st-icon"><i class="bi bi-hourglass-split"></i></div>
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-lg-8">
+        @{
+            var sections = new[]
+            {
+                (Title: "Clinical signs & symptoms", Icon: "bi-thermometer-half", Text: e.Symptoms),
+                (Title: "Transmission", Icon: "bi-arrow-left-right", Text: e.Transmission),
+                (Title: "Prevention & control", Icon: "bi-shield-check", Text: e.Prevention),
+                (Title: "Treatment", Icon: "bi-capsule", Text: e.Treatment)
+            };
+        }
+        @foreach (var s in sections)
+        {
+            <div class="card mb-3">
+                <div class="card-header"><h6><i class="bi @s.Icon me-2"></i>@s.Title</h6></div>
+                <div class="card-body">
+                    @if (string.IsNullOrWhiteSpace(s.Text))
+                    {
+                        <span class="text-muted small">Not documented yet.</span>
+                    }
+                    else
+                    {
+                        <div style="white-space:pre-line;line-height:1.65">@s.Text</div>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+    <div class="col-lg-4">
+        <div class="card mb-3">
+            <div class="card-header"><h6>Profile</h6></div>
+            <div class="card-body">
+                <dl class="kv">
+                    <dt>Category</dt><dd>@e.Category</dd>
+                    <dt>Severity</dt><dd><span class="badge @Fmt.Badge(e.Severity)">@e.Severity</span></dd>
+                    <dt>Age group</dt><dd>@(e.AgeGroup ?? "—")</dd>
+                    <dt>Mortality</dt><dd>@(e.MortalityRange ?? "—")</dd>
+                    <dt>Zoonotic</dt><dd>@(e.IsZoonotic ? "Yes" : "No")</dd>
+                    <dt>Notifiable</dt><dd>@(e.IsNotifiable ? "Yes" : "No")</dd>
+                    <dt>Added</dt><dd>@Fmt.Date(e.CreatedAt)</dd>
+                </dl>
+            </div>
+        </div>
+        @if (byFarm.Any())
+        {
+            <div class="card mb-3">
+                <div class="card-header"><h6>Cases by farm</h6></div>
+                <div class="card-body"><canvas id="farmChart" height="@(60 + byFarm.Count * 28)"></canvas></div>
+            </div>
+        }
+    </div>
+</div>
+
+<div class="card mt-1">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h6 class="mb-0">Farm case history</h6>
+        @if (cases.Any()) { <input class="form-control form-control-sm" style="max-width:220px" placeholder="Filter…" data-table-filter="#tblCases" /> }
+    </div>
+    @if (!cases.Any())
+    {
+        <div class="card-body">
+            <div class="empty-state">
+                <i class="bi bi-emoji-smile"></i>
+                <h6>No cases recorded on your farms</h6>
+                <p class="text-muted small">Disease cases logged in the Health module with this name will appear here.</p>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0" id="tblCases">
+                <thead>
+                    <tr>
+                        <th>Reported</th><th>Farm</th><th>Flock</th><th>Diagnosis</th>
+                        <th class="text-end">Affected</th><th class="text-end">Deaths</th><th class="text-end">CFR</th>
+                        <th>Treatment</th><th>Status</th><th class="text-end">Days</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var c in cases)
+                    {
+                        <tr>
+                            <td class="text-nowrap">@Fmt.Date(c.ReportedDate)</td>
+                            <td>@c.FarmName</td>
+                            <td><a asp-controller="Batch" asp-action="Detail" asp-route-id="@c.BatchId" class="text-decoration-none mono">@c.BatchCode</a></td>
+                            <td class="text-xs">@c.DiseaseName@(string.IsNullOrWhiteSpace(c.DiagnosedBy) ? "" : " · " + c.DiagnosedBy)</td>
+                            <td class="text-end">@Fmt.Num(c.AffectedCount)</td>
+                            <td class="text-end">@Fmt.Num(c.DeathCount)</td>
+                            <td class="text-end">@Fmt.Pct(c.CaseFatalityPct)</td>
+                            <td class="text-xs text-muted" style="max-width:240px">@c.Treatment</td>
+                            <td><span class="badge @Fmt.Badge(c.Status)">@c.Status</span></td>
+                            <td class="text-end">@c.DurationDays</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@section Scripts {
+@if (byFarm.Any())
+{
+    <script>
+        (function () {
+            const data = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(byFarm));
+            new Chart(document.getElementById('farmChart'), {
+                type: 'bar',
+                data: {
+                    labels: data.map(d => d.Farm),
+                    datasets: [
+                        { label: 'Cases', data: data.map(d => d.Cases), backgroundColor: ppColors.red, borderRadius: 4 },
+                    ]
+                },
+                options: {
+                    indexAxis: 'y', responsive: true,
+                    plugins: { legend: { display: false },
+                        tooltip: { callbacks: { afterLabel: ctx => 'Birds affected: ' + data[ctx.dataIndex].Affected.toLocaleString() } } },
+                    scales: { x: { beginAtZero: true, ticks: { precision: 0 } } }
+                }
+            });
+        })();
+    </script>
+}
+}

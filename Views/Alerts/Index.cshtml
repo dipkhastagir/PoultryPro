@@ -1,0 +1,274 @@
+@model List<Alert>
+@{
+    var open = ((ViewBag.Open as IEnumerable<Alert>)?.ToList() ?? new List<Alert>());
+    var severity = ViewBag.Severity as string;
+    var rule = ViewBag.Rule as string;
+    var includeResolved = ViewBag.IncludeResolved is bool b && b;
+    var canAct = !User.IsInRole(Roles.Viewer);
+    var returnUrl = Context.Request.Path + Context.Request.QueryString;
+
+    var ruleNames = new Dictionary<string, (string Name, string Icon, string Desc)>
+    {
+        ["MORT_SPIKE"] = ("Mortality spike", "bi-graph-up-arrow", "Daily mortality well above the flock's recent baseline"),
+        ["HEAT_STRESS"] = ("Heat stress", "bi-thermometer-sun", "Temperature-Humidity Index above warning / critical thresholds"),
+        ["AMMONIA"] = ("High ammonia", "bi-wind", "Shed NH₃ above the configured limit"),
+        ["VAX_OVERDUE"] = ("Vaccination overdue", "bi-shield-exclamation", "Scheduled vaccination past its due date"),
+        ["LOW_STOCK"] = ("Low stock", "bi-box-seam", "Inventory at or below reorder level"),
+        ["EXPIRY"] = ("Expiring stock", "bi-calendar-x", "Medicine / vaccine stock near or past expiry"),
+        ["CERT_EXPIRY"] = ("Certificate expiry", "bi-patch-exclamation", "Farm certification expiring or expired"),
+        ["HARVEST_READY"] = ("Harvest ready", "bi-basket", "Flock has reached target age / weight"),
+        ["GROWTH_LAG"] = ("Growth lag", "bi-graph-down", "Body weight below the breed standard"),
+        ["SYNC_STALE"] = ("Unsynced field data", "bi-cloud-slash", "Field officer has data waiting to sync"),
+        ["DEVICE_OFFLINE"] = ("Sensor offline", "bi-router", "IoT device has not reported recently"),
+        ["DISEASE_ACTIVE"] = ("Active disease", "bi-virus", "Open disease case on a flock")
+    };
+    string RuleName(string code) => ruleNames.TryGetValue(code, out var r) ? r.Name : code;
+    string RuleIcon(string code) => ruleNames.TryGetValue(code, out var r) ? r.Icon : "bi-bell";
+
+    var critical = open.Count(a => a.Severity == "Critical");
+    var warning = open.Count(a => a.Severity == "Warning");
+    var info = open.Count(a => a.Severity != "Critical" && a.Severity != "Warning");
+    var unread = open.Count(a => !a.IsRead);
+    var byRule = open.GroupBy(a => a.RuleCode)
+        .Select(g => new { Rule = g.Key, Total = g.Count(), Critical = g.Count(x => x.Severity == "Critical"), Warning = g.Count(x => x.Severity == "Warning"), Latest = g.Max(x => x.CreatedAt) })
+        .OrderByDescending(x => x.Critical).ThenByDescending(x => x.Total).ToList();
+    var allRules = ruleNames.Keys.Union(open.Select(a => a.RuleCode)).Union(Model.Select(a => a.RuleCode)).Distinct().OrderBy(RuleName).ToList();
+}
+
+<div class="page-head">
+    <div>
+        <h4><i class="bi bi-bell me-2"></i>Early-Warning Alerts</h4>
+        <p>Rules are evaluated automatically from daily records, sensors, health, inventory and field data.</p>
+    </div>
+    @if (canAct)
+    {
+        <div class="d-flex gap-2">
+            <form asp-action="RunNow" method="post">
+                <input type="hidden" name="returnUrl" value="@returnUrl" />
+                <button class="btn btn-primary btn-sm"><i class="bi bi-play-circle me-1"></i>Run rules now</button>
+            </form>
+            <form asp-action="MarkAllRead" method="post">
+                <input type="hidden" name="returnUrl" value="@returnUrl" />
+                <button class="btn btn-outline-secondary btn-sm" @(unread == 0 ? "disabled" : "")><i class="bi bi-envelope-open me-1"></i>Mark all read</button>
+            </form>
+        </div>
+    }
+</div>
+
+<div class="stat-grid">
+    <div class="stat-tile tone-red">
+        <div class="st-label">Critical</div>
+        <div class="st-value">@critical</div>
+        <div class="st-sub">Needs action today</div>
+        <div class="st-icon"><i class="bi bi-exclamation-octagon"></i></div>
+    </div>
+    <div class="stat-tile tone-amber">
+        <div class="st-label">Warnings</div>
+        <div class="st-value">@warning</div>
+        <div class="st-sub">Monitor closely</div>
+        <div class="st-icon"><i class="bi bi-exclamation-triangle"></i></div>
+    </div>
+    <div class="stat-tile tone-blue">
+        <div class="st-label">Info</div>
+        <div class="st-value">@info</div>
+        <div class="st-sub">For awareness</div>
+        <div class="st-icon"><i class="bi bi-info-circle"></i></div>
+    </div>
+    <div class="stat-tile tone-violet">
+        <div class="st-label">Unread</div>
+        <div class="st-value">@unread</div>
+        <div class="st-sub">of @open.Count open alert(s)</div>
+        <div class="st-icon"><i class="bi bi-envelope"></i></div>
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-lg-8">
+        <form method="get" class="filter-bar">
+            <select name="severity" class="form-select form-select-sm" style="max-width:160px">
+                <option value="">All severities</option>
+                @foreach (var s in new[] { "Critical", "Warning", "Info" })
+                {
+                    <option value="@s" selected="@(s == severity)">@s</option>
+                }
+            </select>
+            <select name="rule" class="form-select form-select-sm" style="max-width:220px">
+                <option value="">All rules</option>
+                @foreach (var r in allRules)
+                {
+                    <option value="@r" selected="@(r == rule)">@RuleName(r)</option>
+                }
+            </select>
+            <div class="form-check ms-1">
+                <input class="form-check-input" type="checkbox" name="includeResolved" value="true" id="incRes" @(includeResolved ? "checked" : "") />
+                <label class="form-check-label small" for="incRes">Include resolved</label>
+            </div>
+            <button class="btn btn-sm btn-primary"><i class="bi bi-funnel me-1"></i>Apply</button>
+            @if (!string.IsNullOrEmpty(severity) || !string.IsNullOrEmpty(rule) || includeResolved)
+            {
+                <a asp-action="Index" class="btn btn-sm btn-outline-secondary">Reset</a>
+            }
+            <input class="form-control form-control-sm ms-auto" style="max-width:200px" placeholder="Quick search…" data-table-filter="#tblAlerts" />
+        </form>
+
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h6 class="mb-0">Alerts <span class="text-muted fw-normal small">(@Model.Count)</span></h6>
+            </div>
+            @if (Model.Count == 0)
+            {
+                <div class="card-body">
+                    <div class="empty-state">
+                        <i class="bi bi-check2-circle"></i>
+                        <p class="mb-0">No alerts match these filters — all monitored rules are within limits.</p>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0" id="tblAlerts">
+                        <thead>
+                            <tr><th style="width:32px"></th><th>Alert</th><th>Rule</th><th>Farm / batch</th><th>Raised</th><th class="text-end">Actions</th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var a in Model)
+                            {
+                                <tr class="@(a.IsResolved ? "opacity-50" : "")">
+                                    <td><i class="bi @Fmt.SeverityIcon(a.Severity) fs-5"></i></td>
+                                    <td>
+                                        <div class="@(a.IsRead || a.IsResolved ? "" : "fw-600")">
+                                            @if (!string.IsNullOrEmpty(a.Link))
+                                            {
+                                                <a href="@a.Link" class="text-decoration-none">@a.Title</a>
+                                            }
+                                            else { @a.Title }
+                                            @if (!a.IsRead && !a.IsResolved) { <span class="badge badge-info-soft ms-1">new</span> }
+                                        </div>
+                                        @if (!string.IsNullOrEmpty(a.Message)) { <div class="text-xs text-muted">@a.Message</div> }
+                                        @if (a.IsResolved)
+                                        {
+                                            <div class="text-xs text-success"><i class="bi bi-check2 me-1"></i>Resolved @Fmt.Ago(a.ResolvedAt ?? a.CreatedAt) by @(a.ResolvedBy ?? "system")</div>
+                                        }
+                                    </td>
+                                    <td><span class="chip"><i class="bi @RuleIcon(a.RuleCode) me-1"></i>@RuleName(a.RuleCode)</span></td>
+                                    <td class="small">
+                                        @if (a.FarmId.HasValue)
+                                        {
+                                            <a asp-controller="Farm" asp-action="Detail" asp-route-id="@a.FarmId" class="text-decoration-none">@a.FarmName</a>
+                                        }
+                                        @if (a.BatchId.HasValue)
+                                        {
+                                            <div><a asp-controller="Batch" asp-action="Detail" asp-route-id="@a.BatchId" class="text-decoration-none mono">@a.BatchCode</a></div>
+                                        }
+                                        @if (!a.FarmId.HasValue && !a.BatchId.HasValue) { <span class="text-muted">—</span> }
+                                    </td>
+                                    <td class="small text-nowrap" title="@Fmt.DateTime(a.CreatedAt)">@Fmt.Ago(a.CreatedAt)</td>
+                                    <td class="text-end text-nowrap">
+                                        @if (canAct && !a.IsResolved)
+                                        {
+                                            @if (!a.IsRead)
+                                            {
+                                                <form asp-action="MarkRead" method="post" class="d-inline">
+                                                    <input type="hidden" name="id" value="@a.Id" />
+                                                    <input type="hidden" name="returnUrl" value="@returnUrl" />
+                                                    <button class="btn btn-xs btn-outline-secondary" title="Mark read"><i class="bi bi-envelope-open"></i></button>
+                                                </form>
+                                            }
+                                            <form asp-action="Resolve" method="post" class="d-inline">
+                                                <input type="hidden" name="id" value="@a.Id" />
+                                                <input type="hidden" name="returnUrl" value="@returnUrl" />
+                                                <button class="btn btn-xs btn-outline-success"><i class="bi bi-check2 me-1"></i>Resolve</button>
+                                            </form>
+                                        }
+                                        else if (!a.IsResolved)
+                                        {
+                                            <span class="badge @Fmt.Badge(a.Severity)">@a.Severity</span>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card mb-3">
+            <div class="card-header"><h6 class="mb-0">Open alerts by rule</h6></div>
+            @if (byRule.Count == 0)
+            {
+                <div class="card-body"><div class="empty-state"><i class="bi bi-shield-check"></i><p class="mb-0">Nothing open.</p></div></div>
+            }
+            else
+            {
+                <div class="card-body">
+                    <div style="height:200px"><canvas id="ruleChart"></canvas></div>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm mb-0">
+                        <thead><tr><th>Rule</th><th class="text-end">Crit.</th><th class="text-end">Warn.</th><th class="text-end">Total</th></tr></thead>
+                        <tbody>
+                            @foreach (var r in byRule)
+                            {
+                                <tr>
+                                    <td><a asp-action="Index" asp-route-rule="@r.Rule" class="text-decoration-none"><i class="bi @RuleIcon(r.Rule) me-1"></i>@RuleName(r.Rule)</a>
+                                        <div class="text-xs text-muted">latest @Fmt.Ago(r.Latest)</div></td>
+                                    <td class="text-end @(r.Critical > 0 ? "text-danger fw-600" : "text-muted")">@r.Critical</td>
+                                    <td class="text-end @(r.Warning > 0 ? "text-warning fw-600" : "text-muted")">@r.Warning</td>
+                                    <td class="text-end fw-600">@r.Total</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+
+        <div class="card">
+            <div class="card-header"><h6 class="mb-0">Rules monitored</h6></div>
+            <div class="card-body">
+                <ul class="list-unstyled small mb-2">
+                    @foreach (var r in ruleNames)
+                    {
+                        <li class="mb-2"><i class="bi @r.Value.Icon text-primary me-2"></i><span class="fw-600">@r.Value.Name</span>
+                            <div class="text-xs text-muted ms-4">@r.Value.Desc</div></li>
+                    }
+                </ul>
+                <div class="info-callout text-xs mb-0">
+                    Rules run automatically when this page or the dashboard is opened (throttled). Alerts whose condition clears are resolved
+                    automatically; mortality spikes stay open until a person resolves them. Thresholds are configured in
+                    <a asp-controller="Settings" asp-action="Index">Settings</a>.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+(function () {
+    const el = document.getElementById('ruleChart');
+    if (!el) return;
+    const data = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(byRule.Select(r => new { label = RuleName(r.Rule), c = r.Critical, w = r.Warning, i = r.Total - r.Critical - r.Warning })));
+    new Chart(el, {
+        type: 'bar',
+        data: {
+            labels: data.map(d => d.label),
+            datasets: [
+                { label: 'Critical', data: data.map(d => d.c), backgroundColor: ppColors.red, borderRadius: 3 },
+                { label: 'Warning', data: data.map(d => d.w), backgroundColor: ppColors.amber, borderRadius: 3 },
+                { label: 'Info', data: data.map(d => d.i), backgroundColor: ppColors.blue, borderRadius: 3 }
+            ]
+        },
+        options: {
+            indexAxis: 'y', maintainAspectRatio: false,
+            plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 11 } } } },
+            scales: { x: { stacked: true, ticks: { precision: 0 } }, y: { stacked: true, ticks: { font: { size: 11 } } } }
+        }
+    });
+})();
+</script>
+}

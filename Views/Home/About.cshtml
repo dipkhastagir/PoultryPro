@@ -1,0 +1,55 @@
+@{
+    var log = ((ViewBag.Log as IEnumerable<string>)?.ToList() ?? new List<string>());
+}
+<div class="row g-4">
+    <div class="col-lg-8">
+        <div class="form-card">
+            <h5 class="fw-bold mb-1">PoultryPro v2.0 — Precision Poultry Farm Management &amp; Research Platform</h5>
+            <p class="text-muted">An integrated web platform that connects day-to-day farm operations, mobile field officers and IoT climate sensors
+                with an analytics and experimentation layer, so that the same data used to run the farm can be used for research.</p>
+
+            <h6 class="fw-semibold mt-4">Architecture</h6>
+            <ul class="small">
+                <li><b>Presentation:</b> ASP.NET Core 8 MVC, Razor views, Bootstrap 5, Chart.js, Leaflet maps.</li>
+                <li><b>Application:</b> service layer (one service per module, auto-registered), cookie authentication with six roles, global audit filter.</li>
+                <li><b>Data:</b> SQL Server via Dapper; 40+ tables, analytical views (<code>vw_BatchPerformance</code>, <code>vw_FarmBenchmark</code>…) and stored procedures.</li>
+                <li><b>Integration:</b> REST endpoints for IoT sensor ingestion (<code>POST /api/sensors/ingest</code>) and mobile field-officer synchronisation (<code>/api/mobile/*</code>).</li>
+                <li><b>Automatic provisioning:</b> the database is created, upgraded and seeded on start-up from the scripts in <code>/SQL</code>.</li>
+            </ul>
+
+            <h6 class="fw-semibold mt-4">Analytical methods (citable)</h6>
+            <div class="formula mb-2">FCR  = Feed consumed (kg) / Live mass produced (kg)</div>
+            <div class="formula mb-2">EPEF = Livability(%) × Live weight(kg) × 100 / (Age(d) × FCR)</div>
+            <div class="formula mb-2">THI  = (1.8·T + 32) − (0.55 − 0.0055·RH)·(1.8·T − 26)        (NRC, 1971)</div>
+            <div class="formula mb-2">EWMA zₜ = λ·xₜ + (1−λ)·zₜ₋₁,  UCL = μ + L·σ·√(λ/(2−λ)·(1−(1−λ)²ᵗ)),  λ = 0.3, L = 3</div>
+            <div class="formula mb-2">Welch t = (x̄₁ − x̄₂) / √(s₁²/n₁ + s₂²/n₂)  — treatment vs. control field trials</div>
+            <p class="small text-muted mt-2">Growth curves are compared with breed-standard reference tables (editable under Breed Standards) using linear interpolation between tabulated ages.
+                Harvest dates are forecast by scaling the breed curve with the flock's observed performance ratio and by OLS regression on recent weights.</p>
+
+            <h6 class="fw-semibold mt-4">Modules</h6>
+            <div class="d-flex flex-wrap gap-2">
+                @foreach (var m in new[] { "Farms & map", "Flocks / batches", "Daily records", "Field visits (GPS)", "Field officers", "Health & vaccination", "Vaccine programmes",
+                                          "Biosecurity audits", "Disease library", "Egg production", "Feed formulations", "IoT sensors", "Traceability & QR",
+                                          "Analytics hub", "Growth vs standard", "Mortality anomaly (EWMA)", "Heat stress (THI)", "Risk score", "Harvest & feed forecast",
+                                          "Farm benchmarking", "Carbon footprint", "Field trials", "Research datasets", "Inventory", "Purchase orders", "Suppliers",
+                                          "Sales & invoices", "Customers", "Finance & budgets", "Employees", "Attendance", "Payroll", "Tasks", "Calendar",
+                                          "Alerts", "Reports", "Users & roles", "Audit log", "Settings" })
+                {
+                    <span class="chip">@m</span>
+                }
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="form-card">
+            <h6 class="fw-semibold">Runtime</h6>
+            <dl class="kv">
+                <dt>SQL Server</dt><dd>@ViewBag.Server</dd>
+                <dt>.NET</dt><dd>@System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription</dd>
+                <dt>Signed in</dt><dd>@User.UserName() (@User.Role())</dd>
+            </dl>
+            <h6 class="fw-semibold mt-3">Database start-up log</h6>
+            <pre class="formula" style="white-space:pre-wrap;font-size:11px;max-height:340px;overflow:auto">@string.Join("\n", log)</pre>
+        </div>
+    </div>
+</div>

@@ -1,0 +1,146 @@
+@model FeedFormulation
+@{
+    var stages = ViewBag.Stages as string[] ?? Array.Empty<string>();
+    var types = ViewBag.BatchTypes as string[] ?? Array.Empty<string>();
+    var isNew = Model.Id == 0;
+}
+<div class="row justify-content-center"><div class="col-xl-9">
+<div class="page-head">
+    <div>
+        <a asp-action="Index" class="text-xs text-decoration-none"><i class="bi bi-arrow-left me-1"></i>Feed formulations</a>
+        <h4 class="mt-1"><i class="bi bi-basket text-success me-2"></i>@ViewData["Title"]</h4>
+        <p>@ViewData["Subtitle"]</p>
+    </div>
+</div>
+<div class="row g-3">
+    <div class="col-lg-8">
+        <div class="form-card">
+            <form asp-action="@(isNew ? "Create" : "Edit")" method="post" novalidate id="feedForm">
+                <input type="hidden" asp-for="Id" />
+                <div asp-validation-summary="ModelOnly" class="alert alert-danger py-2 small"></div>
+                <div class="row g-3">
+                    <div class="col-md-12">
+                        <label class="form-label">Name *</label>
+                        <input asp-for="Name" class="form-control" maxlength="150" required placeholder="e.g. Broiler Starter Crumble" />
+                        <span asp-validation-for="Name" class="text-danger small"></span>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Flock type *</label>
+                        <select asp-for="BatchType" class="form-select">
+                            @foreach (var t in types.Union(new[] { Model.BatchType }).Distinct())
+                            {
+                                <option value="@t">@t</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Stage *</label>
+                        <select asp-for="Stage" class="form-select">
+                            @foreach (var s in stages.Union(new[] { Model.Stage }).Distinct())
+                            {
+                                <option value="@s">@s</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">From day</label>
+                        <input asp-for="FromAgeDay" type="number" min="0" class="form-control" />
+                        <span asp-validation-for="FromAgeDay" class="text-danger small"></span>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">To day</label>
+                        <input asp-for="ToAgeDay" type="number" min="0" class="form-control" />
+                        <span asp-validation-for="ToAgeDay" class="text-danger small"></span>
+                    </div>
+
+                    <div class="col-12"><div class="section-title mt-2">Nutrient specification</div></div>
+                    <div class="col-md-4">
+                        <label class="form-label">Crude protein % *</label>
+                        <input asp-for="CrudeProteinPct" type="number" step="0.01" min="0" max="60" class="form-control nut" id="cp" />
+                        <span asp-validation-for="CrudeProteinPct" class="text-danger small"></span>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">ME (kcal/kg) *</label>
+                        <input asp-for="EnergyKcalPerKg" type="number" min="0" max="5000" class="form-control nut" id="me" />
+                        <span asp-validation-for="EnergyKcalPerKg" class="text-danger small"></span>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Cost per kg (৳) *</label>
+                        <input asp-for="CostPerKg" type="number" step="0.01" min="0" class="form-control nut" id="cost" />
+                        <span asp-validation-for="CostPerKg" class="text-danger small"></span>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Calcium %</label>
+                        <input asp-for="CalciumPct" type="number" step="0.01" min="0" max="10" class="form-control nut" id="ca" />
+                        <span asp-validation-for="CalciumPct" class="text-danger small"></span>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Available phosphorus %</label>
+                        <input asp-for="PhosphorusPct" type="number" step="0.01" min="0" max="5" class="form-control nut" id="p" />
+                        <span asp-validation-for="PhosphorusPct" class="text-danger small"></span>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Digestible lysine %</label>
+                        <input asp-for="LysinePct" type="number" step="0.01" min="0" max="5" class="form-control nut" id="lys" />
+                        <span asp-validation-for="LysinePct" class="text-danger small"></span>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Ingredients / inclusion rates</label>
+                        <textarea asp-for="Ingredients" class="form-control" rows="3" placeholder="Maize 56%, Soybean meal 34%, Soy oil 5%, DCP 1.6%, Limestone 1.1%, Premix 1%, Salt 0.3%"></textarea>
+                    </div>
+                    <div class="col-md-8">
+                        <label class="form-label">Notes</label>
+                        <input asp-for="Notes" class="form-control" maxlength="500" placeholder="Form (mash / crumble / pellet), withdrawal notes…" />
+                    </div>
+                    <div class="col-md-4 d-flex align-items-end">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" asp-for="IsActive" />
+                            <label class="form-check-label" asp-for="IsActive">Active (used by the planner)</label>
+                        </div>
+                    </div>
+                </div>
+                <div class="d-flex justify-content-end gap-2 mt-4">
+                    <a asp-action="Index" class="btn btn-outline-secondary">Cancel</a>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-check2 me-1"></i>@(isNew ? "Add formulation" : "Save changes")</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card position-sticky" style="top:80px">
+            <div class="card-header"><h6><i class="bi bi-calculator text-success me-2"></i>Ration balance</h6></div>
+            <div class="card-body">
+                <dl class="kv mb-3">
+                    <dt>ME : CP ratio</dt><dd class="fw-600" id="mecp">—</dd>
+                    <dt>Ca : P ratio</dt><dd id="cap">—</dd>
+                    <dt>Lysine per Mcal</dt><dd id="lysme">—</dd>
+                    <dt>Cost per CP point</dt><dd id="cpcost">—</dd>
+                </dl>
+                <div class="text-xs text-muted">
+                    <b>Typical targets</b><br />
+                    Broiler starter: CP 21–23%, ME 3000–3050, Lys 1.28–1.44%<br />
+                    Broiler finisher: CP 18–19%, ME 3150–3200<br />
+                    Layer in lay: CP 16.5–17.5%, Ca 3.8–4.2%, avail. P 0.38–0.42%
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+</div></div>
+
+@section Scripts {
+<script>
+(function () {
+    const v = id => { const x = document.getElementById(id).value; return x === '' ? null : Number(x); };
+    function update() {
+        const cp = v('cp'), me = v('me'), ca = v('ca'), p = v('p'), lys = v('lys'), cost = v('cost');
+        document.getElementById('mecp').textContent = cp > 0 && me > 0 ? (me / cp).toFixed(0) : '—';
+        document.getElementById('cap').textContent = ca != null && p > 0 ? (ca / p).toFixed(2) + ' : 1' : '—';
+        document.getElementById('lysme').textContent = lys != null && me > 0 ? (lys * 10 / (me / 1000)).toFixed(2) + ' g/Mcal' : '—';
+        document.getElementById('cpcost').textContent = cp > 0 && cost != null ? '৳' + (cost / cp).toFixed(2) : '—';
+    }
+    document.querySelectorAll('.nut').forEach(i => i.addEventListener('input', update));
+    update();
+})();
+</script>
+}

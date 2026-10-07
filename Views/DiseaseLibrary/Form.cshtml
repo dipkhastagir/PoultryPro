@@ -1,0 +1,89 @@
+@model DiseaseLibraryEntry
+@{
+    var cats = ((ViewBag.Categories as IEnumerable<string>)?.ToList() ?? new List<string>());
+    var sevs = ViewBag.Severities as string[] ?? new[] { "Low", "Medium", "High", "Critical" };
+    var isNew = Model.Id == 0;
+}
+<div class="row justify-content-center"><div class="col-xl-9">
+<div class="form-card">
+    <h6 class="fw-semibold mb-1"><i class="bi bi-book text-primary me-2"></i>@(isNew ? "Add disease to library" : "Edit " + Model.Name)</h6>
+    <p class="text-muted small mb-4">Use the same name as farm disease cases (e.g. "Newcastle Disease") so case history links automatically.</p>
+    <form asp-action="@(isNew ? "Create" : "Edit")" method="post" novalidate>
+        <input type="hidden" asp-for="Id" />
+        <div asp-validation-summary="ModelOnly" class="alert alert-danger py-2 small"></div>
+        <div class="row g-3">
+            <div class="col-md-6">
+                <label class="form-label">Disease name *</label>
+                <input asp-for="Name" class="form-control" required maxlength="150" placeholder="e.g. Infectious Bursal Disease (Gumboro)" />
+                <span asp-validation-for="Name" class="text-danger small"></span>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Local / Bangla name</label>
+                <input asp-for="LocalName" class="form-control" maxlength="150" placeholder="e.g. রানীক্ষেত" />
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Category *</label>
+                <select asp-for="Category" class="form-select">
+                    @foreach (var c in cats.Union(new[] { Model.Category }).Distinct())
+                    {
+                        <option value="@c">@c</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Severity *</label>
+                <select asp-for="Severity" class="form-select">
+                    @foreach (var s in sevs) { <option value="@s">@s</option> }
+                </select>
+                <span asp-validation-for="Severity" class="text-danger small"></span>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Typical mortality</label>
+                <input asp-for="MortalityRange" class="form-control" maxlength="50" placeholder="e.g. 10–30%" />
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Age group affected</label>
+                <input asp-for="AgeGroup" class="form-control" maxlength="100" placeholder="e.g. 3–6 weeks; all ages" />
+            </div>
+            <div class="col-md-6 d-flex align-items-end gap-4">
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" asp-for="IsZoonotic" />
+                    <label class="form-check-label" asp-for="IsZoonotic">Zoonotic (infects humans)</label>
+                </div>
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" asp-for="IsNotifiable" />
+                    <label class="form-check-label" asp-for="IsNotifiable">Notifiable to DLS</label>
+                </div>
+            </div>
+            <div class="col-12">
+                <label class="form-label">Clinical signs & symptoms *</label>
+                <textarea asp-for="Symptoms" class="form-control" rows="4" placeholder="Respiratory signs, greenish diarrhoea, twisted neck, sudden death…"></textarea>
+                <span asp-validation-for="Symptoms" class="text-danger small"></span>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Transmission</label>
+                <textarea asp-for="Transmission" class="form-control" rows="4"></textarea>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Prevention & control</label>
+                <textarea asp-for="Prevention" class="form-control" rows="4"></textarea>
+            </div>
+            <div class="col-12">
+                <label class="form-label">Treatment</label>
+                <textarea asp-for="Treatment" class="form-control" rows="4" placeholder="Drugs, dosage, supportive care; note withdrawal periods."></textarea>
+            </div>
+        </div>
+        <div class="d-flex gap-2 mt-4">
+            <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>@(isNew ? "Add to library" : "Save changes")</button>
+            @if (isNew)
+            {
+                <a asp-action="Index" class="btn btn-outline-secondary">Cancel</a>
+            }
+            else
+            {
+                <a asp-action="Detail" asp-route-id="@Model.Id" class="btn btn-outline-secondary">Cancel</a>
+            }
+        </div>
+    </form>
+</div>
+</div></div>

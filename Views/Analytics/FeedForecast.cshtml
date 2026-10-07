@@ -1,0 +1,203 @@
+@model FeedForecastVm
+@using System.Text.Json
+@using System.Globalization
+@{
+    var ci = CultureInfo.InvariantCulture;
+    var rows = Model.Rows;
+    var sets = rows.Where(r => r.TotalKg > 0).Select(r => new { label = r.BatchCode, data = r.DailyKg.Select(v => Math.Round(v, 1)).ToList() }).ToList();
+    var cover = Model.TotalDemandKg > 0 ? Model.TotalStockKg / (Model.TotalDemandKg / 14.0) : (double?)null;
+    var critical = Model.Stages.Count(s => s.Status == "Critical" || s.Status == "No stock item");
+    var reorder = Model.Stages.Count(s => s.Status == "Reorder");
+    string StatusBadge(string st) => st switch { "OK" => "badge-healthy", "Reorder" => "badge-warning-soft", "Critical" => "badge-danger-soft", _ => "badge-gray" };
+    string Kg(double v) => v.ToString("N0", ci);
+}
+
+<partial name="_AnalyticsNav" />
+
+<div class="page-head">
+    <div>
+        <h4>Feed demand — next 14 days (@Model.DayLabels.FirstOrDefault() – @Model.DayLabels.LastOrDefault())</h4>
+        <p>Projected kg of feed per flock and per ration stage, matched against feed stock in inventory to give days of cover and reorder quantities.</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a asp-controller="Inventory" asp-action="Index" class="btn btn-sm btn-outline-secondary"><i class="bi bi-box-seam me-1"></i>Inventory</a>
+    </div>
+</div>
+
+<div class="stat-grid">
+    <div class="stat-tile tone-blue">
+        <div class="st-label">14-day demand</div>
+        <div class="st-value">@Kg(Model.TotalDemandKg) kg</div>
+        <div class="st-sub">@rows.Count active flock(s) · @Kg(Model.TotalDemandKg / 14.0) kg/day</div>
+        <div class="st-icon"><i class="bi bi-basket"></i></div>
+    </div>
+    <div class="stat-tile tone-green">
+        <div class="st-label">Feed in stock</div>
+        <div class="st-value">@Kg(Model.TotalStockKg) kg</div>
+        <div class="st-sub">@Model.FeedItems.Count feed item(s) in inventory</div>
+        <div class="st-icon"><i class="bi bi-box-seam"></i></div>
+    </div>
+    <div class="stat-tile @(cover < 7 ? "tone-red" : cover < 14 ? "tone-amber" : "tone-violet")">
+        <div class="st-label">Overall days of cover</div>
+        <div class="st-value">@(cover.HasValue ? cover.Value.ToString("0.0", ci) : "—")</div>
+        <div class="st-sub">total stock ÷ mean daily demand</div>
+        <div class="st-icon"><i class="bi bi-hourglass-split"></i></div>
+    </div>
+    <div class="stat-tile @(critical > 0 ? "tone-red" : reorder > 0 ? "tone-amber" : "tone-green")">
+        <div class="st-label">Suggested reorder</div>
+        <div class="st-value">@Fmt.MoneyShort(Model.ReorderCost)</div>
+        <div class="st-sub">@critical critical · @reorder to reorder</div>
+        <div class="st-icon"><i class="bi bi-cart-plus"></i></div>
+    </div>
+</div>
+
+@if (rows.Count == 0)
+{
+    <div class="card"><div class="empty-state"><i class="bi bi-basket"></i>No active flocks — there is no feed demand to forecast.</div></div>
+}
+else
+{
+    <div class="row g-3 mb-3">
+        <div class="col-xl-8">
+            <div class="card h-100">
+                <div class="card-header"><h6 class="mb-0"><i class="bi bi-bar-chart me-1"></i>Daily feed demand by flock (kg)</h6></div>
+                <div class="card-body">
+                    @if (sets.Count == 0)
+                    {
+                        <div class="empty-state"><i class="bi bi-bar-chart"></i>All active meat flocks are due for harvest; no feed demand in the window.</div>
+                    }
+                    else
+                    {
+                        <div style="height:320px"><canvas id="chFeed"></canvas></div>
+                    }
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-4">
+            <div class="card h-100">
+                <div class="card-header"><h6 class="mb-0"><i class="bi bi-calculator me-1"></i>Method</h6></div>
+                <div class="card-body">
+                    <div class="formula mb-2">Dₜ = Nₜ · g(aₜ) · r ÷ 1000   (kg/day)</div>
+                    <div class="formula mb-2">Nₜ = N₀ · (1 − m)ᵗ</div>
+                    <div class="formula mb-2">r = Σ observed g/bird ÷ Σ standard g/bird  (last 7 d, 0.6–1.4)</div>
+                    <div class="formula mb-3">Cover = stock kg ÷ (Σ D / 14)</div>
+                    <div class="info-callout text-xs">
+                        <b>How to read this.</b> g(a) is the breed-standard daily intake at age a; layers use a flat @Model.LayerGmPerHen.ToString("0", ci) g/hen/day.
+                        Meat flocks stop eating at their expected harvest date. Stock is matched to stage by item name (e.g. "Broiler Starter"), bags are
+                        counted as 50 kg. A stage with &lt; 7 days of cover is <b>critical</b>; &lt; 14 days triggers a reorder of
+                        (demand + minimum level − stock), rounded up to whole 50 kg bags.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-header"><h6 class="mb-0"><i class="bi bi-layers me-1"></i>Demand by feed stage vs stock</h6></div>
+        @if (Model.Stages.Count == 0)
+        {
+            <div class="empty-state"><i class="bi bi-layers"></i>No demand in the forecast window.</div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead><tr><th>Flock type</th><th>Stage</th><th>Matched stock items</th><th class="text-end">14-d demand (kg)</th><th class="text-end">Avg/day</th><th class="text-end">Stock (kg)</th><th class="text-end">Days cover</th><th class="text-end">Reorder (kg)</th><th class="text-end">Cost</th><th>Status</th></tr></thead>
+                    <tbody>
+                    @foreach (var g in Model.Stages)
+                    {
+                        <tr>
+                            <td>@g.BatchType</td>
+                            <td class="fw-600">@g.Stage</td>
+                            <td class="small">@(string.IsNullOrEmpty(g.Items) ? "— none —" : g.Items)</td>
+                            <td class="text-end">@Kg(g.DemandKg)</td>
+                            <td class="text-end">@g.AvgDailyKg.ToString("N1", ci)</td>
+                            <td class="text-end">@Kg(g.StockKg)</td>
+                            <td class="text-end fw-600 @(g.DaysCover < 7 ? "text-danger" : g.DaysCover < 14 ? "text-warning" : "text-success")">@(g.DaysCover.HasValue ? g.DaysCover.Value.ToString("0.0", ci) : "—")</td>
+                            <td class="text-end">@(g.ReorderKg > 0 ? Kg(g.ReorderKg) : "—")</td>
+                            <td class="text-end">@(g.ReorderKg > 0 ? Fmt.Money((decimal)g.ReorderKg * g.CostPerKg) : "—")</td>
+                            <td><span class="badge @StatusBadge(g.Status)">@g.Status</span></td>
+                        </tr>
+                    }
+                    </tbody>
+                    <tfoot><tr class="fw-600"><td colspan="3">Total</td><td class="text-end">@Kg(Model.Stages.Sum(x => x.DemandKg))</td><td></td><td class="text-end">@Kg(Model.Stages.Sum(x => x.StockKg))</td><td></td><td class="text-end">@Kg(Model.Stages.Sum(x => x.ReorderKg))</td><td class="text-end">@Fmt.Money(Model.ReorderCost)</td><td></td></tr></tfoot>
+                </table>
+            </div>
+        }
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-header"><h6 class="mb-0"><i class="bi bi-table me-1"></i>Per-flock demand</h6></div>
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead><tr><th>Flock</th><th class="text-end">Age</th><th class="text-end">Birds</th><th>Basis</th><th>Stages</th>
+                    @foreach (var d in Model.DayLabels.Where((x, i) => i % 2 == 0)) { <th class="text-end text-nowrap text-xs">@d</th> }
+                    <th class="text-end">Total kg</th></tr></thead>
+                <tbody>
+                @foreach (var r in rows)
+                {
+                    <tr>
+                        <td><a asp-controller="Batch" asp-action="Detail" asp-route-id="@r.BatchId" class="fw-600 text-decoration-none">@r.BatchCode</a>
+                            <div class="text-xs text-muted">@r.FarmName · @r.Breed</div></td>
+                        <td class="text-end">@r.AgeInDays</td>
+                        <td class="text-end">@Fmt.Num(r.Birds)</td>
+                        <td class="text-xs" style="max-width:220px">@r.Basis</td>
+                        <td class="text-xs">@r.StagesText</td>
+                        @for (int i = 0; i < 14; i += 2) { <td class="text-end text-xs">@((r.DailyKg[i] + (i + 1 < 14 ? r.DailyKg[i + 1] : 0)).ToString("N0", ci))</td> }
+                        <td class="text-end fw-600">@Kg(r.TotalKg)</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+        <div class="card-body py-2 text-xs text-muted border-top">Day columns show 2-day totals starting on the labelled date.</div>
+    </div>
+}
+
+<div class="card">
+    <div class="card-header"><h6 class="mb-0"><i class="bi bi-box-seam me-1"></i>Feed stock in inventory</h6></div>
+    @if (Model.FeedItems.Count == 0)
+    {
+        <div class="empty-state"><i class="bi bi-box-seam"></i>No inventory items with category "Feed". Add feed items in Inventory so cover can be calculated.</div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead><tr><th>Item</th><th class="text-end">Quantity</th><th>Unit</th><th class="text-end">Minimum</th><th class="text-end">Unit cost</th></tr></thead>
+                <tbody>
+                @foreach (var i in Model.FeedItems)
+                {
+                    <tr>
+                        <td class="fw-600">@i.Name</td>
+                        <td class="text-end @(i.Quantity <= i.MinimumLevel ? "text-danger fw-600" : "")">@Fmt.Num(i.Quantity, 0)</td>
+                        <td>@i.Unit</td>
+                        <td class="text-end text-muted">@Fmt.Num(i.MinimumLevel, 0)</td>
+                        <td class="text-end">@Fmt.Money(i.UnitCost, 2)</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@section Scripts {
+<script>
+(function () {
+    const el = document.getElementById('chFeed');
+    if (!el) return;
+    const labels = @Html.Raw(JsonSerializer.Serialize(Model.DayLabels));
+    const sets = @Html.Raw(JsonSerializer.Serialize(sets));
+    new Chart(el, {
+        type: 'bar',
+        data: { labels, datasets: sets.map((s, i) => ({ label: s.label, data: s.data, backgroundColor: ppColors.series[i % ppColors.series.length], borderRadius: 2 })) },
+        options: {
+            interaction: { mode: 'index', intersect: false },
+            scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, beginAtZero: true, title: { display: true, text: 'kg / day' } } },
+            plugins: { tooltip: { callbacks: { footer: items => 'Total: ' + items.reduce((a, b) => a + b.raw, 0).toFixed(0) + ' kg' } } }
+        }
+    });
+})();
+</script>
+}

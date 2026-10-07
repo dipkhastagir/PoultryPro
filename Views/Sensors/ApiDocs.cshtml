@@ -1,0 +1,207 @@
+@model SensorApiDocsVm
+@{
+    var ex = Model.Example;
+    var code = ex?.DeviceCode ?? "PP-NODE-001";
+    // Only managers see a real key on this page; everyone else gets a placeholder
+    var key = Model.CanSimulate && ex != null ? ex.ApiKey : "YOUR_64_CHAR_DEVICE_KEY";
+    var ingestUrl = Model.BaseUrl + "/api/sensors/ingest";
+    var activeDevices = Model.Devices.Where(d => d.IsActive).ToList();
+}
+
+<div class="page-head">
+    <div>
+        <a asp-action="Index" class="text-xs text-decoration-none"><i class="bi bi-arrow-left me-1"></i>All sensors</a>
+        <h4 class="mt-1">Sensor Integration Guide</h4>
+        <p>REST endpoint, payload schema and ready-to-flash ESP32 firmware for shed climate nodes</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a asp-action="Readings" class="btn btn-sm btn-outline-secondary"><i class="bi bi-graph-up me-1"></i>Readings</a>
+        @if (Model.CanSimulate)
+        {
+            <a asp-action="Create" class="btn btn-sm btn-primary"><i class="bi bi-plus-lg me-1"></i>Register sensor</a>
+        }
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-xl-8">
+        <div class="card mb-4">
+            <div class="card-header"><h6><i class="bi bi-diagram-3 text-primary me-2"></i>1 · Endpoint</h6></div>
+            <div class="card-body">
+                <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+                    <span class="badge badge-healthy">POST</span>
+                    <code class="fs-6">@ingestUrl</code>
+                    <button type="button" class="btn btn-xs btn-outline-secondary" data-copy-text="@ingestUrl"><i class="bi bi-clipboard"></i></button>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm mb-3">
+                        <thead><tr><th>Header</th><th>Value</th><th>Notes</th></tr></thead>
+                        <tbody>
+                            <tr><td><code>Content-Type</code></td><td><code>application/json</code></td><td class="text-xs text-muted">required</td></tr>
+                            <tr><td><code>X-Device-Key</code></td><td class="mono text-xs">64-hex key from the device page</td><td class="text-xs text-muted">must match the key registered for <code>deviceCode</code></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                    <span class="badge badge-info-soft">GET</span>
+                    <code>@Model.BaseUrl/api/sensors/{deviceCode}/latest</code>
+                    <span class="text-xs text-muted">— same header; returns the last stored reading with THI and heat band.</span>
+                </div>
+                <div class="info-callout mt-3">
+                    The server computes the Temperature-Humidity Index <code>THI = 0.8·T + (RH/100)·(T − 14.4) + 46.4</code>, updates the device's
+                    <b>last seen</b> time (a node is <b>online</b> if it reported within 1 hour) and raises heat-stress / ammonia alerts on the dashboard.
+                    Readings are accepted for up to 30 days in the past, so a node can buffer data while Wi-Fi is down.
+                </div>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header"><h6><i class="bi bi-braces text-primary me-2"></i>2 · Request JSON schema</h6>
+                <button type="button" class="btn btn-xs btn-outline-secondary" data-copy="#snSchema"><i class="bi bi-clipboard me-1"></i>Copy</button></div>
+            <div class="card-body">
+                <pre id="snSchema" class="formula mb-3" style="white-space:pre;overflow:auto;max-height:340px">@SensorSnippets.JsonSchema</pre>
+                <div class="text-xs text-muted mb-1 fw-600">Responses</div>
+                <pre class="formula mb-0" style="white-space:pre;overflow:auto">@SensorSnippets.Response</pre>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header"><h6><i class="bi bi-terminal text-primary me-2"></i>3 · Test with curl</h6>
+                <button type="button" class="btn btn-xs btn-outline-secondary" data-copy="#snCurl"><i class="bi bi-clipboard me-1"></i>Copy</button></div>
+            <div class="card-body">
+                <pre id="snCurl" class="formula mb-0" style="white-space:pre;overflow:auto">@SensorSnippets.Curl(Model.BaseUrl, code, key)</pre>
+                @if (!Model.CanSimulate)
+                {
+                    <div class="text-xs text-muted mt-2">Ask an administrator or manager for the device key — it is hidden for your role.</div>
+                }
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header"><h6><i class="bi bi-motherboard text-primary me-2"></i>4 · ESP32 + DHT22 Arduino sketch</h6>
+                <button type="button" class="btn btn-xs btn-primary" data-copy="#snSketch"><i class="bi bi-clipboard me-1"></i>Copy sketch</button></div>
+            <div class="card-body">
+                <p class="text-xs text-muted mb-2">
+                    Arduino IDE → Boards Manager: <b>esp32 by Espressif</b>. Library Manager: <b>DHT sensor library</b> and <b>Adafruit Unified Sensor</b>.
+                    Wire DHT22 DATA → GPIO 4 with a 10 kΩ pull-up to 3V3. Set your Wi-Fi credentials, flash, and open the Serial Monitor at 115200 baud.
+                    @if (ex != null) { <span>Pre-filled for <b class="mono">@ex.DeviceCode</b> (@ex.FarmName@(string.IsNullOrEmpty(ex.ShedNo) ? "" : ", shed " + ex.ShedNo)).</span> }
+                </p>
+                <pre id="snSketch" class="formula mb-0" style="white-space:pre;overflow:auto;max-height:560px">@SensorSnippets.Esp32Sketch(Model.BaseUrl, code, key)</pre>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-4">
+        <div class="card mb-4">
+            <div class="card-header"><h6><i class="bi bi-send text-primary me-2"></i>Send test reading</h6></div>
+            <div class="card-body">
+                <p class="text-xs text-muted">No hardware yet? Insert a realistic simulated reading (diurnal temperature curve, continuity with the previous value, plausible NH₃/CO₂/feed levels) exactly as if the node had posted it.</p>
+                @if (!Model.CanSimulate)
+                {
+                    <div class="warn-callout"><i class="bi bi-lock me-1"></i>Only administrators and managers can send test readings.</div>
+                }
+                else if (activeDevices.Count == 0)
+                {
+                    <div class="empty-state py-3"><i class="bi bi-cpu"></i>No active devices. <a asp-action="Create">Register one</a> first.</div>
+                }
+                else
+                {
+                    <form asp-action="Simulate" method="post">
+                        <div class="mb-2">
+                            <label class="form-label">Device</label>
+                            <select name="deviceId" class="form-select form-select-sm">
+                                @foreach (var d in activeDevices)
+                                {
+                                    <option value="@d.Id" selected="@(ex?.Id == d.Id)">@d.DeviceCode — @d.FarmName@(string.IsNullOrEmpty(d.ShedNo) ? "" : " / " + d.ShedNo)</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label">Number of readings</label>
+                            <select name="count" class="form-select form-select-sm">
+                                <option value="1">1 reading</option>
+                                <option value="3">3 readings</option>
+                                <option value="6">6 readings</option>
+                                <option value="12">12 readings</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">After sending</label>
+                            <select name="returnTo" class="form-select form-select-sm">
+                                <option value="docs">Stay on this page</option>
+                                <option value="readings">Open the device's readings</option>
+                                <option value="index">Go to sensor overview</option>
+                            </select>
+                        </div>
+                        <button class="btn btn-primary btn-sm w-100"><i class="bi bi-lightning-charge me-1"></i>Send test reading</button>
+                    </form>
+                }
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header"><h6><i class="bi bi-cpu text-primary me-2"></i>Registered devices</h6><span class="text-xs text-muted">@Model.Devices.Count</span></div>
+            @if (Model.Devices.Count == 0)
+            {
+                <div class="empty-state py-3"><i class="bi bi-cpu"></i>No devices registered.</div>
+            }
+            else
+            {
+                <ul class="list-group list-group-flush">
+                    @foreach (var d in Model.Devices)
+                    {
+                        <li class="list-group-item d-flex justify-content-between align-items-center" style="font-size:13px">
+                            <div>
+                                <a asp-action="Readings" asp-route-deviceId="@d.Id" class="mono fw-600">@d.DeviceCode</a>
+                                <div class="text-xs text-muted">@d.FarmName@(string.IsNullOrEmpty(d.ShedNo) ? "" : " · " + d.ShedNo) · @(d.LastSeenAt.HasValue ? Fmt.Ago(d.LastSeenAt) : "never seen")</div>
+                            </div>
+                            <span class="badge @(!d.IsActive ? "badge-gray" : d.IsOnline ? "badge-healthy" : "badge-danger-soft")">@(!d.IsActive ? "Inactive" : d.IsOnline ? "Online" : "Offline")</span>
+                        </li>
+                    }
+                </ul>
+            }
+        </div>
+
+        <div class="card">
+            <div class="card-header"><h6><i class="bi bi-phone text-primary me-2"></i>Mobile field app API</h6></div>
+            <div class="card-body text-xs">
+                <p class="text-muted mb-2">Field-officer apps authenticate with the <code>X-Api-Key</code> header (setting <code>Api.MobileSyncKey</code>).</p>
+                <ul class="ps-3 mb-0 mono" style="line-height:1.9">
+                    <li>POST /api/mobile/login</li>
+                    <li>GET  /api/mobile/officers/{id}/farms</li>
+                    <li>POST /api/mobile/visits</li>
+                    <li>POST /api/mobile/visits/{id}/daily-records</li>
+                    <li>POST /api/mobile/visits/{id}/complete</li>
+                    <li>POST /api/mobile/visits/{id}/sync</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+(function () {
+    function flash(btn) {
+        const old = btn.innerHTML;
+        btn.innerHTML = '<i class="bi bi-check2 me-1"></i>Copied';
+        setTimeout(() => btn.innerHTML = old, 1500);
+    }
+    function copy(text, btn) {
+        if (navigator.clipboard && window.isSecureContext) {
+            navigator.clipboard.writeText(text).then(() => flash(btn));
+        } else {
+            const ta = document.createElement('textarea');
+            ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+            document.body.appendChild(ta); ta.select();
+            try { document.execCommand('copy'); flash(btn); } finally { ta.remove(); }
+        }
+    }
+    document.querySelectorAll('[data-copy]').forEach(b => b.addEventListener('click', () => {
+        const el = document.querySelector(b.getAttribute('data-copy'));
+        if (el) copy(el.textContent, b);
+    }));
+    document.querySelectorAll('[data-copy-text]').forEach(b => b.addEventListener('click', () => copy(b.getAttribute('data-copy-text'), b)));
+})();
+</script>
+}

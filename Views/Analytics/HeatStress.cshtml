@@ -1,0 +1,274 @@
+@model HeatStressVm
+@using System.Text.Json
+@using System.Globalization
+@{
+    var ci = CultureInfo.InvariantCulture;
+    var withThi = Model.Farms.Where(f => f.Thi.HasValue).ToList();
+    var hottest = withThi.OrderByDescending(f => f.Thi).FirstOrDefault();
+    var farmsAbove = withThi.Count(f => f.Thi >= Model.Warn);
+    var batchesHot = Model.Batches.Count(b => b.DaysAlert > 0);
+    var series = Model.Series.Select(x => new { name = x.FarmName, data = x.Values.Select(v => v.HasValue ? Math.Round(v.Value, 1) : (double?)null).ToList() }).ToList();
+    double r = double.IsNaN(Model.PearsonR) ? 0 : Model.PearsonR;
+    string strength = Math.Abs(r) >= 0.5 ? "strong" : Math.Abs(r) >= 0.3 ? "moderate" : Math.Abs(r) >= 0.1 ? "weak" : "negligible";
+    var xs = Model.Scatter.Select(p => p[0]).ToList();
+    double? xMin = xs.Count > 0 ? xs.Min() : null, xMax = xs.Count > 0 ? xs.Max() : null;
+    var fit = xMin.HasValue ? new[] { new[] { xMin.Value, Math.Round(Model.Intercept + Model.Slope * xMin.Value, 4) }, new[] { xMax!.Value, Math.Round(Model.Intercept + Model.Slope * xMax.Value, 4) } } : Array.Empty<double[]>();
+    var warn = Model.Warn.ToString("0.#", ci);
+    var crit = Model.Crit.ToString("0.#", ci);
+}
+
+<partial name="_AnalyticsNav" />
+
+<div class="page-head">
+    <div>
+        <h4>Temperature-Humidity Index across farms and flocks</h4>
+        <p>Live THI from IoT sensors, 14-day exposure per flock from daily records, and the THI–mortality relationship in the farm's own history.</p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+        <span class="chip"><i class="bi bi-thermometer-half"></i>Alert ≥ @warn</span>
+        <span class="chip"><i class="bi bi-thermometer-high"></i>Danger ≥ @crit</span>
+        <span class="chip"><i class="bi bi-fire"></i>Emergency ≥ @((Model.Crit + 5).ToString("0.#", ci))</span>
+    </div>
+</div>
+
+<div class="stat-grid">
+    <div class="stat-tile @(hottest != null && hottest.Thi >= Model.Crit ? "tone-red" : hottest != null && hottest.Thi >= Model.Warn ? "tone-amber" : "tone-green")">
+        <div class="st-label">Highest current THI</div>
+        <div class="st-value">@(hottest != null ? hottest.Thi!.Value.ToString("0.0", ci) : "—")</div>
+        <div class="st-sub">@(hottest != null ? $"{hottest.FarmName} · {hottest.Band}" : "no sensor readings")</div>
+        <div class="st-icon"><i class="bi bi-thermometer-sun"></i></div>
+    </div>
+    <div class="stat-tile tone-amber">
+        <div class="st-label">Farms above alert</div>
+        <div class="st-value">@farmsAbove <span class="text-muted" style="font-size:14px">/ @Model.Farms.Count</span></div>
+        <div class="st-sub">based on latest sensor reading</div>
+        <div class="st-icon"><i class="bi bi-house-exclamation"></i></div>
+    </div>
+    <div class="stat-tile tone-red">
+        <div class="st-label">Flocks exposed (14 d)</div>
+        <div class="st-value">@batchesHot</div>
+        <div class="st-sub">≥ 1 day with THI ≥ @warn</div>
+        <div class="st-icon"><i class="bi bi-calendar-week"></i></div>
+    </div>
+    <div class="stat-tile tone-violet">
+        <div class="st-label">THI ↔ mortality r</div>
+        <div class="st-value">@(Model.ScatterN >= 3 ? r.ToString("+0.00;-0.00;0.00", ci) : "—")</div>
+        <div class="st-sub">@(Model.ScatterN >= 3 ? $"n = {Model.ScatterN} batch-days · p = {AnalyticsUi.PValue(Model.PearsonP)}" : "not enough observations")</div>
+        <div class="st-icon"><i class="bi bi-diagram-2"></i></div>
+    </div>
+</div>
+
+<div class="row g-3 mb-3">
+    <div class="col-xl-8">
+        <div class="card h-100">
+            <div class="card-header"><h6 class="mb-0"><i class="bi bi-graph-up me-1"></i>Hourly THI per farm — last 7 days (IoT sensors)</h6></div>
+            <div class="card-body">
+                @if (series.Count == 0)
+                {
+                    <div class="empty-state"><i class="bi bi-router"></i>No sensor readings in the last 7 days. Connect a sensor device to a farm (IoT module) to see the live THI trend.</div>
+                }
+                else
+                {
+                    <div style="height:320px"><canvas id="chThi"></canvas></div>
+                }
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-4">
+        <div class="card h-100">
+            <div class="card-header"><h6 class="mb-0"><i class="bi bi-calculator me-1"></i>Method</h6></div>
+            <div class="card-body">
+                <div class="formula mb-2">THI = (1.8·T + 32) − (0.55 − 0.0055·RH)·(1.8·T − 26)</div>
+                <div class="text-xs text-muted mb-2">T = dry-bulb temperature (°C), RH = relative humidity (%). NRC (1971) formulation used widely for poultry and livestock.</div>
+                <div class="formula mb-2">Normal &lt; @warn ≤ Alert &lt; @crit ≤ Danger &lt; @((Model.Crit + 5).ToString("0.#", ci)) ≤ Emergency</div>
+                <div class="formula mb-3">r = Σ(x−x̄)(y−ȳ) ÷ √[Σ(x−x̄)²·Σ(y−ȳ)²],  t = r√((n−2)/(1−r²))</div>
+                <div class="info-callout text-xs">
+                    <b>How to read this.</b> Thresholds come from Settings (<span class="mono">Alert.THIWarning</span>, <span class="mono">Alert.THICritical</span>).
+                    Shaded bands on the chart mark Alert (amber) and Danger (red). Meat birds younger than 21 days are excluded from the flock
+                    analysis because chicks need warm brooding and are not heat-stressed at the same THI as finishing birds.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 mb-3">
+    <div class="col-xl-6">
+        <div class="card h-100">
+            <div class="card-header"><h6 class="mb-0"><i class="bi bi-router me-1"></i>Farms — latest sensor reading</h6></div>
+            @if (Model.Farms.Count == 0)
+            {
+                <div class="empty-state"><i class="bi bi-house"></i>No active farms.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead><tr><th>Farm</th><th class="text-end">T (°C)</th><th class="text-end">RH (%)</th><th class="text-end">NH₃ (ppm)</th><th class="text-end">THI</th><th>Band</th><th class="text-end">Max 24 h</th><th class="text-end">Hrs ≥ alert (7 d)</th><th>Reading</th></tr></thead>
+                        <tbody>
+                        @foreach (var f in Model.Farms.OrderByDescending(f => f.Thi ?? -1))
+                        {
+                            <tr>
+                                <td><a asp-controller="Farm" asp-action="Detail" asp-route-id="@f.FarmId" class="fw-600 text-decoration-none">@f.FarmName</a>
+                                    <div class="text-xs text-muted">@f.Devices device(s)</div></td>
+                                <td class="text-end">@(f.TemperatureC.HasValue ? f.TemperatureC.Value.ToString("0.0", ci) : "—")</td>
+                                <td class="text-end">@(f.HumidityPercent.HasValue ? f.HumidityPercent.Value.ToString("0", ci) : "—")</td>
+                                <td class="text-end">@(f.AmmoniaPpm.HasValue ? f.AmmoniaPpm.Value.ToString("0.0", ci) : "—")</td>
+                                <td class="text-end fw-600">@(f.Thi.HasValue ? f.Thi.Value.ToString("0.0", ci) : "—")</td>
+                                <td><span class="badge @AnalyticsUi.HeatBadge(f.Band)">@f.Band</span></td>
+                                <td class="text-end">@(f.Max24hThi.HasValue ? f.Max24hThi.Value.ToString("0.0", ci) : "—")</td>
+                                <td class="text-end">@f.HoursAboveWarn7d.ToString("0", ci)</td>
+                                <td class="text-xs @(f.Fresh ? "" : "text-warning")">@(f.LastReading.HasValue ? Fmt.Ago(f.LastReading) : "never")@(f.LastReading.HasValue && !f.Fresh ? " · stale" : "")</td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+    <div class="col-xl-6">
+        <div class="card h-100">
+            <div class="card-header"><h6 class="mb-0"><i class="bi bi-egg me-1"></i>Active flocks — THI exposure, last 14 days</h6></div>
+            @if (Model.Batches.Count == 0)
+            {
+                <div class="empty-state"><i class="bi bi-egg"></i>No active flocks.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead><tr><th>Flock</th><th class="text-end">Age</th><th class="text-end">Days</th><th class="text-end">Mean THI</th><th class="text-end">Max THI</th><th class="text-end">Alert d</th><th class="text-end">Danger d</th><th class="text-end">Mort. hot / normal</th><th>Band</th></tr></thead>
+                        <tbody>
+                        @foreach (var b in Model.Batches)
+                        {
+                            <tr class="@(b.Eligible ? "" : "text-muted")">
+                                <td><a asp-controller="Batch" asp-action="Detail" asp-route-id="@b.BatchId" class="fw-600 text-decoration-none">@b.BatchCode</a>
+                                    <div class="text-xs text-muted">@b.FarmName · @b.BatchType</div></td>
+                                <td class="text-end">@b.AgeInDays</td>
+                                <td class="text-end">@b.Days</td>
+                                <td class="text-end">@AnalyticsUi.D(b.MeanThi, 1)</td>
+                                <td class="text-end fw-600">@AnalyticsUi.D(b.MaxThi, 1)</td>
+                                <td class="text-end">@b.DaysAlert</td>
+                                <td class="text-end @(b.DaysDanger > 0 ? "text-danger fw-600" : "")">@b.DaysDanger</td>
+                                <td class="text-end text-nowrap">@(b.MortHot.HasValue ? AnalyticsUi.D(b.MortHot, 2) + "%" : "—") / @(b.MortNormal.HasValue ? AnalyticsUi.D(b.MortNormal, 2) + "%" : "—")</td>
+                                <td>@if (b.Eligible) { <span class="badge @AnalyticsUi.HeatBadge(b.Band)">@b.Band</span> } else { <span class="badge badge-gray" title="Meat flock younger than 21 days or no climate data">Not eligible</span> }</td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-xl-8">
+        <div class="card h-100">
+            <div class="card-header"><h6 class="mb-0"><i class="bi bi-diagram-2 me-1"></i>Dose–response: daily THI vs daily mortality %</h6></div>
+            <div class="card-body">
+                @if (Model.ScatterN < 3)
+                {
+                    <div class="empty-state"><i class="bi bi-diagram-2"></i>Record temperature and humidity in daily records to build the THI–mortality relationship.</div>
+                }
+                else
+                {
+                    <div style="height:320px"><canvas id="chScatter"></canvas></div>
+                }
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-4">
+        <div class="card h-100">
+            <div class="card-header"><h6 class="mb-0"><i class="bi bi-lightbulb me-1"></i>Interpretation</h6></div>
+            <div class="card-body">
+                @if (Model.ScatterN < 3)
+                {
+                    <p class="text-muted small mb-0">Not enough paired observations.</p>
+                }
+                else
+                {
+                    <dl class="kv mb-3">
+                        <dt>Observations</dt><dd>@Model.ScatterN batch-days</dd>
+                        <dt>Pearson r</dt><dd>@r.ToString("0.000", ci) (@strength)</dd>
+                        <dt>p-value</dt><dd>@AnalyticsUi.PValue(Model.PearsonP) @(Model.PearsonP < 0.05 ? "· significant at α = 0.05" : "· not significant")</dd>
+                        <dt>OLS fit</dt><dd class="mono">mort% = @Model.Intercept.ToString("0.000", ci) @(Model.Slope >= 0 ? "+" : "−") @Math.Abs(Model.Slope).ToString("0.0000", ci)·THI</dd>
+                    </dl>
+                    <div class="@(Model.Slope > 0 && Model.PearsonP < 0.05 ? "warn-callout" : "info-callout") text-xs">
+                        @if (Model.Slope > 0 && Model.PearsonP < 0.05)
+                        {
+                            <span>Each additional THI point is associated with about <b>@((Model.Slope).ToString("0.000", ci))</b> percentage points more daily mortality in this farm's data. Prioritise cooling when THI approaches @warn.</span>
+                        }
+                        else
+                        {
+                            <span>No statistically significant linear association yet. This can change as more hot-season records accumulate.</span>
+                        }
+                        Correlation is not causation: age, disease and season also vary with THI.
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+(function () {
+    const warn = @Model.Warn.ToString(ci), crit = @Model.Crit.ToString(ci);
+    const bandPlugin = {
+        id: 'thiBands', beforeDatasetsDraw(chart) {
+            const { ctx, chartArea: a, scales: { y } } = chart;
+            const band = (lo, hi, color) => {
+                const top = y.getPixelForValue(Math.min(hi, y.max)), bot = y.getPixelForValue(Math.max(lo, y.min));
+                if (bot <= top) return;
+                ctx.save(); ctx.fillStyle = color; ctx.fillRect(a.left, top, a.right - a.left, bot - top); ctx.restore();
+            };
+            band(warn, crit, 'rgba(245,158,11,.10)');
+            band(crit, 999, 'rgba(239,68,68,.10)');
+        }
+    };
+
+    const el = document.getElementById('chThi');
+    if (el) {
+        const labels = @Html.Raw(JsonSerializer.Serialize(Model.HourLabels));
+        const series = @Html.Raw(JsonSerializer.Serialize(series));
+        new Chart(el, {
+            type: 'line',
+            data: { labels, datasets: series.map((s, i) => ({
+                label: s.name, data: s.data, borderColor: ppColors.series[i % ppColors.series.length],
+                backgroundColor: ppColors.series[i % ppColors.series.length], pointRadius: 0, borderWidth: 1.8, tension: .3, spanGaps: true
+            })) },
+            options: {
+                interaction: { mode: 'index', intersect: false },
+                scales: {
+                    x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 8 } },
+                    y: { suggestedMin: 65, suggestedMax: crit + 5, title: { display: true, text: 'THI' } }
+                }
+            },
+            plugins: [bandPlugin]
+        });
+    }
+
+    const sc = document.getElementById('chScatter');
+    if (sc) {
+        const pts = @(Html.Raw(JsonSerializer.Serialize(Model.Scatter))).map(p => ({ x: p[0], y: p[1] }));
+        const fit = @(Html.Raw(JsonSerializer.Serialize(fit))).map(p => ({ x: p[0], y: p[1] }));
+        new Chart(sc, {
+            type: 'scatter',
+            data: { datasets: [
+                { label: 'Batch-day', data: pts, backgroundColor: pts.map(p => p.x >= crit ? ppColors.red + 'aa' : p.x >= warn ? ppColors.amber + 'aa' : ppColors.green + '88'), pointRadius: 3.5 },
+                { type: 'line', label: 'OLS fit', data: fit, borderColor: ppColors.violet, borderWidth: 2, pointRadius: 0, borderDash: [6, 4] }
+            ] },
+            options: {
+                scales: {
+                    x: { type: 'linear', title: { display: true, text: 'Daily THI' } },
+                    y: { beginAtZero: true, title: { display: true, text: 'Daily mortality (%)' } }
+                },
+                plugins: { tooltip: { callbacks: { label: c => `THI ${c.parsed.x} · ${c.parsed.y.toFixed(3)}%` } } }
+            }
+        });
+    }
+})();
+</script>
+}

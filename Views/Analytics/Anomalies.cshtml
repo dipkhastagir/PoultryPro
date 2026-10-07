@@ -1,0 +1,224 @@
+@model AnomalyVm
+@using System.Text.Json
+@using System.Globalization
+@{
+    var s = Model.Selected;
+    var series = s?.Series ?? new List<AnomalyPoint>();
+    var labels = series.Select(p => $"d{p.Age} · {p.Date:dd MMM}").ToList();
+    var mort = series.Select(p => Math.Round(p.MortPct, 3)).ToList();
+    var ewma = series.Select(p => Math.Round(p.Ewma, 4)).ToList();
+    var ucl = series.Select(p => Math.Round(p.Ucl, 4)).ToList();
+    var sig = series.Select(p => p.Signal ? Math.Round(p.Ewma, 4) : (double?)null).ToList();
+    var last14 = series.TakeLast(14).Reverse().ToList();
+    var flagged = Model.Batches.Count(b => b.SignalsLast7 > 0);
+    var lam = Model.Lambda.ToString("0.0#", CultureInfo.InvariantCulture);
+    var ll = Model.L.ToString("0.#", CultureInfo.InvariantCulture);
+    var zt = Model.RobustZThreshold.ToString("0.0", CultureInfo.InvariantCulture);
+}
+
+<partial name="_AnalyticsNav" />
+
+<div class="page-head">
+    <div>
+        <h4>@(s != null ? $"{s.BatchCode} — EWMA mortality control chart" : "Mortality anomaly detection")</h4>
+        <p>@(s != null ? $"{s.FarmName} · {s.Breed} · day {s.AgeInDays} · {s.Days} monitored day(s){(s.BroodingExcluded ? " (brooding week excluded)" : "")}" : "Statistical process control on daily mortality % of every active flock.")</p>
+    </div>
+    @if (Model.Batches.Count > 0 || s != null)
+    {
+        <form method="get" class="d-flex gap-2 align-items-center">
+            <label class="text-xs text-muted" for="batchId">Flock</label>
+            <select id="batchId" name="batchId" class="form-select form-select-sm" style="min-width:260px" onchange="this.form.submit()">
+                @foreach (var b in Model.Batches)
+                {
+                    <option value="@b.BatchId" selected="@(s?.BatchId == b.BatchId)">@b.BatchCode · @b.FarmName@(b.SignalsLast7 > 0 ? $" · {b.SignalsLast7} signal(s)" : "")</option>
+                }
+                @if (s != null && Model.Batches.All(b => b.BatchId != s.BatchId))
+                {
+                    <option value="@s.BatchId" selected>@s.BatchCode · @s.FarmName (closed)</option>
+                }
+            </select>
+        </form>
+    }
+</div>
+
+<div class="stat-grid">
+    <div class="stat-tile tone-blue">
+        <div class="st-label">Flocks monitored</div>
+        <div class="st-value">@Model.Batches.Count</div>
+        <div class="st-sub">active flocks with daily records</div>
+        <div class="st-icon"><i class="bi bi-binoculars"></i></div>
+    </div>
+    <div class="stat-tile @(flagged > 0 ? "tone-red" : "tone-green")">
+        <div class="st-label">Flagged last 7 days</div>
+        <div class="st-value">@flagged</div>
+        <div class="st-sub">flock(s) with an EWMA signal</div>
+        <div class="st-icon"><i class="bi bi-exclamation-diamond"></i></div>
+    </div>
+    @if (s != null)
+    {
+        <div class="stat-tile @(s.Signals > 0 ? "tone-amber" : "tone-green")">
+            <div class="st-label">Signals (@s.BatchCode)</div>
+            <div class="st-value">@s.Signals</div>
+            <div class="st-sub">@(s.LastSignalDate.HasValue ? $"last on day {s.LastSignalAge} ({Fmt.Date(s.LastSignalDate)})" : "process in control")</div>
+            <div class="st-icon"><i class="bi bi-broadcast"></i></div>
+        </div>
+        <div class="stat-tile tone-slate">
+            <div class="st-label">Phase-I baseline</div>
+            <div class="st-value">@AnalyticsUi.D(s.BaselineMean, 3)%</div>
+            <div class="st-sub">σ = @AnalyticsUi.D(s.BaselineSd, 3) (first @Model.Baseline monitored days)</div>
+            <div class="st-icon"><i class="bi bi-rulers"></i></div>
+        </div>
+        <div class="stat-tile tone-violet">
+            <div class="st-label">Max robust z (14 d)</div>
+            <div class="st-value">@AnalyticsUi.D(s.MaxRobustZ14, 1)</div>
+            <div class="st-sub">threshold @zt · latest @AnalyticsUi.D(s.LatestMortPct, 2)%/day</div>
+            <div class="st-icon"><i class="bi bi-sliders"></i></div>
+        </div>
+    }
+</div>
+
+@if (s == null)
+{
+    <div class="card"><div class="empty-state"><i class="bi bi-exclamation-diamond"></i>No active flock has daily records yet. Mortality surveillance starts as soon as daily records are entered.</div></div>
+}
+else
+{
+    <div class="row g-3 mb-3">
+        <div class="col-xl-8">
+            <div class="card h-100">
+                <div class="card-header"><h6 class="mb-0"><i class="bi bi-graph-up me-1"></i>Daily mortality %, EWMA statistic and upper control limit</h6></div>
+                <div class="card-body">
+                    @if (series.Count == 0)
+                    {
+                        <div class="empty-state"><i class="bi bi-graph-up"></i>Not enough observations for a control chart.</div>
+                    }
+                    else
+                    {
+                        <div style="height:340px"><canvas id="chEwma"></canvas></div>
+                    }
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-4">
+            <div class="card h-100">
+                <div class="card-header"><h6 class="mb-0"><i class="bi bi-calculator me-1"></i>Method</h6></div>
+                <div class="card-body">
+                    <div class="formula mb-2">zₜ = λ·xₜ + (1 − λ)·zₜ₋₁,  z₀ = μ₀</div>
+                    <div class="formula mb-2">UCLₜ = μ₀ + L·σ₀·√[λ/(2−λ)·(1 − (1−λ)²ᵗ)]</div>
+                    <div class="formula mb-2">signal ⇔ zₜ &gt; UCLₜ   (λ = @lam, L = @ll)</div>
+                    <div class="formula mb-3">z_rob = (xₜ − median₇) ÷ (1.4826·MAD₇)</div>
+                    <div class="info-callout text-xs">
+                        <b>How to read this.</b> Grey bars are the raw daily mortality (deaths ÷ birds alive at the start of the day).
+                        The green line smooths them (EWMA) so that a sustained small rise is detected sooner than with a fixed threshold;
+                        μ₀ and σ₀ come from the first @Model.Baseline monitored days. A red point means the EWMA crossed the red dashed UCL —
+                        investigate that day. The robust z-score compares each day with the median of the previous 7 days and is insensitive to
+                        single outliers; |z| ≥ @zt is unusual.
+                        @if (s.BroodingExcluded) { <span>The first week is excluded because chick mortality follows a different regime.</span> }
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-3">
+        <div class="col-xl-6">
+            <div class="card h-100">
+                <div class="card-header"><h6 class="mb-0"><i class="bi bi-table me-1"></i>@s.BatchCode — last 14 monitored days</h6></div>
+                @if (last14.Count == 0)
+                {
+                    <div class="empty-state"><i class="bi bi-table"></i>No monitored days.</div>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead><tr><th>Date</th><th class="text-end">Age</th><th class="text-end">Deaths</th><th class="text-end">Birds</th><th class="text-end">Mort. %</th><th class="text-end">EWMA</th><th class="text-end">UCL</th><th class="text-end">Robust z</th><th></th></tr></thead>
+                            <tbody>
+                            @foreach (var p in last14)
+                            {
+                                var zHigh = (p.RobustZ ?? 0) >= Model.RobustZThreshold;
+                                <tr class="@(p.Signal ? "table-danger" : "")">
+                                    <td>@Fmt.Date(p.Date)</td>
+                                    <td class="text-end">@p.Age</td>
+                                    <td class="text-end">@p.Deaths</td>
+                                    <td class="text-end">@Fmt.Num(p.StartBirds)</td>
+                                    <td class="text-end fw-600">@AnalyticsUi.D(p.MortPct, 3)</td>
+                                    <td class="text-end">@AnalyticsUi.D(p.Ewma, 3)</td>
+                                    <td class="text-end text-muted">@AnalyticsUi.D(p.Ucl, 3)</td>
+                                    <td class="text-end @(zHigh ? "text-danger fw-600" : "")">@AnalyticsUi.D(p.RobustZ, 2)</td>
+                                    <td>
+                                        @if (p.Signal) { <span class="badge badge-danger-soft">EWMA</span> }
+                                        @if (zHigh) { <span class="badge badge-warning-soft">z</span> }
+                                    </td>
+                                </tr>
+                            }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </div>
+        <div class="col-xl-6">
+            <div class="card h-100">
+                <div class="card-header"><h6 class="mb-0"><i class="bi bi-list-check me-1"></i>All active flocks</h6></div>
+                @if (Model.Batches.Count == 0)
+                {
+                    <div class="empty-state"><i class="bi bi-list-check"></i>No active flocks with records.</div>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead><tr><th>Flock</th><th>Farm</th><th class="text-end">Age</th><th class="text-end">Signals</th><th class="text-end">Last 7 d</th><th>Last signal</th><th class="text-end">Max z (14 d)</th></tr></thead>
+                            <tbody>
+                            @foreach (var b in Model.Batches)
+                            {
+                                <tr class="@(b.BatchId == s.BatchId ? "table-active" : "")">
+                                    <td><a asp-action="Anomalies" asp-route-batchId="@b.BatchId" class="fw-600 text-decoration-none">@b.BatchCode</a></td>
+                                    <td>@b.FarmName</td>
+                                    <td class="text-end">@b.AgeInDays</td>
+                                    <td class="text-end">@b.Signals</td>
+                                    <td class="text-end">@if (b.SignalsLast7 > 0) { <span class="badge badge-danger-soft">@b.SignalsLast7</span> } else { <span class="text-muted">0</span> }</td>
+                                    <td>@(b.LastSignalAge.HasValue ? $"day {b.LastSignalAge}" : "—")</td>
+                                    <td class="text-end @(b.MaxRobustZ14 >= Model.RobustZThreshold ? "text-danger fw-600" : "")">@AnalyticsUi.D(b.MaxRobustZ14, 1)</td>
+                                </tr>
+                            }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@section Scripts {
+<script>
+(function () {
+    const el = document.getElementById('chEwma');
+    if (!el) return;
+    const labels = @Html.Raw(JsonSerializer.Serialize(labels));
+    const mort = @Html.Raw(JsonSerializer.Serialize(mort));
+    const ewma = @Html.Raw(JsonSerializer.Serialize(ewma));
+    const ucl = @Html.Raw(JsonSerializer.Serialize(ucl));
+    const sig = @Html.Raw(JsonSerializer.Serialize(sig));
+    new Chart(el, {
+        data: { labels, datasets: [
+            { type: 'line', label: 'Signal', data: sig, showLine: false, pointRadius: 6, pointHoverRadius: 8,
+              pointBackgroundColor: ppColors.red, pointBorderColor: '#fff', pointBorderWidth: 2, order: 0 },
+            { type: 'line', label: 'EWMA', data: ewma, borderColor: ppColors.green, backgroundColor: ppColors.green, borderWidth: 2.5, pointRadius: 0, tension: .2, order: 1 },
+            { type: 'line', label: 'UCL', data: ucl, borderColor: ppColors.red, borderDash: [6, 4], borderWidth: 1.5, pointRadius: 0, stepped: false, order: 2 },
+            { type: 'bar', label: 'Daily mortality %', data: mort, backgroundColor: ppColors.slateSoft, borderColor: ppColors.slate, borderWidth: 1, order: 3 }
+        ] },
+        options: {
+            interaction: { mode: 'index', intersect: false },
+            scales: {
+                x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 14 } },
+                y: { beginAtZero: true, title: { display: true, text: 'Mortality (% of birds per day)' } }
+            },
+            plugins: { tooltip: { callbacks: { label: c => c.raw === null ? null : `${c.dataset.label}: ${Number(c.raw).toFixed(3)}` } } }
+        }
+    });
+})();
+</script>
+}

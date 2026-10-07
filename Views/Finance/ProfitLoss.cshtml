@@ -1,0 +1,185 @@
+@model ProfitLossVm
+@{
+    var months = Enumerable.Range(1, 12).Select(m => new DateTime(Model.Year, m, 1).ToString("MMM")).ToArray();
+    var revT = Model.RevenueTotals;
+    var expT = Model.ExpenseTotals;
+    var net = Model.Net;
+    var totalRev = revT.Sum();
+    var totalExp = expT.Sum();
+    var totalNet = totalRev - totalExp;
+    var margin = totalRev > 0 ? Math.Round(totalNet * 100m / totalRev, 1) : 0;
+    var activeMonths = Enumerable.Range(0, 12).Where(i => revT[i] != 0 || expT[i] != 0).ToList();
+    var bestIdx = activeMonths.Count > 0 ? activeMonths.OrderByDescending(i => net[i]).First() : -1;
+    var worstIdx = activeMonths.Count > 0 ? activeMonths.OrderBy(i => net[i]).First() : -1;
+    var hasData = Model.Revenue.Count + Model.Expenses.Count > 0;
+    string Cell(decimal v) => v == 0 ? "–" : Fmt.Num(v);
+    string NetCell(decimal v) => v == 0 ? "–" : (v < 0 ? "(" + Fmt.Num(-v) + ")" : Fmt.Num(v));
+    var cumulative = new decimal[12];
+    for (var i = 0; i < 12; i++) cumulative[i] = (i > 0 ? cumulative[i - 1] : 0) + net[i];
+}
+
+@section Head {
+<style>
+    .pnl th, .pnl td { font-size: 12px; white-space: nowrap; padding: 6px 8px; }
+    .pnl td.num, .pnl th.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .pnl tr.grp td { background: #f8fafc; font-weight: 700; text-transform: uppercase; font-size: 11px; letter-spacing: .04em; color: #475569; }
+    .pnl tr.sub td { font-weight: 700; border-top: 1px solid #94a3b8; }
+    .pnl tr.net td { font-weight: 800; border-top: 2px solid #0f172a; border-bottom: 3px double #0f172a; }
+    .pnl td:first-child { position: sticky; left: 0; background: #fff; }
+    @@media print { .pnl th, .pnl td { font-size: 9px; padding: 3px 4px; } .doc-sheet { max-width: none; padding: 0; border: none; } }
+</style>
+}
+
+<div class="page-head no-print">
+    <div>
+        <h4><i class="bi bi-file-earmark-bar-graph text-primary me-2"></i>Profit &amp; Loss — @Model.Year</h4>
+        <p>Monthly income statement built from posted finance transactions, grouped by category.</p>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+        <form method="get" asp-action="ProfitLoss" class="d-flex gap-1">
+            <select name="year" class="form-select form-select-sm" style="width:auto" onchange="this.form.submit()">
+                @foreach (var y in Model.AvailableYears) { <option value="@y" selected="@(y == Model.Year)">FY @y</option> }
+            </select>
+        </form>
+        <a asp-action="Budget" class="btn btn-sm btn-outline-secondary"><i class="bi bi-clipboard-data me-1"></i>Budget</a>
+        <a asp-action="Index" asp-route-from="@($"{Model.Year}-01-01")" asp-route-to="@($"{Model.Year}-12-31")" class="btn btn-sm btn-outline-secondary"><i class="bi bi-list-ul me-1"></i>Transactions</a>
+        <button type="button" class="btn btn-sm btn-primary" onclick="window.print()"><i class="bi bi-printer me-1"></i>Print</button>
+    </div>
+</div>
+
+<div class="stat-grid mb-4 no-print">
+    <div class="stat-tile tone-green">
+        <div class="st-label">Revenue</div>
+        <div class="st-value">@Fmt.MoneyShort(totalRev)</div>
+        <div class="st-sub">@Model.Revenue.Count categor@(Model.Revenue.Count == 1 ? "y" : "ies")</div>
+        <div class="st-icon"><i class="bi bi-arrow-up-circle"></i></div>
+    </div>
+    <div class="stat-tile tone-red">
+        <div class="st-label">Expenses</div>
+        <div class="st-value">@Fmt.MoneyShort(totalExp)</div>
+        <div class="st-sub">@Model.Expenses.Count categor@(Model.Expenses.Count == 1 ? "y" : "ies")</div>
+        <div class="st-icon"><i class="bi bi-arrow-down-circle"></i></div>
+    </div>
+    <div class="stat-tile @(totalNet >= 0 ? "tone-blue" : "tone-amber")">
+        <div class="st-label">Net profit</div>
+        <div class="st-value">@Fmt.MoneyShort(totalNet)</div>
+        <div class="st-sub">margin @Fmt.Pct(margin)</div>
+        <div class="st-icon"><i class="bi bi-graph-up"></i></div>
+    </div>
+    <div class="stat-tile tone-violet">
+        <div class="st-label">Best / worst month</div>
+        <div class="st-value fs-5">@(bestIdx >= 0 ? months[bestIdx] : "—") / @(worstIdx >= 0 ? months[worstIdx] : "—")</div>
+        <div class="st-sub">@(bestIdx >= 0 ? Fmt.Money(net[bestIdx]) + " / " + Fmt.Money(net[worstIdx]) : "no activity")</div>
+        <div class="st-icon"><i class="bi bi-calendar3"></i></div>
+    </div>
+</div>
+
+@if (!hasData)
+{
+    <div class="card">
+        <div class="card-body">
+            <div class="empty-state">
+                <i class="bi bi-file-earmark-bar-graph"></i>
+                <h6>No transactions posted in @Model.Year</h6>
+                <p class="text-muted small">Sales, purchases and expenses recorded in Finance appear here automatically.</p>
+            </div>
+        </div>
+    </div>
+}
+else
+{
+    <div class="card mb-4 no-print">
+        <div class="card-header"><h6><i class="bi bi-bar-chart-line text-primary me-2"></i>Monthly revenue, expenses and cumulative net</h6></div>
+        <div class="card-body"><div style="height:280px"><canvas id="pnlChart"></canvas></div></div>
+    </div>
+
+    <div class="doc-sheet" style="max-width:none">
+        <div class="d-flex justify-content-between align-items-end mb-3 pb-2" style="border-bottom:2px solid #0f172a">
+            <div>
+                <div class="doc-title">PROFIT &amp; LOSS STATEMENT</div>
+                <div class="small text-muted">For the year ended 31 December @Model.Year · amounts in BDT · negatives in brackets</div>
+            </div>
+            <div class="text-xs text-muted text-end">Generated @Fmt.DateTime(DateTime.Now)</div>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-sm pnl mb-0">
+                <thead class="table-light">
+                    <tr><th>Category</th>@foreach (var m in months) { <th class="num">@m</th> }<th class="num">Total</th><th class="num">% Rev</th></tr>
+                </thead>
+                <tbody>
+                    <tr class="grp"><td colspan="15">Revenue</td></tr>
+                    @if (Model.Revenue.Count == 0) { <tr><td colspan="15" class="text-muted">No revenue recorded.</td></tr> }
+                    @foreach (var r in Model.Revenue)
+                    {
+                        <tr>
+                            <td><a asp-action="Index" asp-route-category="@r.Category" asp-route-from="@($"{Model.Year}-01-01")" asp-route-to="@($"{Model.Year}-12-31")" class="text-decoration-none text-reset">@r.Category</a></td>
+                            @foreach (var v in r.Months) { <td class="num">@Cell(v)</td> }
+                            <td class="num fw-600">@Fmt.Num(r.Total)</td>
+                            <td class="num text-muted">@(totalRev > 0 ? Fmt.Pct(r.Total * 100m / totalRev) : "–")</td>
+                        </tr>
+                    }
+                    <tr class="sub"><td>Total revenue</td>@foreach (var v in revT) { <td class="num">@Cell(v)</td> }<td class="num">@Fmt.Num(totalRev)</td><td class="num">@(totalRev > 0 ? "100.0%" : "–")</td></tr>
+
+                    <tr class="grp"><td colspan="15">Expenses</td></tr>
+                    @if (Model.Expenses.Count == 0) { <tr><td colspan="15" class="text-muted">No expenses recorded.</td></tr> }
+                    @foreach (var e in Model.Expenses)
+                    {
+                        <tr>
+                            <td><a asp-action="Index" asp-route-category="@e.Category" asp-route-from="@($"{Model.Year}-01-01")" asp-route-to="@($"{Model.Year}-12-31")" class="text-decoration-none text-reset">@e.Category</a></td>
+                            @foreach (var v in e.Months) { <td class="num">@Cell(v)</td> }
+                            <td class="num fw-600">@Fmt.Num(e.Total)</td>
+                            <td class="num text-muted">@(totalRev > 0 ? Fmt.Pct(e.Total * 100m / totalRev) : "–")</td>
+                        </tr>
+                    }
+                    <tr class="sub"><td>Total expenses</td>@foreach (var v in expT) { <td class="num">@Cell(v)</td> }<td class="num">@Fmt.Num(totalExp)</td><td class="num">@(totalRev > 0 ? Fmt.Pct(totalExp * 100m / totalRev) : "–")</td></tr>
+
+                    <tr class="net">
+                        <td>Net profit / (loss)</td>
+                        @foreach (var v in net) { <td class="num @(v < 0 ? "text-danger" : "")">@NetCell(v)</td> }
+                        <td class="num @(totalNet < 0 ? "text-danger" : "text-success")">@NetCell(totalNet)</td>
+                        <td class="num">@(totalRev > 0 ? Fmt.Pct(margin) : "–")</td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Net margin</td>
+                        @for (var i = 0; i < 12; i++) { <td class="num text-muted">@(revT[i] > 0 ? Fmt.Pct(net[i] * 100m / revT[i], 0) : "–")</td> }
+                        <td colspan="2"></td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Cumulative net</td>
+                        @for (var i = 0; i < 12; i++) { <td class="num text-muted">@NetCell(cumulative[i])</td> }
+                        <td colspan="2"></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <div class="text-xs text-muted mt-3">
+            Revenue = positive transaction amounts; expenses = absolute value of negative amounts (purchases, salaries, operating costs).
+            Customer payments against sales orders are recorded under the "Customer Payment" category.
+        </div>
+    </div>
+}
+
+@section Scripts {
+@if (hasData)
+{
+<script>
+(function () {
+    new Chart(document.getElementById('pnlChart'), {
+        data: {
+            labels: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(months)),
+            datasets: [
+                { type: 'bar', label: 'Revenue', data: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(revT.Select(v => (double)v))), backgroundColor: ppColors.green, borderRadius: 4 },
+                { type: 'bar', label: 'Expenses', data: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(expT.Select(v => (double)v))), backgroundColor: ppColors.red, borderRadius: 4 },
+                { type: 'line', label: 'Cumulative net', data: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(cumulative.Select(v => (double)v))), borderColor: ppColors.blue, backgroundColor: ppColors.blueSoft, tension: .3, fill: false, yAxisID: 'y' }
+            ]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { position: 'top' }, tooltip: { callbacks: { label: c => c.dataset.label + ': ' + ppMoney(c.raw) } } },
+            scales: { y: { ticks: { callback: v => ppMoney(v) } } }
+        }
+    });
+})();
+</script>
+}
+}

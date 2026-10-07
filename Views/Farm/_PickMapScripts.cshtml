@@ -1,0 +1,37 @@
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+(function () {
+    const latEl = document.getElementById('lat'), lngEl = document.getElementById('lng');
+    const hasPos = latEl.value !== '' && lngEl.value !== '';
+    const start = hasPos ? [parseFloat(latEl.value), parseFloat(lngEl.value)] : [23.8103, 90.4125]; // Dhaka
+    const map = L.map('pickMap').setView(start, hasPos ? 13 : 7);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+    let marker = null;
+    function place(lat, lng, pan) {
+        lat = +(+lat).toFixed(6); lng = +(+lng).toFixed(6);
+        if (!marker) {
+            marker = L.marker([lat, lng], { draggable: true }).addTo(map);
+            marker.on('dragend', e => { const p = e.target.getLatLng(); place(p.lat, p.lng, false); });
+        } else marker.setLatLng([lat, lng]);
+        latEl.value = lat; lngEl.value = lng;
+        if (pan) map.panTo([lat, lng]);
+    }
+    if (hasPos) place(start[0], start[1], false);
+    map.on('click', e => place(e.latlng.lat, e.latlng.lng, false));
+    [latEl, lngEl].forEach(el => el.addEventListener('change', () => {
+        if (latEl.value !== '' && lngEl.value !== '') { place(latEl.value, lngEl.value, true); map.setZoom(13); }
+    }));
+    document.getElementById('btnClear').addEventListener('click', () => {
+        if (marker) { map.removeLayer(marker); marker = null; }
+        latEl.value = ''; lngEl.value = '';
+    });
+    document.getElementById('btnLocate').addEventListener('click', () => {
+        if (!navigator.geolocation) return alert('Geolocation is not available in this browser.');
+        navigator.geolocation.getCurrentPosition(p => { place(p.coords.latitude, p.coords.longitude, true); map.setZoom(15); },
+            () => alert('Could not read your location.'));
+    });
+    setTimeout(() => map.invalidateSize(), 200);
+})();
+</script>

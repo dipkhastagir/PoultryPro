@@ -1,0 +1,195 @@
+@model BenchmarkVm
+@using System.Text.Json
+@using System.Globalization
+@{
+    var ci = CultureInfo.InvariantCulture;
+    var rows = Model.Rows;
+    var scored = rows.Where(r => Model.Scores.ContainsKey(r.FarmId)).OrderByDescending(r => Model.Composite.GetValueOrDefault(r.FarmId)).ToList();
+    var radar = scored.Select(r => new { name = r.FarmName, data = Model.Scores[r.FarmId] }).ToList();
+    string Name(int? id) => id.HasValue ? rows.FirstOrDefault(r => r.FarmId == id)?.FarmName ?? "—" : "—";
+    var bestRow = rows.FirstOrDefault(r => r.FarmId == Model.BestOverallFarm);
+    string Star(bool on) => on ? "<i class=\"bi bi-star-fill text-warning ms-1\" title=\"Best on this metric\"></i>" : "";
+}
+
+<partial name="_AnalyticsNav" />
+
+<div class="page-head">
+    <div>
+        <h4>Farm benchmarking</h4>
+        <p>Lifetime averages per farm from all its flocks (vw_FarmBenchmark), normalised so the best farm on each metric scores 100.</p>
+    </div>
+    <div class="d-flex gap-2 align-items-center">
+        <input type="search" class="form-control form-control-sm" placeholder="Filter farms…" data-table-filter="#tblBench" style="width:180px" />
+    </div>
+</div>
+
+<div class="stat-grid">
+    <div class="stat-tile tone-green">
+        <div class="st-label">Best overall</div>
+        <div class="st-value" style="font-size:18px">@(bestRow?.FarmName ?? "—")</div>
+        <div class="st-sub">@(bestRow != null ? $"composite {Model.Composite[bestRow.FarmId].ToString("0.0", ci)} / 100" : "no scored farms")</div>
+        <div class="st-icon"><i class="bi bi-trophy"></i></div>
+    </div>
+    <div class="stat-tile tone-blue">
+        <div class="st-label">Best FCR</div>
+        <div class="st-value" style="font-size:18px">@Name(Model.BestFcrFarm)</div>
+        <div class="st-sub">@(Model.BestFcrFarm.HasValue ? "FCR " + rows.First(r => r.FarmId == Model.BestFcrFarm).AvgFCR.ToString("0.00", ci) : "—")</div>
+        <div class="st-icon"><i class="bi bi-arrow-left-right"></i></div>
+    </div>
+    <div class="stat-tile tone-violet">
+        <div class="st-label">Best EPEF</div>
+        <div class="st-value" style="font-size:18px">@Name(Model.BestEpefFarm)</div>
+        <div class="st-sub">@(Model.BestEpefFarm.HasValue ? "EPEF " + rows.First(r => r.FarmId == Model.BestEpefFarm).AvgEPEF.ToString("0", ci) : "—")</div>
+        <div class="st-icon"><i class="bi bi-graph-up"></i></div>
+    </div>
+    <div class="stat-tile tone-amber">
+        <div class="st-label">Lowest mortality</div>
+        <div class="st-value" style="font-size:18px">@Name(Model.BestMortFarm)</div>
+        <div class="st-sub">@(Model.BestMortFarm.HasValue ? rows.First(r => r.FarmId == Model.BestMortFarm).AvgMortalityRate.ToString("0.00", ci) + "%" : "—")</div>
+        <div class="st-icon"><i class="bi bi-heart-pulse"></i></div>
+    </div>
+    <div class="stat-tile tone-slate">
+        <div class="st-label">Best biosecurity</div>
+        <div class="st-value" style="font-size:18px">@Name(Model.BestBioFarm)</div>
+        <div class="st-sub">@(Model.BestBioFarm.HasValue ? rows.First(r => r.FarmId == Model.BestBioFarm).LastBiosecurityPct?.ToString("0", ci) + "% last audit" : "no audits")</div>
+        <div class="st-icon"><i class="bi bi-shield-lock"></i></div>
+    </div>
+</div>
+
+@if (rows.Count == 0)
+{
+    <div class="card"><div class="empty-state"><i class="bi bi-bar-chart-steps"></i>No farms to compare yet.</div></div>
+}
+else
+{
+    <div class="row g-3 mb-3">
+        <div class="col-xl-6">
+            <div class="card h-100">
+                <div class="card-header"><h6 class="mb-0"><i class="bi bi-bullseye me-1"></i>Relative performance profile (0–100)</h6></div>
+                <div class="card-body">
+                    @if (radar.Count == 0)
+                    {
+                        <div class="empty-state"><i class="bi bi-bullseye"></i>No meat-producing farm has completed flocks to score.</div>
+                    }
+                    else
+                    {
+                        <div style="height:340px"><canvas id="chRadar"></canvas></div>
+                    }
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-6">
+            <div class="card h-100">
+                <div class="card-header"><h6 class="mb-0"><i class="bi bi-bar-chart me-1"></i>Composite score by farm</h6></div>
+                <div class="card-body">
+                    @if (radar.Count == 0)
+                    {
+                        <div class="empty-state"><i class="bi bi-bar-chart"></i>Nothing to rank.</div>
+                    }
+                    else
+                    {
+                        <div style="height:340px"><canvas id="chComp"></canvas></div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-3">
+        <div class="col-lg-6">
+            <div class="card h-100">
+                <div class="card-header"><h6 class="mb-0"><i class="bi bi-calculator me-1"></i>Method</h6></div>
+                <div class="card-body">
+                    <div class="formula mb-2">S_FCR = FCR_best ÷ FCR_farm × 100</div>
+                    <div class="formula mb-2">S_EPEF = EPEF_farm ÷ EPEF_best × 100</div>
+                    <div class="formula mb-2">S_Mort = Mort_best ÷ Mort_farm × 100</div>
+                    <div class="formula mb-2">S_Bio = last biosecurity audit score (%)</div>
+                    <div class="formula">Composite = (S_FCR + S_EPEF + S_Mort + S_Bio) ÷ 4</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-6">
+            <div class="card h-100">
+                <div class="card-header"><h6 class="mb-0"><i class="bi bi-lightbulb me-1"></i>How to read this</h6></div>
+                <div class="card-body">
+                    <div class="info-callout text-xs">
+                        Each axis of the radar is scaled so that 100 = the best farm in the network, so a larger, rounder shape is better.
+                        A farm with a long EPEF spoke but short biosecurity spoke is productive but exposed. For FCR and mortality lower raw values
+                        are better, hence the inverted ratio. Layer farms are listed in the table but not scored, because FCR/EPEF are meat-bird
+                        metrics. A missing audit scores 0 on biosecurity — schedule an audit to get a fair comparison.
+                        <i class="bi bi-star-fill text-warning"></i> marks the best farm on each metric.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header"><h6 class="mb-0"><i class="bi bi-table me-1"></i>Benchmark table</h6></div>
+        <div class="table-responsive">
+            <table class="table table-hover mb-0" id="tblBench">
+                <thead><tr><th>Farm</th><th>Type</th><th class="text-end">Capacity</th><th class="text-end">Flocks (active)</th><th class="text-end">Birds now</th>
+                    <th class="text-end">Avg FCR</th><th class="text-end">Avg EPEF</th><th class="text-end">Avg mortality</th><th class="text-end">Biosecurity</th><th class="text-end">Composite</th></tr></thead>
+                <tbody>
+                @foreach (var r in rows.OrderByDescending(r => Model.Composite.GetValueOrDefault(r.FarmId, -1)))
+                {
+                    var scoredRow = Model.Composite.TryGetValue(r.FarmId, out var comp);
+                    <tr class="@(r.FarmId == Model.BestOverallFarm ? "table-success" : "")">
+                        <td><a asp-controller="Farm" asp-action="Detail" asp-route-id="@r.FarmId" class="fw-600 text-decoration-none">@r.FarmName</a>
+                            <div class="text-xs text-muted">@r.Location</div></td>
+                        <td>@(r.FarmType ?? "—")</td>
+                        <td class="text-end">@Fmt.Num(r.Capacity)</td>
+                        <td class="text-end">@r.TotalBatches (@r.ActiveBatches)</td>
+                        <td class="text-end">@Fmt.Num(r.CurrentBirds)</td>
+                        <td class="text-end">@(r.AvgFCR > 0 ? r.AvgFCR.ToString("0.00", ci) : "—")@Html.Raw(Star(r.FarmId == Model.BestFcrFarm))</td>
+                        <td class="text-end" style="color:@(r.AvgEPEF > 0 ? AnalyticsUi.EpefColor(r.AvgEPEF) : "inherit")">@(r.AvgEPEF > 0 ? r.AvgEPEF.ToString("0", ci) : "—")@Html.Raw(Star(r.FarmId == Model.BestEpefFarm))</td>
+                        <td class="text-end">@(r.TotalBatches > 0 ? r.AvgMortalityRate.ToString("0.00", ci) + "%" : "—")@Html.Raw(Star(r.FarmId == Model.BestMortFarm))</td>
+                        <td class="text-end">@(r.LastBiosecurityPct.HasValue ? r.LastBiosecurityPct.Value.ToString("0", ci) + "%" : "no audit")@Html.Raw(Star(r.FarmId == Model.BestBioFarm))</td>
+                        <td class="text-end fw-600">@(scoredRow ? comp.ToString("0.0", ci) : "—")</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+@section Scripts {
+<script>
+(function () {
+    const radar = @Html.Raw(JsonSerializer.Serialize(radar));
+    if (!radar.length) return;
+    const el = document.getElementById('chRadar');
+    if (el) new Chart(el, {
+        type: 'radar',
+        data: {
+            labels: ['FCR', 'EPEF', 'Low mortality', 'Biosecurity'],
+            datasets: radar.map((f, i) => {
+                const c = ppColors.series[i % ppColors.series.length];
+                return { label: f.name, data: f.data, borderColor: c, backgroundColor: c + '22', pointBackgroundColor: c, borderWidth: 2 };
+            })
+        },
+        options: { scales: { r: { min: 0, max: 100, ticks: { stepSize: 25, backdropColor: 'transparent' } } } }
+    });
+    const comp = document.getElementById('chComp');
+    if (comp) {
+        const avg = radar.map(f => f.data.reduce((a, b) => a + b, 0) / 4);
+        new Chart(comp, {
+            type: 'bar',
+            data: { labels: radar.map(f => f.name), datasets: [
+                { label: 'FCR', data: radar.map(f => f.data[0] / 4), backgroundColor: ppColors.blue },
+                { label: 'EPEF', data: radar.map(f => f.data[1] / 4), backgroundColor: ppColors.violet },
+                { label: 'Low mortality', data: radar.map(f => f.data[2] / 4), backgroundColor: ppColors.amber },
+                { label: 'Biosecurity', data: radar.map(f => f.data[3] / 4), backgroundColor: ppColors.green }
+            ] },
+            options: {
+                indexAxis: 'y',
+                interaction: { mode: 'index', intersect: false },
+                scales: { x: { stacked: true, min: 0, max: 100, title: { display: true, text: 'Composite (each metric contributes up to 25)' } }, y: { stacked: true, grid: { display: false } } },
+                plugins: { tooltip: { callbacks: { label: c => `${c.dataset.label}: ${(c.raw * 4).toFixed(1)} → ${c.raw.toFixed(1)} pts`, footer: items => 'Composite: ' + avg[items[0].dataIndex].toFixed(1) } } }
+            }
+        });
+    }
+})();
+</script>
+}

@@ -1,0 +1,262 @@
+@model MarketReportVm
+@{
+    var custIds = ViewBag.CustomerIds as Dictionary<string, int> ?? new();
+    var inv = System.Globalization.CultureInfo.InvariantCulture;
+    var topCustomers = Model.ByCustomer.Take(10).ToList();
+    var top5Share = Model.TotalRevenue > 0 ? Model.ByCustomer.Take(5).Sum(c => c.Revenue) * 100m / Model.TotalRevenue : 0;
+    var aging = new[]
+    {
+        ("Not yet due", Model.Receivables.Where(o => o.DeliveryDate.Date >= DateTime.Today).Sum(o => o.BalanceDue)),
+        ("1–15 days", Model.Receivables.Where(o => (DateTime.Today - o.DeliveryDate.Date).Days is >= 1 and <= 15).Sum(o => o.BalanceDue)),
+        ("16–30 days", Model.Receivables.Where(o => (DateTime.Today - o.DeliveryDate.Date).Days is >= 16 and <= 30).Sum(o => o.BalanceDue)),
+        ("31–60 days", Model.Receivables.Where(o => (DateTime.Today - o.DeliveryDate.Date).Days is >= 31 and <= 60).Sum(o => o.BalanceDue)),
+        ("60+ days", Model.Receivables.Where(o => (DateTime.Today - o.DeliveryDate.Date).Days > 60).Sum(o => o.BalanceDue))
+    };
+    var hasData = Model.OrderCount > 0;
+    var bestMonth = Model.Monthly.Count > 0 ? Model.Monthly.OrderByDescending(m => m.Revenue).First() : default;
+}
+
+<div class="page-head">
+    <div>
+        <h4><i class="bi bi-graph-up-arrow text-primary me-2"></i>Sales Report</h4>
+        <p>@Fmt.Date(Model.From) – @Fmt.Date(Model.To) · revenue by product and customer, monthly trend and receivables (cancelled orders excluded).</p>
+    </div>
+    <div class="d-flex flex-wrap gap-2 no-print">
+        <a asp-action="Index" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>All reports</a>
+        <a asp-controller="Market" asp-action="Index" class="btn btn-sm btn-outline-secondary"><i class="bi bi-bag me-1"></i>Orders</a>
+        <button onclick="window.print()" class="btn btn-sm btn-outline-primary"><i class="bi bi-printer me-1"></i>Print</button>
+    </div>
+</div>
+
+<form method="get" asp-action="Market" class="filter-bar mb-4 no-print">
+    <div class="row g-2 align-items-end">
+        <div class="col-6 col-md-3">
+            <label class="form-label small mb-1">From</label>
+            <input type="date" name="from" value="@Model.From.ToString("yyyy-MM-dd")" class="form-control form-control-sm" />
+        </div>
+        <div class="col-6 col-md-3">
+            <label class="form-label small mb-1">To</label>
+            <input type="date" name="to" value="@Model.To.ToString("yyyy-MM-dd")" class="form-control form-control-sm" />
+        </div>
+        <div class="col-md-6 d-flex flex-wrap gap-1">
+            <button class="btn btn-sm btn-primary"><i class="bi bi-funnel me-1"></i>Apply</button>
+            <a asp-action="Market" asp-route-from="@(new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1).ToString("yyyy-MM-dd"))" class="btn btn-sm btn-outline-secondary">This month</a>
+            <a asp-action="Market" asp-route-from="@DateTime.Today.AddDays(-89).ToString("yyyy-MM-dd")" class="btn btn-sm btn-outline-secondary">Last 90 days</a>
+            <a asp-action="Market" asp-route-from="@(new DateTime(DateTime.Today.Year, 1, 1).ToString("yyyy-MM-dd"))" class="btn btn-sm btn-outline-secondary">Year to date</a>
+            <a asp-action="Market" class="btn btn-sm btn-outline-secondary">Last 12 months</a>
+        </div>
+    </div>
+</form>
+
+<div class="stat-grid mb-4">
+    <div class="stat-tile tone-green">
+        <div class="st-label">Revenue</div>
+        <div class="st-value">@Fmt.MoneyShort(Model.TotalRevenue)</div>
+        <div class="st-sub">@Model.OrderCount orders · avg @Fmt.Money(Model.AvgOrderValue)</div>
+        <div class="st-icon"><i class="bi bi-cash-stack"></i></div>
+    </div>
+    <div class="stat-tile tone-blue">
+        <div class="st-label">Collected</div>
+        <div class="st-value">@Fmt.MoneyShort(Model.TotalCollected)</div>
+        <div class="st-sub">collection rate @Fmt.Pct(Model.CollectionRate)</div>
+        <div class="st-icon"><i class="bi bi-wallet2"></i></div>
+    </div>
+    <div class="stat-tile tone-amber">
+        <div class="st-label">Outstanding (today)</div>
+        <div class="st-value">@Fmt.MoneyShort(Model.TotalOutstanding)</div>
+        <div class="st-sub">@Model.Receivables.Count open invoice@(Model.Receivables.Count == 1 ? "" : "s")</div>
+        <div class="st-icon"><i class="bi bi-hourglass-split"></i></div>
+    </div>
+    <div class="stat-tile tone-violet">
+        <div class="st-label">Customer concentration</div>
+        <div class="st-value">@Fmt.Pct(top5Share, 0)</div>
+        <div class="st-sub">of revenue from top 5 of @Model.ByCustomer.Count customers</div>
+        <div class="st-icon"><i class="bi bi-people"></i></div>
+    </div>
+</div>
+
+@if (!hasData)
+{
+    <div class="card mb-4"><div class="card-body"><div class="empty-state"><i class="bi bi-graph-up"></i><h6>No sales in this period</h6><p class="text-muted small mb-0">Widen the date range to see sales analytics.</p></div></div></div>
+}
+else
+{
+    <div class="row g-4 mb-4">
+        <div class="col-lg-8">
+            <div class="card h-100">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h6><i class="bi bi-bar-chart-line text-primary me-2"></i>Monthly sales trend</h6>
+                    @if (bestMonth.Revenue > 0) { <span class="text-xs text-muted">Best month: @bestMonth.Label (@Fmt.Money(bestMonth.Revenue))</span> }
+                </div>
+                <div class="card-body"><div style="height:280px"><canvas id="trendChart"></canvas></div></div>
+            </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="card h-100">
+                <div class="card-header"><h6><i class="bi bi-pie-chart text-success me-2"></i>Revenue by product</h6></div>
+                <div class="card-body"><div style="height:280px"><canvas id="productChart"></canvas></div></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header"><h6><i class="bi bi-box-seam text-primary me-2"></i>Sales by product</h6></div>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead><tr><th>Product</th><th class="text-end">Orders</th><th class="text-end">Quantity</th><th class="text-end">Avg price</th><th class="text-end">Revenue</th><th style="min-width:140px">Share</th><th class="text-end">Collected</th><th class="text-end">Outstanding</th></tr></thead>
+                <tbody>
+                    @foreach (var r in Model.ByProduct)
+                    {
+                        var share = Model.TotalRevenue > 0 ? r.Revenue * 100m / Model.TotalRevenue : 0;
+                        <tr>
+                            <td class="fw-600">@r.Label</td>
+                            <td class="text-end">@r.Orders</td>
+                            <td class="text-end">@Fmt.Num(r.Quantity, 1) @(r.Unit == "mixed" ? "(mixed units)" : r.Unit)</td>
+                            <td class="text-end">@(r.Unit == "mixed" ? "—" : Fmt.Money(r.AvgPrice, 2) + "/" + r.Unit)</td>
+                            <td class="text-end fw-600">@Fmt.Money(r.Revenue)</td>
+                            <td>
+                                <div class="d-flex align-items-center gap-2">
+                                    <div class="prog-bar-wrap flex-fill"><div class="prog-bar-fill" style="width:@share.ToString("0.#", inv)%"></div></div>
+                                    <span class="text-xs">@Fmt.Pct(share, 0)</span>
+                                </div>
+                            </td>
+                            <td class="text-end text-success">@Fmt.Money(r.Paid)</td>
+                            <td class="text-end @(r.Outstanding > 0 ? "text-danger" : "")">@Fmt.Money(r.Outstanding)</td>
+                        </tr>
+                    }
+                </tbody>
+                <tfoot><tr class="fw-600"><td>Total</td><td class="text-end">@Model.OrderCount</td><td></td><td></td><td class="text-end">@Fmt.Money(Model.TotalRevenue)</td><td></td><td class="text-end">@Fmt.Money(Model.TotalCollected)</td><td class="text-end">@Fmt.Money(Model.ByProduct.Sum(r => r.Outstanding))</td></tr></tfoot>
+            </table>
+        </div>
+    </div>
+
+    <div class="row g-4 mb-4">
+        <div class="col-lg-7">
+            <div class="card h-100">
+                <div class="card-header"><h6><i class="bi bi-trophy text-warning me-2"></i>Top customers</h6></div>
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead><tr><th>#</th><th>Customer</th><th class="text-end">Orders</th><th class="text-end">Avg order</th><th class="text-end">Revenue</th><th class="text-end">Outstanding</th></tr></thead>
+                        <tbody>
+                            @for (var i = 0; i < topCustomers.Count; i++)
+                            {
+                                var r = topCustomers[i];
+                                <tr>
+                                    <td class="text-muted">@(i + 1)</td>
+                                    <td class="fw-600">
+                                        @if (custIds.TryGetValue(r.Label, out var cid)) { <a asp-controller="Market" asp-action="CustomerDetail" asp-route-id="@cid" class="text-decoration-none">@r.Label</a> } else { @r.Label }
+                                    </td>
+                                    <td class="text-end">@r.Orders</td>
+                                    <td class="text-end">@Fmt.Money(r.AvgPrice)</td>
+                                    <td class="text-end fw-600">@Fmt.Money(r.Revenue)</td>
+                                    <td class="text-end @(r.Outstanding > 0 ? "text-danger" : "")">@Fmt.Money(r.Outstanding)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                @if (Model.ByCustomer.Count > topCustomers.Count)
+                {
+                    <div class="card-body py-2 text-xs text-muted">+ @(Model.ByCustomer.Count - topCustomers.Count) more customers · @Fmt.Money(Model.ByCustomer.Skip(topCustomers.Count).Sum(c => c.Revenue))</div>
+                }
+            </div>
+        </div>
+        <div class="col-lg-5">
+            <div class="card h-100">
+                <div class="card-header"><h6><i class="bi bi-bar-chart text-primary me-2"></i>Revenue by customer (top 10)</h6></div>
+                <div class="card-body"><div style="height:@(Math.Max(220, topCustomers.Count * 30 + 40))px"><canvas id="custChart"></canvas></div></div>
+            </div>
+        </div>
+    </div>
+}
+
+<div class="card mb-4">
+    <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <h6><i class="bi bi-hourglass-split text-warning me-2"></i>Outstanding receivables (as of @Fmt.Date(DateTime.Today))</h6>
+        <div class="d-flex flex-wrap gap-2">
+            @foreach (var (label, amt) in aging)
+            {
+                <span class="chip @(label.StartsWith("60") && amt > 0 ? "text-danger" : "")">@label · @Fmt.MoneyShort(amt)</span>
+            }
+        </div>
+    </div>
+    @if (Model.Receivables.Count == 0)
+    {
+        <div class="card-body"><div class="empty-state"><i class="bi bi-check2-circle"></i><p class="text-muted small mb-0">All invoices are fully collected.</p></div></div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead><tr><th>Order</th><th>Customer</th><th>Product</th><th>Delivery</th><th class="text-end">Days past</th><th class="text-end">Total</th><th class="text-end">Paid</th><th class="text-end">Balance</th><th>Status</th></tr></thead>
+                <tbody>
+                    @foreach (var o in Model.Receivables)
+                    {
+                        var days = (DateTime.Today - o.DeliveryDate.Date).Days;
+                        <tr>
+                            <td><a asp-controller="Market" asp-action="Detail" asp-route-id="@o.Id" class="mono fw-600">@o.OrderCode</a></td>
+                            <td><a asp-controller="Market" asp-action="CustomerDetail" asp-route-id="@o.CustomerId" class="text-reset text-decoration-none">@o.CustomerName</a></td>
+                            <td class="small">@o.Product</td>
+                            <td class="small">@Fmt.Date(o.DeliveryDate)</td>
+                            <td class="text-end @(days > 30 ? "text-danger fw-600" : days > 0 ? "text-warning" : "text-muted")">@(days > 0 ? days.ToString() : "—")</td>
+                            <td class="text-end">@Fmt.Money(o.TotalAmount)</td>
+                            <td class="text-end text-success">@Fmt.Money(o.PaidAmount)</td>
+                            <td class="text-end fw-600">@Fmt.Money(o.BalanceDue)</td>
+                            <td><span class="badge @Fmt.Badge(o.PaymentStatus)">@o.PaymentStatus</span> <span class="badge @Fmt.Badge(o.Status)">@o.Status</span></td>
+                        </tr>
+                    }
+                </tbody>
+                <tfoot><tr class="fw-600"><td colspan="7">Total receivable</td><td class="text-end">@Fmt.Money(Model.TotalOutstanding)</td><td></td></tr></tfoot>
+            </table>
+        </div>
+    }
+</div>
+
+@section Scripts {
+@if (hasData)
+{
+<script>
+(function () {
+    new Chart(document.getElementById('trendChart'), {
+        data: {
+            labels: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Monthly.Select(m => m.Label))),
+            datasets: [
+                { type: 'bar', label: 'Revenue', data: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Monthly.Select(m => (double)m.Revenue))), backgroundColor: ppColors.green, borderRadius: 4, yAxisID: 'y' },
+                { type: 'line', label: 'Orders', data: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Monthly.Select(m => m.Orders))), borderColor: ppColors.blue, backgroundColor: ppColors.blue, tension: .3, yAxisID: 'y1' }
+            ]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { position: 'top' }, tooltip: { callbacks: { label: c => c.dataset.yAxisID === 'y' ? 'Revenue: ' + ppMoney(c.raw) : 'Orders: ' + c.raw } } },
+            scales: {
+                y: { ticks: { callback: v => ppMoney(v) } },
+                y1: { position: 'right', beginAtZero: true, grid: { drawOnChartArea: false }, ticks: { precision: 0 } }
+            }
+        }
+    });
+    new Chart(document.getElementById('productChart'), {
+        type: 'doughnut',
+        data: {
+            labels: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.ByProduct.Select(r => r.Label))),
+            datasets: [{ data: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.ByProduct.Select(r => (double)r.Revenue))), backgroundColor: ppColors.series, borderWidth: 0 }]
+        },
+        options: { responsive: true, maintainAspectRatio: false, cutout: '60%',
+            plugins: { legend: { position: 'bottom', labels: { font: { size: 11 }, boxWidth: 12 } }, tooltip: { callbacks: { label: c => c.label + ': ' + ppMoney(c.raw) } } } }
+    });
+    new Chart(document.getElementById('custChart'), {
+        type: 'bar',
+        data: {
+            labels: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(topCustomers.Select(r => r.Label))),
+            datasets: [
+                { label: 'Collected', data: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(topCustomers.Select(r => (double)Math.Min(r.Paid, r.Revenue)))), backgroundColor: ppColors.green, stack: 's' },
+                { label: 'Outstanding', data: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(topCustomers.Select(r => (double)r.Outstanding))), backgroundColor: ppColors.amber, stack: 's' }
+            ]
+        },
+        options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { position: 'top' }, tooltip: { callbacks: { label: c => c.dataset.label + ': ' + ppMoney(c.raw) } } },
+            scales: { x: { stacked: true, ticks: { callback: v => ppMoney(v) } }, y: { stacked: true, ticks: { font: { size: 11 } } } } }
+    });
+})();
+</script>
+}
+}

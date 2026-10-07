@@ -1,0 +1,233 @@
+@model FinanceIndexVm
+@using PoultryPro.Controllers
+@{
+    var canEdit = User.IsAny(Roles.Finance);
+    var net = Model.MonthlyRevenue - Model.MonthlyExpenses;
+    var margin = Model.MonthlyRevenue > 0 ? Math.Round(net * 100m / Model.MonthlyRevenue, 1) : 0;
+    var expByCat = Model.Transactions.Where(t => t.Amount < 0).GroupBy(t => t.Category)
+        .Select(g => new { Cat = g.Key, Amt = g.Sum(t => -t.Amount) }).OrderByDescending(x => x.Amt).ToList();
+    if (expByCat.Count > 8)
+    {
+        var rest = expByCat.Skip(7).Sum(x => x.Amt);
+        expByCat = expByCat.Take(7).Append(new { Cat = "Other (grouped)", Amt = rest }).ToList();
+    }
+    var revByCat = Model.Transactions.Where(t => t.Amount > 0).GroupBy(t => t.Category)
+        .Select(g => new { Cat = g.Key, Amt = g.Sum(t => t.Amount) }).OrderByDescending(x => x.Amt).ToList();
+    var pending = Model.Transactions.Where(t => t.PaymentStatus != "Paid").ToList();
+    var qs = Context.Request.QueryString.Value ?? "";
+}
+
+<div class="page-head">
+    <div>
+        <h4><i class="bi bi-cash-stack text-success me-2"></i>Financial Management</h4>
+        <p>General ledger — revenue, expenses and profitability across all farms.</p>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+        <a asp-action="Budget" class="btn btn-sm btn-outline-secondary"><i class="bi bi-clipboard-data me-1"></i>Budget vs actual</a>
+        <a asp-action="ProfitLoss" class="btn btn-sm btn-outline-secondary"><i class="bi bi-file-earmark-bar-graph me-1"></i>Profit &amp; loss</a>
+        <a href="@Url.Action("Export")@qs" class="btn btn-sm btn-outline-secondary"><i class="bi bi-download me-1"></i>CSV</a>
+        @if (canEdit)
+        {
+            <a asp-action="Create" class="btn btn-sm btn-primary"><i class="bi bi-plus-lg me-1"></i>New transaction</a>
+        }
+    </div>
+</div>
+
+<div class="stat-grid mb-4">
+    <div class="stat-tile tone-green">
+        <div class="st-label">Revenue (this month)</div>
+        <div class="st-value">@Fmt.MoneyShort(Model.MonthlyRevenue)</div>
+        <div class="st-sub">@DateTime.Today.ToString("MMMM yyyy")</div>
+        <div class="st-icon"><i class="bi bi-arrow-up-circle"></i></div>
+    </div>
+    <div class="stat-tile tone-red">
+        <div class="st-label">Expenses (this month)</div>
+        <div class="st-value">@Fmt.MoneyShort(Model.MonthlyExpenses)</div>
+        <div class="st-sub"><a asp-action="Budget" class="text-reset">compare with budget →</a></div>
+        <div class="st-icon"><i class="bi bi-arrow-down-circle"></i></div>
+    </div>
+    <div class="stat-tile @(net >= 0 ? "tone-blue" : "tone-amber")">
+        <div class="st-label">Net (this month)</div>
+        <div class="st-value">@Fmt.MoneyShort(net)</div>
+        <div class="st-sub">margin @Fmt.Pct(margin)</div>
+        <div class="st-icon"><i class="bi bi-graph-up"></i></div>
+    </div>
+    <div class="stat-tile tone-amber">
+        <div class="st-label">Unsettled entries</div>
+        <div class="st-value">@pending.Count</div>
+        <div class="st-sub">@Fmt.Money(pending.Sum(t => Math.Abs(t.Amount))) pending / partial</div>
+        <div class="st-icon"><i class="bi bi-hourglass-split"></i></div>
+    </div>
+</div>
+
+<div class="row g-4 mb-4">
+    <div class="col-lg-8">
+        <div class="card h-100">
+            <div class="card-header"><h6><i class="bi bi-bar-chart text-primary me-2"></i>Revenue vs expenses — last 12 months</h6></div>
+            <div class="card-body">
+                @if (Model.Trend.Count == 0)
+                {
+                    <div class="empty-state"><i class="bi bi-bar-chart"></i><p class="text-muted small mb-0">No monthly data yet.</p></div>
+                }
+                else
+                {
+                    <div style="height:270px"><canvas id="finChart"></canvas></div>
+                }
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card h-100">
+            <div class="card-header"><h6><i class="bi bi-pie-chart text-warning me-2"></i>Expenses by category @(Model.IsFiltered ? "(filtered)" : "")</h6></div>
+            <div class="card-body">
+                @if (expByCat.Count == 0)
+                {
+                    <div class="empty-state"><i class="bi bi-pie-chart"></i><p class="text-muted small mb-0">No expenses in this selection.</p></div>
+                }
+                else
+                {
+                    <div style="height:270px"><canvas id="expPie"></canvas></div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+<form method="get" asp-action="Index" class="filter-bar mb-3">
+    <div class="row g-2 align-items-end">
+        <div class="col-6 col-md-2">
+            <label class="form-label small mb-1">Type</label>
+            <select name="type" class="form-select form-select-sm">
+                <option value="">All types</option>
+                @foreach (var t in FinanceController.TxnTypes) { <option value="@t" selected="@(t == Model.Type)">@t</option> }
+            </select>
+        </div>
+        <div class="col-6 col-md-2">
+            <label class="form-label small mb-1">Category</label>
+            <select name="category" class="form-select form-select-sm">
+                <option value="">All categories</option>
+                @foreach (var c in Model.Categories) { <option value="@c" selected="@(c == Model.Category)">@c</option> }
+            </select>
+        </div>
+        <div class="col-6 col-md-2">
+            <label class="form-label small mb-1">Farm</label>
+            <select name="farmId" class="form-select form-select-sm">
+                <option value="">All farms</option>
+                @foreach (var f in Model.Farms) { <option value="@f.Id" selected="@(f.Id == Model.FarmId)">@f.Name</option> }
+            </select>
+        </div>
+        <div class="col-6 col-md-2">
+            <label class="form-label small mb-1">From</label>
+            <input type="date" name="from" value="@(Model.From?.ToString("yyyy-MM-dd"))" class="form-control form-control-sm" />
+        </div>
+        <div class="col-6 col-md-2">
+            <label class="form-label small mb-1">To</label>
+            <input type="date" name="to" value="@(Model.To?.ToString("yyyy-MM-dd"))" class="form-control form-control-sm" />
+        </div>
+        <div class="col-6 col-md-2 d-flex gap-1">
+            <button class="btn btn-sm btn-primary flex-fill"><i class="bi bi-funnel me-1"></i>Filter</button>
+            @if (Model.IsFiltered) { <a asp-action="Index" class="btn btn-sm btn-outline-secondary" title="Clear"><i class="bi bi-x-lg"></i></a> }
+        </div>
+    </div>
+</form>
+
+<div class="card">
+    <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <h6><i class="bi bi-journal-text text-primary me-2"></i>Transactions <span class="text-muted fw-normal small">(@Model.Transactions.Count)</span></h6>
+        <div class="d-flex flex-wrap align-items-center gap-3 small">
+            <span class="text-success fw-600">In @Fmt.Money(Model.FilteredIncome)</span>
+            <span class="text-danger fw-600">Out @Fmt.Money(Model.FilteredExpense)</span>
+            <span class="fw-600">Net @Fmt.Money(Model.FilteredIncome - Model.FilteredExpense)</span>
+            <input data-table-filter="#tblTxn" class="form-control form-control-sm" style="width:180px" placeholder="Quick search…" />
+        </div>
+    </div>
+    @if (Model.Transactions.Count == 0)
+    {
+        <div class="card-body">
+            <div class="empty-state"><i class="bi bi-journal-x"></i><h6>No transactions</h6><p class="text-muted small mb-0">@(Model.IsFiltered ? "Nothing matches these filters." : "Record your first sale or expense.")</p></div>
+        </div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0" id="tblTxn">
+                <thead>
+                    <tr><th>Date</th><th>Type</th><th>Category</th><th>Description</th><th>Farm / batch</th><th class="text-end">Amount</th><th>Status</th><th>Method</th><th>Ref</th><th></th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var t in Model.Transactions)
+                    {
+                        <tr>
+                            <td class="small text-nowrap">@Fmt.Date(t.TxnDate)</td>
+                            <td><span class="badge @(t.Amount >= 0 ? "badge-healthy" : t.TxnType == "Purchase" ? "badge-info-soft" : "badge-danger-soft")">@t.TxnType</span></td>
+                            <td class="small"><a asp-action="Index" asp-route-category="@t.Category" class="text-reset text-decoration-none">@t.Category</a></td>
+                            <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="@t.Description">@t.Description</td>
+                            <td class="small text-muted">
+                                @(t.FarmName ?? "—")
+                                @if (t.BatchId.HasValue) { <div><a asp-controller="Batch" asp-action="Detail" asp-route-id="@t.BatchId" class="mono text-xs">@t.BatchCode</a></div> }
+                            </td>
+                            <td class="text-end fw-600 text-nowrap @(t.Amount >= 0 ? "text-success" : "text-danger")">@(t.Amount >= 0 ? "+" : "−")@Fmt.Money(Math.Abs(t.Amount))</td>
+                            <td><span class="badge @Fmt.Badge(t.PaymentStatus)">@t.PaymentStatus</span></td>
+                            <td class="small text-muted">@(t.PaymentMethod ?? "—")</td>
+                            <td class="small mono">@(t.Reference ?? "—")</td>
+                            <td class="text-end text-nowrap">
+                                @if (canEdit)
+                                {
+                                    <a asp-action="Edit" asp-route-id="@t.Id" class="btn btn-xs btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></a>
+                                    <form asp-action="Delete" method="post" class="d-inline" data-confirm="Delete this transaction (@Fmt.Money(Math.Abs(t.Amount)))?">
+                                        <input type="hidden" name="id" value="@t.Id" />
+                                        <button class="btn btn-xs btn-outline-danger" title="Delete"><i class="bi bi-trash"></i></button>
+                                    </form>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@if (revByCat.Count > 0)
+{
+    <div class="d-flex flex-wrap gap-2 mt-3">
+        <span class="text-xs text-muted fw-600 text-uppercase me-1 align-self-center">Revenue mix</span>
+        @foreach (var r in revByCat) { <a asp-action="Index" asp-route-category="@r.Cat" class="chip text-decoration-none">@r.Cat · @Fmt.MoneyShort(r.Amt)</a> }
+    </div>
+}
+
+@section Scripts {
+<script>
+(function () {
+    const trendEl = document.getElementById('finChart');
+    if (trendEl) {
+        new Chart(trendEl, {
+            data: {
+                labels: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Trend.Select(m => m.MonthName))),
+                datasets: [
+                    { type: 'bar', label: 'Revenue', data: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Trend.Select(m => (double)m.Revenue))), backgroundColor: ppColors.green, borderRadius: 4 },
+                    { type: 'bar', label: 'Expenses', data: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Trend.Select(m => (double)m.Expenses))), backgroundColor: ppColors.red, borderRadius: 4 },
+                    { type: 'line', label: 'Net', data: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Trend.Select(m => (double)(m.Revenue - m.Expenses)))), borderColor: ppColors.blue, tension: .3, pointRadius: 3 }
+                ]
+            },
+            options: { responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { position: 'top' }, tooltip: { callbacks: { label: c => c.dataset.label + ': ' + ppMoney(c.raw) } } },
+                scales: { y: { ticks: { callback: v => ppMoney(v) } } } }
+        });
+    }
+    const pieEl = document.getElementById('expPie');
+    if (pieEl) {
+        new Chart(pieEl, {
+            type: 'doughnut',
+            data: {
+                labels: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(expByCat.Select(x => x.Cat))),
+                datasets: [{ data: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(expByCat.Select(x => (double)x.Amt))), backgroundColor: ppColors.series, borderWidth: 0 }]
+            },
+            options: { responsive: true, maintainAspectRatio: false, cutout: '62%',
+                plugins: { legend: { position: 'bottom', labels: { font: { size: 11 }, boxWidth: 12 } },
+                           tooltip: { callbacks: { label: c => c.label + ': ' + ppMoney(c.raw) } } } }
+        });
+    }
+})();
+</script>
+}

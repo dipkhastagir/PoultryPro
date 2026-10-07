@@ -1,0 +1,123 @@
+@model Employee
+@{
+    var farms = ((ViewBag.Farms as IEnumerable<Farm>)?.ToList() ?? new List<Farm>());
+    var roles = ViewBag.JobRoles as string[] ?? Array.Empty<string>();
+    var statuses = ViewBag.Statuses as string[] ?? Array.Empty<string>();
+    var isNew = Model.Id == 0;
+}
+<div class="row justify-content-center"><div class="col-xl-9">
+<form asp-action="@(isNew ? "Create" : "Edit")" method="post" class="form-card">
+    @Html.AntiForgeryToken()
+    <input type="hidden" asp-for="Id" />
+    <div asp-validation-summary="ModelOnly" class="text-danger small mb-2"></div>
+
+    <div class="d-flex align-items-center gap-3 mb-4">
+        <div class="avatar" style="width:48px;height:48px;font-size:16px">@(string.IsNullOrWhiteSpace(Model.FullName) ? "+" : Model.Initials)</div>
+        <div>
+            <h6 class="fw-semibold mb-0">@(isNew ? "New staff member" : Model.FullName)</h6>
+            <div class="text-muted text-xs">Fields marked * are required. Salary is used to generate monthly payroll.</div>
+        </div>
+    </div>
+
+    <div class="section-title mb-2 text-xs text-uppercase text-muted">Identity &amp; assignment</div>
+    <div class="row g-3 mb-4">
+        <div class="col-md-3">
+            <label asp-for="EmployeeCode" class="form-label">Employee code</label>
+            <input asp-for="EmployeeCode" class="form-control mono" placeholder="EMP-018" maxlength="20" />
+            <span asp-validation-for="EmployeeCode" class="text-danger small"></span>
+        </div>
+        <div class="col-md-5">
+            <label asp-for="FullName" class="form-label">Full name *</label>
+            <input asp-for="FullName" class="form-control" required maxlength="150" />
+            <span asp-validation-for="FullName" class="text-danger small"></span>
+        </div>
+        <div class="col-md-4">
+            <label asp-for="Role" class="form-label">Job role *</label>
+            <input asp-for="Role" class="form-control" list="jobRoles" required maxlength="100" placeholder="e.g. Shed Worker" />
+            <datalist id="jobRoles">@foreach (var r in roles) { <option value="@r"></option> }</datalist>
+            <span asp-validation-for="Role" class="text-danger small"></span>
+        </div>
+        <div class="col-md-4">
+            <label asp-for="FarmId" class="form-label">Assigned farm</label>
+            <select asp-for="FarmId" class="form-select">
+                <option value="">All farms / head office</option>
+                @foreach (var f in farms) { <option value="@f.Id">@f.Name</option> }
+            </select>
+        </div>
+        <div class="col-md-4">
+            <label asp-for="Status" class="form-label">Duty status</label>
+            <select asp-for="Status" class="form-select">
+                @foreach (var s in statuses) { <option value="@s">@s</option> }
+            </select>
+        </div>
+        <div class="col-md-4">
+            <label asp-for="JoinDate" class="form-label">Join date *</label>
+            <input asp-for="JoinDate" type="date" class="form-control" required value="@(Model.JoinDate == default ? "" : Model.JoinDate.ToString("yyyy-MM-dd"))" />
+            <span asp-validation-for="JoinDate" class="text-danger small"></span>
+        </div>
+    </div>
+
+    <div class="section-title mb-2 text-xs text-uppercase text-muted">Contact</div>
+    <div class="row g-3 mb-4">
+        <div class="col-md-4">
+            <label asp-for="Phone" class="form-label">Phone</label>
+            <input asp-for="Phone" class="form-control" placeholder="017XXXXXXXX" maxlength="20" />
+        </div>
+        <div class="col-md-4">
+            <label asp-for="Email" class="form-label">Email</label>
+            <input asp-for="Email" type="email" class="form-control" maxlength="100" />
+        </div>
+        <div class="col-md-4">
+            <label asp-for="EmergencyContact" class="form-label">Emergency contact</label>
+            <input asp-for="EmergencyContact" class="form-control" placeholder="Name - phone" maxlength="100" />
+        </div>
+        <div class="col-12">
+            <label asp-for="Address" class="form-label">Address</label>
+            <input asp-for="Address" class="form-control" maxlength="300" />
+        </div>
+    </div>
+
+    <div class="section-title mb-2 text-xs text-uppercase text-muted">Compensation</div>
+    <div class="row g-3 align-items-end">
+        <div class="col-md-4">
+            <label asp-for="MonthlySalary" class="form-label">Monthly salary (৳)</label>
+            <input asp-for="MonthlySalary" type="number" step="1" min="0" class="form-control" id="salary" />
+            <span asp-validation-for="MonthlySalary" class="text-danger small"></span>
+        </div>
+        <div class="col-md-8">
+            <div class="info-callout py-2" id="salaryHint">
+                Daily rate (÷26): <strong id="dailyRate">—</strong> · Allowance (10%): <strong id="allowance">—</strong>
+            </div>
+        </div>
+        @if (!isNew)
+        {
+            <div class="col-12">
+                <div class="form-check form-switch">
+                    <input asp-for="IsActive" class="form-check-input" type="checkbox" role="switch" />
+                    <label asp-for="IsActive" class="form-check-label">Active employee (inactive staff are hidden from attendance and payroll)</label>
+                </div>
+            </div>
+        }
+        else
+        {
+            <input type="hidden" asp-for="IsActive" value="true" />
+        }
+    </div>
+
+    <div class="d-flex gap-2 mt-4">
+        <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Save employee</button>
+        <a asp-action="@(isNew ? "Index" : "Detail")" asp-route-id="@(isNew ? "" : Model.Id.ToString())" class="btn btn-outline-secondary">Cancel</a>
+    </div>
+</form>
+</div></div>
+<script>
+    (function () {
+        var s = document.getElementById('salary');
+        function upd() {
+            var v = parseFloat(s.value || '0');
+            document.getElementById('dailyRate').textContent = ppMoney(v / 26);
+            document.getElementById('allowance').textContent = ppMoney(v * 0.10);
+        }
+        s.addEventListener('input', upd); document.addEventListener('DOMContentLoaded', upd);
+    })();
+</script>

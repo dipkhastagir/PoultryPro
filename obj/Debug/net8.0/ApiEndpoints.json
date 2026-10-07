@@ -1,0 +1,140 @@
+[
+  {
+    "ContainingType": "PoultryPro.Controllers.MobileApiController",
+    "Method": "Login",
+    "RelativePath": "api/mobile/login",
+    "HttpMethod": "POST",
+    "IsController": true,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "body",
+        "Type": "PoultryPro.Models.ViewModels.MobileLoginRequest",
+        "IsRequired": false
+      }
+    ],
+    "ReturnTypes": []
+  },
+  {
+    "ContainingType": "PoultryPro.Controllers.MobileApiController",
+    "Method": "Farms",
+    "RelativePath": "api/mobile/officers/{id}/farms",
+    "HttpMethod": "GET",
+    "IsController": true,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "id",
+        "Type": "System.Int32",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": []
+  },
+  {
+    "ContainingType": "PoultryPro.Controllers.MobileApiController",
+    "Method": "CreateVisit",
+    "RelativePath": "api/mobile/visits",
+    "HttpMethod": "POST",
+    "IsController": true,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "body",
+        "Type": "PoultryPro.Models.ViewModels.MobileVisitRequest",
+        "IsRequired": false
+      }
+    ],
+    "ReturnTypes": []
+  },
+  {
+    "ContainingType": "PoultryPro.Controllers.MobileApiController",
+    "Method": "Complete",
+    "RelativePath": "api/mobile/visits/{id}/complete",
+    "HttpMethod": "POST",
+    "IsController": true,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "id",
+        "Type": "System.Int32",
+        "IsRequired": true
+      },
+      {
+        "Name": "body",
+        "Type": "PoultryPro.Models.ViewModels.MobileCompleteRequest",
+        "IsRequired": false
+      }
+    ],
+    "ReturnTypes": []
+  },
+  {
+    "ContainingType": "PoultryPro.Controllers.MobileApiController",
+    "Method": "AddDailyRecord",
+    "RelativePath": "api/mobile/visits/{id}/daily-records",
+    "HttpMethod": "POST",
+    "IsController": true,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "id",
+        "Type": "System.Int32",
+        "IsRequired": true
+      },
+      {
+        "Name": "body",
+        "Type": "PoultryPro.Models.ViewModels.MobileDailyRecordRequest",
+        "IsRequired": false
+      }
+    ],
+    "ReturnTypes": []
+  },
+  {
+    "ContainingType": "PoultryPro.Controllers.MobileApiController",
+    "Method": "Sync",
+    "RelativePath": "api/mobile/visits/{id}/sync",
+    "HttpMethod": "POST",
+    "IsController": true,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "id",
+        "Type": "System.Int32",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": []
+  },
+  {
+    "ContainingType": "PoultryPro.Controllers.SensorApiController",
+    "Method": "Latest",
+    "RelativePath": "api/sensors/{deviceCode}/latest",
+    "HttpMethod": "GET",
+    "IsController": true,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "deviceCode",
+        "Type": "System.String",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": []
+  },
+  {
+    "ContainingType": "PoultryPro.Controllers.SensorApiController",
+    "Method": "Ingest",
+    "RelativePath": "api/sensors/ingest",
+    "HttpMethod": "POST",
+    "IsController": true,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "body",
+        "Type": "PoultryPro.Models.ViewModels.SensorIngestRequest",
+        "IsRequired": false
+      }
+    ],
+    "ReturnTypes": []
+  }
+]

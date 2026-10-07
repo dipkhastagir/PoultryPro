@@ -1,0 +1,114 @@
+@model Transaction
+@{
+    var isNew = Model.Id == 0;
+    var farms = ((ViewBag.Farms as IEnumerable<Farm>)?.ToList() ?? new List<Farm>());
+    var categories = (((ViewBag.Categories as IEnumerable<string>)?.ToList() ?? new List<string>())).Union(new[] { Model.Category }).Where(c => !string.IsNullOrWhiteSpace(c)).Distinct().OrderBy(c => c).ToList();
+    var types = (ViewBag.Types as string[] ?? Array.Empty<string>()).Union(new[] { Model.TxnType }).Where(t => !string.IsNullOrWhiteSpace(t)).Distinct();
+    var methods = ViewBag.PaymentMethods as string[] ?? Array.Empty<string>();
+    var absAmount = Math.Abs(Model.Amount);
+    var negType = Model.TxnType is "Purchase" or "Expense" or "Salary";
+    var negative = Model.Amount < 0 || ((Model.Amount == 0 || !ViewData.ModelState.IsValid) && negType);
+}
+
+<div class="page-head">
+    <div>
+        <h4><i class="bi bi-cash-stack text-success me-2"></i>@(isNew ? "New Transaction" : "Edit Transaction")</h4>
+        <p>Income is stored as a positive amount, costs as negative — the sign follows the type you choose.</p>
+    </div>
+    <a asp-action="Index" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Ledger</a>
+</div>
+
+<div class="row justify-content-center"><div class="col-lg-8">
+<div class="form-card">
+    <form asp-action="@(isNew ? "Create" : "Edit")" method="post" novalidate>
+        @Html.AntiForgeryToken()
+        <input type="hidden" asp-for="Id" />
+        <input type="hidden" asp-for="BatchId" />
+        <div asp-validation-summary="ModelOnly" class="alert alert-danger py-2 small"></div>
+        <div class="row g-3">
+            <div class="col-md-4">
+                <label class="form-label">Type *</label>
+                <select asp-for="TxnType" class="form-select" id="txnType">
+                    @foreach (var t in types) { <option value="@t">@t</option> }
+                </select>
+                <span asp-validation-for="TxnType" class="text-danger small"></span>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Date *</label>
+                <input asp-for="TxnDate" type="date" class="form-control" required />
+                <span asp-validation-for="TxnDate" class="text-danger small"></span>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Category *</label>
+                <input asp-for="Category" class="form-control" list="catList" maxlength="100" required />
+                <datalist id="catList">@foreach (var c in categories) { <option value="@c"></option> }</datalist>
+                <span asp-validation-for="Category" class="text-danger small"></span>
+            </div>
+            <div class="col-12">
+                <label class="form-label">Description *</label>
+                <input asp-for="Description" class="form-control" placeholder="e.g. Live broiler sale — Karwan Bazar" maxlength="300" required />
+                <span asp-validation-for="Description" class="text-danger small"></span>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Amount (৳) *</label>
+                <div class="input-group">
+                    <span class="input-group-text" id="signBadge">+</span>
+                    <input name="Amount" id="Amount" type="number" step="0.01" min="0" class="form-control" value="@(absAmount == 0 ? "" : absAmount.ToString(System.Globalization.CultureInfo.InvariantCulture))" required />
+                </div>
+                <input type="hidden" name="amountSign" id="amountSign" value="@(negative ? "negative" : "positive")" />
+                <span asp-validation-for="Amount" class="text-danger small"></span>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Payment status</label>
+                <select asp-for="PaymentStatus" class="form-select">
+                    <option>Paid</option><option>Pending</option><option>Partial</option>
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Payment method</label>
+                <select asp-for="PaymentMethod" class="form-select">
+                    <option value="">—</option>
+                    @foreach (var m in methods.Union(new[] { Model.PaymentMethod ?? "" }).Where(m => m != "").Distinct()) { <option value="@m">@m</option> }
+                </select>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Farm</label>
+                <select asp-for="FarmId" class="form-select">
+                    <option value="">Company-wide</option>
+                    @foreach (var f in farms) { <option value="@f.Id">@f.Name</option> }
+                </select>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Reference</label>
+                <input asp-for="Reference" class="form-control" placeholder="e.g. SO-260412-101530, PO-2604-003" maxlength="100" />
+            </div>
+            @if (Model.BatchId.HasValue)
+            {
+                <div class="col-12"><div class="info-callout small mb-0"><i class="bi bi-link-45deg me-1"></i>Linked to flock <a asp-controller="Batch" asp-action="Detail" asp-route-id="@Model.BatchId" class="mono">@(Model.BatchCode ?? "#" + Model.BatchId)</a>.</div></div>
+            }
+        </div>
+        <div class="d-flex gap-2 mt-4">
+            <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>@(isNew ? "Save transaction" : "Save changes")</button>
+            <a asp-action="Index" class="btn btn-outline-secondary">Cancel</a>
+        </div>
+    </form>
+</div>
+</div></div>
+
+@section Scripts {
+<script>
+(function () {
+    const type = document.getElementById('txnType'), badge = document.getElementById('signBadge'), sign = document.getElementById('amountSign');
+    const negTypes = ['Purchase', 'Expense', 'Salary'];
+    function setSign(neg) {
+        badge.textContent = neg ? '−' : '+';
+        sign.value = neg ? 'negative' : 'positive';
+        badge.className = 'input-group-text ' + (neg ? 'bg-danger text-white' : 'bg-success text-white');
+    }
+    type.addEventListener('change', () => setSign(negTypes.includes(type.value)));
+    badge.style.cursor = 'pointer'; badge.title = 'Click to flip the sign';
+    badge.addEventListener('click', () => setSign(sign.value !== 'negative'));
+    setSign(sign.value === 'negative');
+})();
+</script>
+}

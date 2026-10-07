@@ -1,0 +1,145 @@
+@model UsersIndexVm
+@{
+    var active = Model.Users.Count(u => u.IsActive);
+    string RoleBadge(string r) => r switch
+    {
+        "Admin" => "badge-danger-soft", "Manager" => "badge-ready", "Veterinarian" => "badge-info-soft",
+        "Accountant" => "badge-warning-soft", "FieldOfficer" => "badge-healthy", _ => "badge-gray"
+    };
+    string RoleIcon(string r) => r switch
+    {
+        "Admin" => "bi-shield-lock", "Manager" => "bi-briefcase", "Veterinarian" => "bi-heart-pulse",
+        "Accountant" => "bi-calculator", "FieldOfficer" => "bi-geo-alt", _ => "bi-eye"
+    };
+}
+
+<div class="page-head">
+    <div>
+        <h4>User accounts</h4>
+        <p>@active active of @Model.Users.Count accounts · passwords are stored as salted PBKDF2 hashes</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a asp-controller="AuditLog" asp-action="Index" class="btn btn-sm btn-outline-secondary"><i class="bi bi-clock-history me-1"></i>Audit log</a>
+        <a asp-action="Create" class="btn btn-sm btn-primary"><i class="bi bi-person-plus me-1"></i>New user</a>
+    </div>
+</div>
+
+<div class="stat-grid">
+    @foreach (var r in Roles.All)
+    {
+        var n = Model.Users.Count(u => u.Role == r && u.IsActive);
+        <div class="stat-tile @(r switch { "Admin" => "tone-red", "Manager" => "tone-blue", "Veterinarian" => "tone-violet", "Accountant" => "tone-amber", "FieldOfficer" => "tone-green", _ => "tone-slate" })">
+            <div class="st-label">@r</div>
+            <div class="st-value">@n</div>
+            <div class="st-sub">active account@(n == 1 ? "" : "s")</div>
+            <div class="st-icon"><i class="bi @RoleIcon(r)"></i></div>
+        </div>
+    }
+</div>
+
+<div class="card mb-4">
+    <div class="card-header">
+        <h6><i class="bi bi-person-lock text-primary me-2"></i>Accounts</h6>
+        <input class="form-control form-control-sm" style="max-width:220px" placeholder="Filter users…" data-table-filter="#userTbl" />
+    </div>
+    @if (!Model.Users.Any())
+    {
+        <div class="empty-state"><i class="bi bi-people"></i>No user accounts.</div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle" id="userTbl">
+                <thead><tr><th>User</th><th>Username</th><th>Role</th><th>Contact</th><th>Last login</th><th>Created</th><th>Status</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var u in Model.Users)
+                    {
+                        var self = u.Id == Model.CurrentUserId;
+                        <tr class="@(u.IsActive ? "" : "opacity-50")">
+                            <td>
+                                <div class="d-flex align-items-center gap-2">
+                                    <div class="avatar">@(string.IsNullOrEmpty(u.Initials) ? "?" : u.Initials)</div>
+                                    <div>
+                                        <div class="fw-600">@u.FullName @if (self) { <span class="chip ms-1">you</span> }</div>
+                                        @if (u.FieldOfficerName != null) { <div class="text-xs text-muted"><i class="bi bi-link-45deg"></i> Field officer: @u.FieldOfficerName</div> }
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="mono">@u.Username</td>
+                            <td><span class="badge @RoleBadge(u.Role)" title="@Roles.Describe(u.Role)"><i class="bi @RoleIcon(u.Role) me-1"></i>@u.Role</span></td>
+                            <td class="small">
+                                @(u.Email ?? "")
+                                @if (u.Phone != null) { <div class="text-muted text-xs">@u.Phone</div> }
+                                @if (u.Email == null && u.Phone == null) { <span class="text-muted">—</span> }
+                            </td>
+                            <td class="small" title="@Fmt.DateTime(u.LastLoginAt)">@Fmt.Ago(u.LastLoginAt)</td>
+                            <td class="small text-muted">@Fmt.Date(u.CreatedAt)</td>
+                            <td><span class="badge @(u.IsActive ? "badge-healthy" : "badge-danger-soft")">@(u.IsActive ? "Active" : "Inactive")</span></td>
+                            <td class="text-end text-nowrap">
+                                <a asp-action="Edit" asp-route-id="@u.Id" class="btn btn-xs btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></a>
+                                @if (!self)
+                                {
+                                    <form asp-action="ToggleActive" method="post" class="d-inline" data-confirm="@(u.IsActive ? "Deactivate" : "Re-activate") @u.Username?">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="id" value="@u.Id" />
+                                        <button class="btn btn-xs @(u.IsActive ? "btn-outline-danger" : "btn-outline-success")" title="@(u.IsActive ? "Deactivate" : "Activate")">
+                                            <i class="bi @(u.IsActive ? "bi-toggle-on" : "bi-toggle-off")"></i>
+                                        </button>
+                                    </form>
+                                }
+                                else
+                                {
+                                    <button class="btn btn-xs btn-outline-secondary" disabled title="You cannot deactivate yourself"><i class="bi bi-toggle-on"></i></button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h6><i class="bi bi-grid-3x3-gap text-primary me-2"></i>Roles &amp; permissions</h6>
+        <span class="text-muted text-xs">Enforced on every page and every POST; Viewer accounts are read-only everywhere</span>
+    </div>
+    <div class="table-responsive">
+        <table class="table mb-0 align-middle">
+            <thead>
+                <tr>
+                    <th>Area</th>
+                    @foreach (var r in Roles.All)
+                    {
+                        <th class="text-center"><span class="badge @RoleBadge(r)"><i class="bi @RoleIcon(r) me-1"></i>@r</span></th>
+                    }
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var row in Model.Matrix)
+                {
+                    <tr>
+                        <td class="fw-600 small">@row.Area</td>
+                        @foreach (var r in Roles.All)
+                        {
+                            <td class="text-center">
+                                @if (row.Roles.Contains(r)) { <i class="bi bi-check-circle-fill text-success"></i> }
+                                else { <i class="bi bi-dash text-muted opacity-50"></i> }
+                            </td>
+                        }
+                    </tr>
+                }
+            </tbody>
+            <tfoot>
+                <tr>
+                    <td class="small">Summary</td>
+                    @foreach (var r in Roles.All)
+                    {
+                        <td class="text-center text-xs text-muted fw-normal" style="max-width:150px">@Roles.Describe(r)</td>
+                    }
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+</div>

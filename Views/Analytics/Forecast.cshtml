@@ -1,0 +1,239 @@
+@model ForecastVm
+@using System.Text.Json
+@using System.Globalization
+@{
+    var ci = CultureInfo.InvariantCulture;
+    var s = Model.Selected;
+    var rows = Model.Rows;
+    var totalLive = rows.Sum(r => r.ProjectedLiveKg);
+    var totalRev = rows.Sum(r => r.ProjectedRevenue);
+    var next = rows.Where(r => r.HarvestDate.HasValue).OrderBy(r => r.HarvestDate).FirstOrDefault();
+    var ready = rows.Count(r => r.Ready);
+    object Pts(List<double[]> l) => l.Select(p => new { x = p[0], y = p[1] }).ToList();
+}
+
+<partial name="_AnalyticsNav" />
+
+<div class="page-head">
+    <div>
+        <h4>@(s != null ? $"{s.BatchCode} — harvest forecast" : "Harvest forecast")</h4>
+        <p>@(s != null ? $"{s.FarmName} · {s.Breed} · placed {Fmt.Date(s.PlacementDate)} · day {s.AgeInDays} · target {s.TargetKg.ToString("0.0#", ci)} kg" : "Predicted market-weight date for every active broiler and Sonali flock.")</p>
+    </div>
+    @if (rows.Count > 0)
+    {
+        <form method="get" class="d-flex gap-2 align-items-center">
+            <label class="text-xs text-muted" for="batchId">Flock</label>
+            <select id="batchId" name="batchId" class="form-select form-select-sm" style="min-width:260px" onchange="this.form.submit()">
+                @foreach (var r in rows)
+                {
+                    <option value="@r.BatchId" selected="@(s?.BatchId == r.BatchId)">@r.BatchCode · @r.Breed · @r.FarmName · day @r.AgeInDays</option>
+                }
+            </select>
+        </form>
+    }
+</div>
+
+<div class="stat-grid">
+    <div class="stat-tile tone-green">
+        <div class="st-label">Next harvest</div>
+        <div class="st-value">@(next != null ? next.HarvestDate!.Value.ToString("dd MMM") : "—")</div>
+        <div class="st-sub">@(next != null ? $"{next.BatchCode} · in {next.DaysLeft} day(s)" : "no forecast available")</div>
+        <div class="st-icon"><i class="bi bi-calendar-check"></i></div>
+    </div>
+    <div class="stat-tile tone-blue">
+        <div class="st-label">Projected live weight</div>
+        <div class="st-value">@Fmt.Num((decimal)totalLive, 0) kg</div>
+        <div class="st-sub">all @rows.Count active meat flock(s) at harvest</div>
+        <div class="st-icon"><i class="bi bi-box-seam"></i></div>
+    </div>
+    <div class="stat-tile tone-violet">
+        <div class="st-label">Projected revenue</div>
+        <div class="st-value">@Fmt.MoneyShort(totalRev)</div>
+        <div class="st-sub">broiler @Fmt.Money(Model.BroilerPrice)/kg · Sonali @Fmt.Money(Model.SonaliPrice)/kg</div>
+        <div class="st-icon"><i class="bi bi-cash-coin"></i></div>
+    </div>
+    <div class="stat-tile tone-amber">
+        <div class="st-label">Ready now</div>
+        <div class="st-value">@ready</div>
+        <div class="st-sub">flock(s) already at target weight</div>
+        <div class="st-icon"><i class="bi bi-flag"></i></div>
+    </div>
+</div>
+
+@if (s == null)
+{
+    <div class="card"><div class="empty-state"><i class="bi bi-magic"></i>No active broiler or Sonali flocks. Forecasts appear once a meat flock is placed and weighed.</div></div>
+}
+else
+{
+    if (!string.IsNullOrWhiteSpace(s.Note))
+    {
+        <div class="warn-callout mb-3"><i class="bi bi-info-circle me-1"></i>@s.Note</div>
+    }
+
+    <div class="row g-3 mb-3">
+        <div class="col-xl-8">
+            <div class="card h-100">
+                <div class="card-header"><h6 class="mb-0"><i class="bi bi-graph-up-arrow me-1"></i>Weight trajectory and projections — @s.BatchCode</h6></div>
+                <div class="card-body">
+                    @if (s.Actual.Count == 0 && s.Standard.Count == 0)
+                    {
+                        <div class="empty-state"><i class="bi bi-speedometer"></i>No weighings recorded yet and no breed standard — record average body weight in daily records.</div>
+                    }
+                    else
+                    {
+                        <div style="height:340px"><canvas id="chFc"></canvas></div>
+                    }
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-4">
+            <div class="card h-100">
+                <div class="card-header"><h6 class="mb-0"><i class="bi bi-bullseye me-1"></i>Forecast summary</h6></div>
+                <div class="card-body">
+                    <dl class="kv mb-3">
+                        <dt>Latest weight</dt><dd>@(s.CurrentWeightGm.HasValue ? $"{s.CurrentWeightGm:0} g (day {s.LastWeighAge})" : "—")</dd>
+                        <dt>Harvest date</dt><dd class="fw-600">@(s.Ready ? "Ready now" : Fmt.Date(s.HarvestDate))@(s.DaysLeft.HasValue && !s.Ready ? $" · {s.DaysLeft} d left" : "")</dd>
+                        <dt>Harvest age</dt><dd>@(s.HarvestDay.HasValue ? $"day {s.HarvestDay}" : "—") <span class="text-xs text-muted">@s.Method</span></dd>
+                        <dt>Method A</dt><dd>@(s.DayA.HasValue ? $"day {s.DayA} · {Fmt.Date(s.DateA)}" : s.HasStandard ? "not reached" : "no standard")</dd>
+                        <dt>Method B</dt><dd>@(s.DayB.HasValue ? $"day {s.DayB} · {Fmt.Date(s.DateB)}" : s.PointsB < 3 ? "needs ≥ 3 weighings" : "no positive trend")</dd>
+                        <dt>Birds at harvest</dt><dd>@Fmt.Num(s.ProjectedBirds) <span class="text-xs text-muted">(@s.DailyMortPct.ToString("0.00", ci)%/day)</span></dd>
+                        <dt>Live weight</dt><dd>@s.ProjectedWeightKg.ToString("0.00", ci) kg × birds = <b>@Fmt.Num((decimal)s.ProjectedLiveKg, 0) kg</b></dd>
+                        <dt>Revenue</dt><dd class="fw-600 text-success">@Fmt.Money(s.ProjectedRevenue)</dd>
+                        <dt>Feed to harvest</dt><dd>@Fmt.Num((decimal)s.FeedToHarvestKg, 0) kg · @Fmt.Money(s.FeedCostToHarvest)</dd>
+                        <dt>Margin over feed</dt><dd>@Fmt.Money(s.ProjectedRevenue - s.FeedCostToHarvest) <span class="text-xs text-muted">(remaining feed only)</span></dd>
+                    </dl>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-3">
+        <div class="col-lg-7">
+            <div class="card h-100">
+                <div class="card-header"><h6 class="mb-0"><i class="bi bi-calculator me-1"></i>Method</h6></div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <div class="fw-600 small mb-1">A · Scaled breed standard</div>
+                            <div class="formula mb-2">ρ = mean(W_obs / W_std) over last 3 weighings<br />Ŵ(t) = ρ · W_std(t)<br />t* = min{t : Ŵ(t) ≥ target}</div>
+                            <div class="text-xs text-muted">Preserves the sigmoidal shape of the breed growth curve (linear interpolation, extrapolated beyond the last tabulated age). ρ = @(s.PerfRatio.HasValue ? s.PerfRatio.Value.ToString("0.000", ci) : "n/a").</div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="fw-600 small mb-1">B · OLS on recent weights</div>
+                            <div class="formula mb-2">W(t) = β₀ + β₁·t   (last ≤ 10 weighings)<br />t* = ⌈(target − β₀) / β₁⌉</div>
+                            <div class="text-xs text-muted">
+                                @(s.SlopeB.HasValue ? $"β₀ = {s.InterceptB:0.0}, β₁ = {s.SlopeB:0.0} g/day, R² = {s.R2B:0.000}, n = {s.PointsB}." : "Not enough weighings.")
+                                Ignores curvature, so it tends to forecast late in early growth and early near market age.
+                            </div>
+                        </div>
+                    </div>
+                    <div class="formula mt-3">N_h = N₀·(1 − m)ᵈ,   Live kg = N_h · Ŵ(t*),   Revenue = Live kg × price/kg</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-5">
+            <div class="card h-100">
+                <div class="card-header"><h6 class="mb-0"><i class="bi bi-lightbulb me-1"></i>How to read this</h6></div>
+                <div class="card-body">
+                    <div class="info-callout text-xs">
+                        Green dots are recorded weights; the dashed grey line is the breed standard; the violet line projects the standard scaled to
+                        this flock's own performance (method A, preferred whenever a standard exists); the amber line is the straight-line trend
+                        (method B, the fallback). The red horizontal line marks the target weight from Settings
+                        (<span class="mono">Harvest.TargetWeightKg</span> @Model.BroilerTargetKg.ToString("0.0#", ci) kg, Sonali @Model.SonaliTargetKg.ToString("0.0#", ci) kg).
+                        When the two methods disagree by more than 4 days, plan the catch for the earlier date and re-weigh.
+                        Bird survival uses the mean daily mortality of the last 7 records (m).
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@if (rows.Count > 0)
+{
+    <div class="card">
+        <div class="card-header"><h6 class="mb-0"><i class="bi bi-table me-1"></i>All active meat flocks</h6></div>
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr><th>Flock</th><th class="text-end">Age</th><th class="text-end">Weight (g)</th><th class="text-end">Target</th><th class="text-end">ρ</th>
+                        <th>Method A</th><th>Method B</th><th>Harvest</th><th class="text-end">Birds</th><th class="text-end">Live kg</th><th class="text-end">Revenue</th><th></th></tr>
+                </thead>
+                <tbody>
+                @foreach (var r in rows)
+                {
+                    <tr class="@(r.BatchId == s?.BatchId ? "table-active" : "")">
+                        <td><a asp-action="Forecast" asp-route-batchId="@r.BatchId" class="fw-600 text-decoration-none">@r.BatchCode</a>
+                            <div class="text-xs text-muted">@r.FarmName · @r.Breed</div></td>
+                        <td class="text-end">@r.AgeInDays</td>
+                        <td class="text-end">@(r.CurrentWeightGm.HasValue ? r.CurrentWeightGm.Value.ToString("0", ci) : "—")</td>
+                        <td class="text-end">@r.TargetKg.ToString("0.0#", ci) kg</td>
+                        <td class="text-end">@(r.PerfRatio.HasValue ? r.PerfRatio.Value.ToString("0.00", ci) : "—")</td>
+                        <td>@(r.DayA.HasValue ? $"d{r.DayA} · {r.DateA:dd MMM}" : "—")</td>
+                        <td>@(r.DayB.HasValue ? $"d{r.DayB} · {r.DateB:dd MMM}" : "—")</td>
+                        <td class="text-nowrap">
+                            @if (r.Ready) { <span class="badge badge-ready">Ready</span> }
+                            else if (r.HarvestDate.HasValue) { <span class="fw-600">@Fmt.Date(r.HarvestDate)</span> <span class="text-xs text-muted">(@r.DaysLeft d)</span> }
+                            else { <span class="text-muted">—</span> }
+                        </td>
+                        <td class="text-end">@Fmt.Num(r.ProjectedBirds)</td>
+                        <td class="text-end">@Fmt.Num((decimal)r.ProjectedLiveKg, 0)</td>
+                        <td class="text-end fw-600">@Fmt.Money(r.ProjectedRevenue)</td>
+                        <td><a asp-controller="Batch" asp-action="Detail" asp-route-id="@r.BatchId" class="btn btn-xs btn-outline-secondary" title="Open batch"><i class="bi bi-box-arrow-up-right"></i></a></td>
+                    </tr>
+                }
+                </tbody>
+                <tfoot>
+                    <tr class="fw-600"><td colspan="8">Total</td><td class="text-end">@Fmt.Num(rows.Sum(r => r.ProjectedBirds))</td><td class="text-end">@Fmt.Num((decimal)totalLive, 0)</td><td class="text-end">@Fmt.Money(totalRev)</td><td></td></tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+}
+
+@section Scripts {
+<script>
+(function () {
+    const el = document.getElementById('chFc');
+    if (!el) return;
+    const actual = @Html.Raw(JsonSerializer.Serialize(s != null ? Pts(s.Actual) : new List<object>()));
+    const std = @Html.Raw(JsonSerializer.Serialize(s != null ? Pts(s.Standard) : new List<object>()));
+    const projA = @Html.Raw(JsonSerializer.Serialize(s != null ? Pts(s.ProjA) : new List<object>()));
+    const projB = @Html.Raw(JsonSerializer.Serialize(s != null ? Pts(s.ProjB) : new List<object>()));
+    const target = @(((s?.TargetKg ?? 0) * 1000).ToString(ci));
+    const harvestDay = @Html.Raw(s?.HarvestDay?.ToString(ci) ?? "null");
+    const all = [...actual, ...std, ...projA, ...projB];
+    const xMax = Math.max(...all.map(p => p.x), harvestDay || 0) + 1;
+    const ds = [];
+    ds.push({ label: 'Recorded weight', data: actual, borderColor: ppColors.green, backgroundColor: ppColors.green, showLine: false, pointRadius: 4 });
+    if (std.length) ds.push({ label: 'Breed standard', data: std, borderColor: ppColors.slate, borderDash: [6, 4], pointRadius: 0, borderWidth: 1.5 });
+    if (projA.length) ds.push({ label: 'A · scaled standard', data: projA, borderColor: ppColors.violet, pointRadius: 0, borderWidth: 2.5 });
+    if (projB.length) ds.push({ label: 'B · OLS trend', data: projB, borderColor: ppColors.amber, pointRadius: 0, borderWidth: 2 });
+    ds.push({ label: 'Target', data: [{ x: 0, y: target }, { x: xMax, y: target }], borderColor: ppColors.red, borderWidth: 1.5, pointRadius: 0, borderDash: [2, 3] });
+    new Chart(el, {
+        type: 'line',
+        data: { datasets: ds },
+        options: {
+            parsing: true,
+            interaction: { mode: 'nearest', intersect: false },
+            scales: {
+                x: { type: 'linear', min: 0, max: xMax, title: { display: true, text: 'Age (days)' } },
+                y: { beginAtZero: true, title: { display: true, text: 'Body weight (g)' } }
+            },
+            plugins: { tooltip: { callbacks: { label: c => `${c.dataset.label}: day ${c.parsed.x} · ${Math.round(c.parsed.y)} g` } } }
+        },
+        plugins: [{
+            id: 'harvest', afterDatasetsDraw(chart) {
+                if (harvestDay === null) return;
+                const { ctx, chartArea: a, scales: { x } } = chart;
+                const px = x.getPixelForValue(harvestDay);
+                ctx.save(); ctx.strokeStyle = ppColors.green; ctx.setLineDash([3, 3]);
+                ctx.beginPath(); ctx.moveTo(px, a.top); ctx.lineTo(px, a.bottom); ctx.stroke();
+                ctx.fillStyle = ppColors.green; ctx.font = '11px sans-serif'; ctx.fillText('harvest d' + harvestDay, px + 4, a.top + 12); ctx.restore();
+            }
+        }]
+    });
+})();
+</script>
+}

@@ -1,0 +1,424 @@
+@model FarmDetailVm
+@{
+    var f = Model.Farm;
+    var bm = Model.Benchmark;
+    var canEdit = User.IsAny(Roles.AdminOrManager);
+    var util = f.Capacity > 0 ? (decimal)(bm?.CurrentBirds ?? f.CurrentStock) / f.Capacity * 100 : 0;
+    var hasGps = f.Latitude.HasValue && f.Longitude.HasValue;
+    string BandTone(string band) => band switch { "Emergency" or "Danger" => "badge-danger-soft", "Alert" => "badge-warning-soft", "Normal" => "badge-healthy", _ => "badge-gray" };
+    string GradeTone(string? g) => g switch { "A" => "#16a34a", "B" => "#0d9e75", "C" => "#f59e0b", _ => "#ef4444" };
+}
+@section Head {
+    @if (hasGps)
+    {
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+    }
+}
+
+<div class="page-head">
+    <div>
+        <h4>@f.Name <span class="badge @Fmt.Badge(f.CertStatus) align-middle ms-1" style="font-size:11px">@f.CertStatus</span></h4>
+        <p><i class="bi bi-geo-alt me-1"></i>@f.Location @if (!string.IsNullOrEmpty(f.Zone)) { <span>· @f.Zone</span> } · @f.FarmType · @f.ShedCount shed(s)@(f.AreaSqFt.HasValue ? $" · {f.AreaSqFt:N0} sq ft" : "")</p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+        <a asp-action="Index" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Farms</a>
+        <a asp-controller="Sensors" asp-action="Readings" asp-route-farmId="@f.Id" class="btn btn-sm btn-outline-secondary"><i class="bi bi-activity me-1"></i>Climate</a>
+        <a asp-controller="DailyRecord" asp-action="Index" asp-route-farmId="@f.Id" class="btn btn-sm btn-outline-secondary"><i class="bi bi-journal-text me-1"></i>Daily records</a>
+        @if (canEdit)
+        {
+            <a asp-action="Edit" asp-route-id="@f.Id" class="btn btn-sm btn-primary"><i class="bi bi-pencil me-1"></i>Edit farm</a>
+        }
+    </div>
+</div>
+
+<div class="stat-grid">
+    <div class="stat-tile tone-green">
+        <div class="st-label">Live birds</div>
+        <div class="st-value">@Fmt.Num(bm?.CurrentBirds ?? f.CurrentStock)</div>
+        <div class="st-sub">@Fmt.Pct(util) of @Fmt.Num(f.Capacity) capacity</div>
+        <div class="st-icon"><i class="bi bi-feather"></i></div>
+    </div>
+    <div class="stat-tile tone-blue">
+        <div class="st-label">Flocks</div>
+        <div class="st-value">@(bm?.ActiveBatches ?? 0) <span class="text-xs text-muted fw-normal">active</span></div>
+        <div class="st-sub">@(bm?.TotalBatches ?? 0) placed in total</div>
+        <div class="st-icon"><i class="bi bi-collection"></i></div>
+    </div>
+    <div class="stat-tile tone-violet">
+        <div class="st-label">Avg FCR</div>
+        <div class="st-value">@(bm is { AvgFCR: > 0 } ? bm.AvgFCR.ToString("0.000") : "—")</div>
+        <div class="st-sub">feed kg per kg live weight</div>
+        <div class="st-icon"><i class="bi bi-basket"></i></div>
+    </div>
+    <div class="stat-tile tone-amber">
+        <div class="st-label">Avg EPEF</div>
+        <div class="st-value">@(bm is { AvgEPEF: > 0 } ? bm.AvgEPEF.ToString("0") : "—")</div>
+        <div class="st-sub">production efficiency factor</div>
+        <div class="st-icon"><i class="bi bi-trophy"></i></div>
+    </div>
+    <div class="stat-tile tone-red">
+        <div class="st-label">Avg mortality</div>
+        <div class="st-value">@Fmt.Pct(bm?.AvgMortalityRate ?? 0)</div>
+        <div class="st-sub">mean of all flocks</div>
+        <div class="st-icon"><i class="bi bi-heartbreak"></i></div>
+    </div>
+    <div class="stat-tile tone-slate">
+        <div class="st-label">Biosecurity</div>
+        <div class="st-value">@(Model.LatestAudit != null ? Fmt.Pct(Model.LatestAudit.ScorePct, 0) : "—")</div>
+        <div class="st-sub">@(Model.LatestAudit != null ? $"Grade {Model.LatestAudit.Grade} · {Model.LatestAudit.AuditDate:dd MMM yyyy}" : "no audit yet")</div>
+        <div class="st-icon"><i class="bi bi-shield-check"></i></div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- LEFT COLUMN -->
+    <div class="col-xl-8">
+
+        @if (Model.OpenAlerts.Any())
+        {
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h6><i class="bi bi-bell text-danger me-2"></i>Open alerts at this farm</h6>
+                    <a asp-controller="Alerts" asp-action="Index" class="btn btn-sm btn-outline-secondary">All alerts</a>
+                </div>
+                <div class="card-body py-1">
+                    @foreach (var a in Model.OpenAlerts)
+                    {
+                        <div class="alert-item-row">
+                            <i class="bi @Fmt.SeverityIcon(a.Severity) fs-5"></i>
+                            <div class="flex-grow-1">
+                                <div class="fw-600" style="font-size:13px">@a.Title</div>
+                                <div class="text-xs text-muted">@a.Message</div>
+                            </div>
+                            <div class="text-xs text-muted text-nowrap">@Fmt.Ago(a.CreatedAt)</div>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+
+        <!-- ACTIVE FLOCKS -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h6><i class="bi bi-collection text-success me-2"></i>Active flocks (@Model.ActiveBatches.Count)</h6>
+                <a asp-controller="Batch" asp-action="Index" class="btn btn-sm btn-outline-secondary">All batches</a>
+            </div>
+            @if (Model.ActiveBatches.Any())
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead><tr><th>Batch</th><th>Breed</th><th>Shed</th><th>Age</th><th class="text-end">Birds</th><th class="text-end">Avg wt</th><th class="text-end">Livability</th><th class="text-end">FCR</th><th class="text-end">EPEF</th><th>Status</th></tr></thead>
+                        <tbody>
+                            @foreach (var b in Model.ActiveBatches)
+                            {
+                                <tr>
+                                    <td><a asp-controller="Batch" asp-action="Detail" asp-route-id="@b.Id" class="fw-600">@b.BatchCode</a></td>
+                                    <td>@b.Breed <span class="text-xs text-muted">@b.BatchType</span></td>
+                                    <td>@(b.ShedNo ?? "—")</td>
+                                    <td>@b.AgeInDays d</td>
+                                    <td class="text-end">@Fmt.Num(b.CurrentCount)</td>
+                                    <td class="text-end">@(b.AverageWeightKg * 1000 > 0 ? (b.AverageWeightKg * 1000).ToString("N0") + " g" : "—")</td>
+                                    <td class="text-end">@Fmt.Pct(b.LivabilityPct)</td>
+                                    <td class="text-end">@(b.FCR > 0 ? b.FCR.ToString("0.00") : "—")</td>
+                                    <td class="text-end">@(b.EPEF > 0 ? b.EPEF.ToString("0") : "—")</td>
+                                    <td><span class="badge @Fmt.Badge(b.HealthStatus)">@b.HealthStatus</span></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+            else
+            {
+                <div class="empty-state"><i class="bi bi-collection"></i>No active flock at this farm.</div>
+            }
+        </div>
+
+        <!-- PAST FLOCKS -->
+        <div class="card mb-4">
+            <div class="card-header"><h6><i class="bi bi-archive text-secondary me-2"></i>Past flocks</h6></div>
+            @if (Model.PastBatches.Any())
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead><tr><th>Batch</th><th>Breed</th><th>Placed</th><th>Closed</th><th class="text-end">Days</th><th class="text-end">Harvested</th><th class="text-end">Livability</th><th class="text-end">FCR</th><th class="text-end">EPEF</th><th></th></tr></thead>
+                        <tbody>
+                            @foreach (var b in Model.PastBatches)
+                            {
+                                <tr>
+                                    <td><a asp-controller="Batch" asp-action="Detail" asp-route-id="@b.Id" class="fw-600">@b.BatchCode</a></td>
+                                    <td>@b.Breed</td>
+                                    <td>@Fmt.Date(b.PlacementDate)</td>
+                                    <td>@Fmt.Date(b.ClosedDate)</td>
+                                    <td class="text-end">@b.AgeInDays</td>
+                                    <td class="text-end">@Fmt.Num(b.HarvestedCount)</td>
+                                    <td class="text-end">@Fmt.Pct(b.LivabilityPct)</td>
+                                    <td class="text-end">@(b.FCR > 0 ? b.FCR.ToString("0.00") : "—")</td>
+                                    <td class="text-end">@(b.EPEF > 0 ? b.EPEF.ToString("0") : "—")</td>
+                                    <td><a asp-controller="Trace" asp-action="Timeline" asp-route-id="@b.Id" class="btn btn-xs btn-outline-secondary" title="Traceability"><i class="bi bi-qr-code"></i></a></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+            else
+            {
+                <div class="empty-state"><i class="bi bi-archive"></i>No closed flocks yet.</div>
+            }
+        </div>
+
+        <!-- SENSORS -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h6><i class="bi bi-cpu text-primary me-2"></i>IoT sensors (@Model.Sensors.Count)</h6>
+                <a asp-controller="Sensors" asp-action="Index" asp-route-farmId="@f.Id" class="btn btn-sm btn-outline-secondary">Manage</a>
+            </div>
+            @if (Model.Sensors.Any())
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead><tr><th>Device</th><th>Shed</th><th>Status</th><th>Last reading</th><th class="text-end">Temp</th><th class="text-end">RH</th><th class="text-end">NH₃</th><th class="text-end">THI</th></tr></thead>
+                        <tbody>
+                            @foreach (var s in Model.Sensors)
+                            {
+                                <tr>
+                                    <td><a asp-controller="Sensors" asp-action="Readings" asp-route-deviceId="@s.Device.Id" class="fw-600">@s.Device.DeviceCode</a><div class="text-xs text-muted">@s.Device.Name</div></td>
+                                    <td>@(s.Device.ShedNo ?? "—")</td>
+                                    <td><span class="badge @(s.Device.IsOnline ? "badge-healthy" : "badge-danger-soft")">@(s.Device.IsOnline ? "Online" : s.Device.IsActive ? "Offline" : "Disabled")</span></td>
+                                    <td class="text-xs">@Fmt.Ago(s.Device.LastSeenAt)</td>
+                                    <td class="text-end">@(s.Last?.TemperatureC is decimal t ? $"{t:0.0} °C" : "—")</td>
+                                    <td class="text-end">@(s.Last?.HumidityPercent is decimal h ? $"{h:0} %" : "—")</td>
+                                    <td class="text-end">@(s.Last?.AmmoniaPpm is decimal n ? $"{n:0.0} ppm" : "—")</td>
+                                    <td class="text-end">@if (s.Thi.HasValue) { <span class="badge @BandTone(s.Band)">@s.Thi.Value.ToString("0.0") · @s.Band</span> } else { <span>—</span> }</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+            else
+            {
+                <div class="empty-state"><i class="bi bi-cpu"></i>No sensor installed. <a asp-controller="Sensors" asp-action="Create">Register a device</a></div>
+            }
+        </div>
+
+        <!-- RECENT VISITS -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h6><i class="bi bi-geo-alt text-warning me-2"></i>Recent field visits</h6>
+                <a asp-controller="Visit" asp-action="Index" asp-route-farmId="@f.Id" class="btn btn-sm btn-outline-secondary">All visits</a>
+            </div>
+            @if (Model.RecentVisits.Any())
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead><tr><th>Date</th><th>Officer</th><th>Batch</th><th>Purpose</th><th>GPS</th><th class="text-end">Records</th><th>Status</th><th>Sync</th></tr></thead>
+                        <tbody>
+                            @foreach (var v in Model.RecentVisits)
+                            {
+                                <tr>
+                                    <td><a asp-controller="Visit" asp-action="Detail" asp-route-id="@v.Id">@Fmt.Date(v.VisitDate)</a></td>
+                                    <td>@v.FieldOfficerName</td>
+                                    <td>@(v.BatchCode ?? "—")</td>
+                                    <td>@v.VisitPurpose</td>
+                                    <td>@if (v.CheckInLatitude.HasValue) { <i class="bi bi-geo-alt-fill text-success" title="GPS check-in"></i> } else { <span class="text-muted">—</span> }</td>
+                                    <td class="text-end">@v.DailyRecordCount</td>
+                                    <td><span class="badge @Fmt.Badge(v.VisitStatus)">@v.VisitStatus</span></td>
+                                    <td><span class="badge @Fmt.Badge(v.SyncStatus)">@v.SyncStatus</span></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+            else
+            {
+                <div class="empty-state"><i class="bi bi-geo-alt"></i>No field visits recorded for this farm.</div>
+            }
+        </div>
+    </div>
+
+    <!-- RIGHT COLUMN -->
+    <div class="col-xl-4">
+        <div class="card mb-4">
+            <div class="card-header"><h6><i class="bi bi-info-circle text-primary me-2"></i>Farm profile</h6></div>
+            <div class="card-body">
+                @if (hasGps)
+                {
+                    <div id="farmMap" style="height:200px;border-radius:10px;border:1px solid var(--border)" class="mb-3"></div>
+                }
+                else
+                {
+                    <div class="warn-callout mb-3"><i class="bi bi-pin-map me-1"></i>No GPS location recorded. @if (canEdit) { <a asp-action="Edit" asp-route-id="@f.Id">Add it</a> } to show the farm on the map.</div>
+                }
+                <dl class="kv">
+                    <dt>Owner</dt><dd>@(f.OwnerName ?? "—")</dd>
+                    <dt>Phone</dt><dd>@if (!string.IsNullOrEmpty(f.OwnerPhone)) { <a href="tel:@f.OwnerPhone">@f.OwnerPhone</a> } else { <span>—</span> }</dd>
+                    <dt>Type</dt><dd>@f.FarmType</dd>
+                    <dt>Zone</dt><dd>@(f.Zone ?? "—")</dd>
+                    <dt>Capacity</dt><dd>@Fmt.Num(f.Capacity) birds</dd>
+                    <dt>Sheds</dt><dd>@f.ShedCount</dd>
+                    <dt>Floor area</dt><dd>@(f.AreaSqFt.HasValue ? $"{f.AreaSqFt:N0} sq ft" : "—")</dd>
+                    @if (f.AreaSqFt is > 0 && (bm?.CurrentBirds ?? 0) > 0)
+                    {
+                        <dt>Stocking density</dt><dd>@(((decimal)f.AreaSqFt.Value / bm!.CurrentBirds).ToString("0.00")) sq ft / bird</dd>
+                    }
+                    <dt>Coordinates</dt><dd class="mono text-xs">@(hasGps ? $"{f.Latitude:0.0000}, {f.Longitude:0.0000}" : "—")</dd>
+                    <dt>Registered</dt><dd>@Fmt.Date(f.CreatedAt)</dd>
+                </dl>
+                @if (!string.IsNullOrEmpty(f.Notes))
+                {
+                    <div class="info-callout mt-3">@f.Notes</div>
+                }
+                <div class="mt-3">
+                    <div class="d-flex justify-content-between text-xs mb-1"><span>Capacity utilization</span><span>@Fmt.Pct(util)</span></div>
+                    <div class="prog-bar-wrap"><div class="prog-bar-fill @(util > 90 ? "danger" : util > 75 ? "warning" : "")" style="width:@(Math.Min(100, util).ToString("0"))%"></div></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- BIOSECURITY -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h6><i class="bi bi-shield-check text-success me-2"></i>Latest biosecurity audit</h6>
+                <a asp-controller="Biosecurity" asp-action="Index" asp-route-farmId="@Model.Farm.Id" class="btn btn-sm btn-outline-secondary">Audits</a>
+            </div>
+            <div class="card-body">
+                @if (Model.LatestAudit != null)
+                {
+                    var au = Model.LatestAudit;
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="score-ring" style="border:5px solid @GradeTone(au.Grade);color:@GradeTone(au.Grade)">@au.Grade</div>
+                        <div>
+                            <div class="fw-600">@Fmt.Pct(au.ScorePct, 0) compliance</div>
+                            <div class="text-xs text-muted">@au.Score.ToString("0.#") / @au.MaxScore.ToString("0.#") points · @Fmt.Date(au.AuditDate)</div>
+                            <div class="text-xs text-muted">Auditor: @au.AuditorName</div>
+                        </div>
+                    </div>
+                    @if (!string.IsNullOrEmpty(au.Notes)) { <div class="text-xs text-muted mt-2">@au.Notes</div> }
+                }
+                else
+                {
+                    <div class="empty-state py-3"><i class="bi bi-shield"></i>No audit has been carried out yet.</div>
+                }
+            </div>
+        </div>
+
+        <!-- CERTIFICATIONS -->
+        <div class="card mb-4" id="certs">
+            <div class="card-header"><h6><i class="bi bi-patch-check text-primary me-2"></i>Certifications</h6></div>
+            <div class="card-body">
+                @if (Model.Certifications.Any())
+                {
+                    foreach (var c in Model.Certifications)
+                    {
+                        <div class="d-flex justify-content-between align-items-start border-bottom py-2">
+                            <div>
+                                <div class="fw-600" style="font-size:13px">@c.CertName</div>
+                                <div class="text-xs text-muted">@(c.IssuingAuthority ?? "Authority not recorded")@(string.IsNullOrEmpty(c.CertificateNo) ? "" : " · No. " + c.CertificateNo)</div>
+                                <div class="text-xs text-muted">@Fmt.Date(c.IssuedDate) → @Fmt.Date(c.ExpiryDate)</div>
+                            </div>
+                            <div class="d-flex align-items-center gap-1">
+                                <span class="badge @Fmt.Badge(c.EffectiveStatus)">@c.EffectiveStatus</span>
+                                @if (canEdit)
+                                {
+                                    <form asp-action="DeleteCertification" method="post" data-confirm="Delete this certification?">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="id" value="@c.Id" />
+                                        <button class="btn btn-xs btn-outline-danger" title="Delete"><i class="bi bi-trash"></i></button>
+                                    </form>
+                                }
+                            </div>
+                        </div>
+                    }
+                }
+                else
+                {
+                    <div class="text-muted text-xs mb-2">No certificates on file.</div>
+                }
+                @if (canEdit)
+                {
+                    <form asp-action="AddCertification" method="post" class="mt-3">
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="FarmId" value="@f.Id" />
+                        <div class="fw-600 text-xs text-muted mb-2">ADD CERTIFICATION</div>
+                        <div class="row g-2">
+                            <div class="col-12"><input name="CertName" class="form-control form-control-sm" placeholder="e.g. DLS Farm Registration, Bio-security Certificate" required maxlength="150" /></div>
+                            <div class="col-7"><input name="IssuingAuthority" class="form-control form-control-sm" placeholder="Issuing authority" maxlength="150" /></div>
+                            <div class="col-5"><input name="CertificateNo" class="form-control form-control-sm" placeholder="Cert. no." maxlength="60" /></div>
+                            <div class="col-6"><label class="form-label text-xs mb-0">Issued</label><input type="date" name="IssuedDate" class="form-control form-control-sm" value="@DateTime.Today.ToString("yyyy-MM-dd")" required /></div>
+                            <div class="col-6"><label class="form-label text-xs mb-0">Expires</label><input type="date" name="ExpiryDate" class="form-control form-control-sm" value="@DateTime.Today.AddYears(1).ToString("yyyy-MM-dd")" required /></div>
+                            <div class="col-12"><button class="btn btn-sm btn-primary w-100"><i class="bi bi-plus-lg me-1"></i>Add certification</button></div>
+                        </div>
+                    </form>
+                }
+            </div>
+        </div>
+
+        <!-- PEOPLE -->
+        <div class="card mb-4">
+            <div class="card-header"><h6><i class="bi bi-person-badge text-primary me-2"></i>Assigned field officers</h6></div>
+            <div class="card-body py-1">
+                @if (Model.Officers.Any())
+                {
+                    foreach (var o in Model.Officers)
+                    {
+                        <div class="alert-item-row">
+                            <div class="avatar">@string.Concat(o.FullName.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(p => p[0]))</div>
+                            <div class="flex-grow-1">
+                                <a asp-controller="FieldOfficers" asp-action="Detail" asp-route-id="@o.Id" class="fw-600" style="font-size:13px">@o.FullName</a>
+                                <div class="text-xs text-muted">@o.Designation · @o.VisitCount visit(s) · last @Fmt.Date(o.LastVisit)</div>
+                            </div>
+                            @if (!string.IsNullOrEmpty(o.Phone)) { <a href="tel:@o.Phone" class="btn btn-xs btn-outline-secondary"><i class="bi bi-telephone"></i></a> }
+                        </div>
+                    }
+                }
+                else
+                {
+                    <div class="empty-state py-3"><i class="bi bi-person-badge"></i>No field officer assigned.</div>
+                }
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header"><h6><i class="bi bi-people text-primary me-2"></i>Farm staff (@Model.Employees.Count)</h6></div>
+            <div class="card-body py-1">
+                @if (Model.Employees.Any())
+                {
+                    foreach (var e in Model.Employees)
+                    {
+                        <div class="alert-item-row">
+                            <div class="avatar">@e.Initials</div>
+                            <div class="flex-grow-1">
+                                <a asp-controller="Employee" asp-action="Detail" asp-route-id="@e.Id" class="fw-600" style="font-size:13px">@e.FullName</a>
+                                <div class="text-xs text-muted">@e.Role@(string.IsNullOrEmpty(e.Phone) ? "" : " · " + e.Phone)</div>
+                            </div>
+                            <span class="badge @Fmt.Badge(e.Status)">@e.Status</span>
+                        </div>
+                    }
+                }
+                else
+                {
+                    <div class="empty-state py-3"><i class="bi bi-people"></i>No employees linked to this farm.</div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    @if (hasGps)
+    {
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+        <script>
+            (function () {
+                const pos = [@f.Latitude!.Value.ToString(System.Globalization.CultureInfo.InvariantCulture), @f.Longitude!.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)];
+                const map = L.map('farmMap', { scrollWheelZoom: false }).setView(pos, 13);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' }).addTo(map);
+                L.marker(pos).addTo(map).bindPopup(@Html.Raw(System.Text.Json.JsonSerializer.Serialize("<strong>" + System.Net.WebUtility.HtmlEncode(f.Name) + "</strong><br>" + System.Net.WebUtility.HtmlEncode(f.Location))));
+                setTimeout(() => map.invalidateSize(), 200);
+            })();
+        </script>
+    }
+}

@@ -1,0 +1,237 @@
+@model GrowthCurveVm
+@using System.Text.Json
+@{
+    var b = Model.Selected;
+    var pts = Model.Points;
+    var ages = pts.Select(p => p.Age).ToList();
+    var actual = pts.Select(p => p.ActualGm.HasValue ? Math.Round(p.ActualGm.Value, 1) : (double?)null).ToList();
+    var std = pts.Select(p => p.StdGm.HasValue ? Math.Round(p.StdGm.Value, 1) : (double?)null).ToList();
+    var dev = pts.Select(p => p.DeviationPct.HasValue ? Math.Round(p.DeviationPct.Value, 2) : (double?)null).ToList();
+    var fcrA = pts.Select(p => p.FcrActual.HasValue && p.Age >= 7 ? Math.Round(p.FcrActual.Value, 3) : (double?)null).ToList();
+    var fcrS = pts.Select(p => p.FcrStd.HasValue ? Math.Round(p.FcrStd.Value, 3) : (double?)null).ToList();
+    var mortA = pts.Select(p => Math.Round(p.CumMortPct, 2)).ToList();
+    var mortS = pts.Select(p => p.StdCumMortPct.HasValue ? Math.Round(p.StdCumMortPct.Value, 2) : (double?)null).ToList();
+    string DevCls(double? d) => !d.HasValue ? "" : d.Value <= -10 ? "text-danger fw-600" : d.Value <= -5 ? "text-warning fw-600" : d.Value >= 0 ? "text-success" : "";
+}
+
+<partial name="_AnalyticsNav" />
+
+<div class="page-head">
+    <div>
+        <h4>@(b != null ? $"{b.BatchCode} — {b.Breed}" : "Growth vs breed standard")</h4>
+        <p>@(b != null ? $"{b.FarmName} · placed {Fmt.Date(b.PlacementDate)} · day {b.AgeInDays} · {Fmt.Num(b.CurrentCount)} birds" + (b.IsActive ? "" : " · closed") : "Choose a meat flock to compare its growth with the breed standard.")</p>
+    </div>
+    @if (Model.Batches.Count > 0)
+    {
+        <form method="get" class="d-flex gap-2 align-items-center">
+            <label class="text-xs text-muted text-nowrap" for="batchId">Flock</label>
+            <select id="batchId" name="batchId" class="form-select form-select-sm" style="min-width:300px" onchange="this.form.submit()">
+                <optgroup label="Active">
+                    @foreach (var o in Model.Batches.Where(x => x.IsActive))
+                    {
+                        <option value="@o.Id" selected="@(b?.Id == o.Id)">@o.Label@(o.HasStandard ? "" : " · no standard")</option>
+                    }
+                </optgroup>
+                <optgroup label="Closed">
+                    @foreach (var o in Model.Batches.Where(x => !x.IsActive))
+                    {
+                        <option value="@o.Id" selected="@(b?.Id == o.Id)">@o.Label@(o.HasStandard ? "" : " · no standard")</option>
+                    }
+                </optgroup>
+            </select>
+            @if (b != null)
+            {
+                <a asp-controller="Batch" asp-action="Detail" asp-route-id="@b.Id" class="btn btn-sm btn-outline-secondary text-nowrap"><i class="bi bi-box-arrow-up-right me-1"></i>Batch</a>
+            }
+        </form>
+    }
+</div>
+
+@if (Model.Batches.Count == 0 || b == null)
+{
+    <div class="card"><div class="empty-state"><i class="bi bi-activity"></i>No broiler or Sonali flocks have been placed yet. Place a flock and record daily weights to see its growth curve.</div></div>
+}
+else
+{
+    if (!Model.HasStandard)
+    {
+        <div class="warn-callout mb-3"><i class="bi bi-exclamation-triangle me-1"></i>No breed standard is loaded for <b>@b.Breed</b>, so only the actual curve is shown.
+            Add the breed's weekly targets under <a asp-controller="BreedStandards" asp-action="Index">Breed Standards</a> to enable deviation, FCR target and growth-lag analysis.</div>
+    }
+
+    <div class="stat-grid">
+        <div class="stat-tile tone-green">
+            <div class="st-label">Latest weight</div>
+            <div class="st-value">@(Model.CurrentWeightGm.HasValue ? AnalyticsUi.D(Model.CurrentWeightGm, 0) + " g" : "—")</div>
+            <div class="st-sub">@(Model.CurrentWeightGm.HasValue ? $"day {Model.LatestAge} · standard {AnalyticsUi.D(Model.StdWeightGm, 0)} g" : "no weighing recorded")</div>
+            <div class="st-icon"><i class="bi bi-speedometer"></i></div>
+        </div>
+        <div class="stat-tile @((Model.DeviationPct ?? 0) < -5 ? "tone-red" : "tone-blue")">
+            <div class="st-label">Deviation from standard</div>
+            <div class="st-value">@AnalyticsUi.Signed(Model.DeviationPct, 1, "%")</div>
+            <div class="st-sub">(actual − standard) ÷ standard</div>
+            <div class="st-icon"><i class="bi bi-percent"></i></div>
+        </div>
+        <div class="stat-tile @((Model.GrowthLagDays ?? 0) > 2 ? "tone-amber" : "tone-violet")">
+            <div class="st-label">Growth lag</div>
+            <div class="st-value">@(Model.GrowthLagDays.HasValue ? AnalyticsUi.Signed(Model.GrowthLagDays, 1, " d") : "—")</div>
+            <div class="st-sub">@(Model.EquivalentAge.HasValue ? $"weight equals standard at day {AnalyticsUi.D(Model.EquivalentAge, 1)}" : "physiological age not available")</div>
+            <div class="st-icon"><i class="bi bi-hourglass-split"></i></div>
+        </div>
+        <div class="stat-tile tone-slate">
+            <div class="st-label">Cumulative FCR</div>
+            <div class="st-value">@AnalyticsUi.D(Model.CurrentFcr, 2)</div>
+            <div class="st-sub">standard @AnalyticsUi.D(Model.StdFcr, 2)</div>
+            <div class="st-icon"><i class="bi bi-arrow-left-right"></i></div>
+        </div>
+        <div class="stat-tile tone-green">
+            <div class="st-label">ADG (last 7 d)</div>
+            <div class="st-value">@(Model.Adg7.HasValue ? AnalyticsUi.D(Model.Adg7, 1) + " g" : "—")</div>
+            <div class="st-sub">average daily gain per bird</div>
+            <div class="st-icon"><i class="bi bi-graph-up"></i></div>
+        </div>
+    </div>
+
+    if (pts.Count == 0)
+    {
+        <div class="card"><div class="empty-state"><i class="bi bi-journal-x"></i>No daily records for this flock yet. Enter daily records with average body weight to build the curve.</div></div>
+    }
+    else
+    {
+        <div class="row g-3 mb-3">
+            <div class="col-xl-8">
+                <div class="card h-100">
+                    <div class="card-header"><h6 class="mb-0"><i class="bi bi-activity me-1"></i>Body weight vs @b.Breed standard</h6></div>
+                    <div class="card-body"><div style="height:340px"><canvas id="chWeight"></canvas></div></div>
+                </div>
+            </div>
+            <div class="col-xl-4">
+                <div class="card h-100">
+                    <div class="card-header"><h6 class="mb-0"><i class="bi bi-calculator me-1"></i>Method</h6></div>
+                    <div class="card-body">
+                        <div class="formula mb-2">Std(a) = Wᵢ + (Wᵢ₊₁ − Wᵢ)·(a − aᵢ)/(aᵢ₊₁ − aᵢ)</div>
+                        <div class="formula mb-2">Dev%(a) = (W_actual − Std(a)) ÷ Std(a) × 100</div>
+                        <div class="formula mb-2">FCR_cum(a) = Σ feed/bird (g) ÷ W_actual(a)</div>
+                        <div class="formula mb-3">Lag = age − a*, where Std(a*) = W_actual</div>
+                        <div class="info-callout text-xs">
+                            <b>How to read this.</b> The dashed line is the breed target interpolated linearly between tabulated ages.
+                            Bars on the right axis show the percentage deviation: green above standard, red below. A lag of +3 d means the
+                            flock weighs what the standard expects three days earlier — a practical way to explain under-performance to farmers.
+                            Deviation worse than −5% deserves a feed/water/brooding check; worse than −10% is a serious growth problem.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row g-3 mb-3">
+            <div class="col-lg-6">
+                <div class="card h-100">
+                    <div class="card-header"><h6 class="mb-0"><i class="bi bi-arrow-left-right me-1"></i>Cumulative FCR vs standard</h6></div>
+                    <div class="card-body">
+                        <div style="height:260px"><canvas id="chFcr"></canvas></div>
+                        <div class="text-xs text-muted mt-2">Shown from day 7 (very early FCR is dominated by yolk reserves and is not meaningful). Lower is better.</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-6">
+                <div class="card h-100">
+                    <div class="card-header"><h6 class="mb-0"><i class="bi bi-heartbreak me-1"></i>Cumulative mortality vs standard</h6></div>
+                    <div class="card-body">
+                        <div style="height:260px"><canvas id="chMort"></canvas></div>
+                        <div class="text-xs text-muted mt-2">Cumulative deaths ÷ chicks placed. Culls are excluded to match breed-guide definitions.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h6 class="mb-0"><i class="bi bi-table me-1"></i>Weekly checkpoints</h6>
+                <span class="text-xs text-muted">every 7th day of age + latest record</span>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead>
+                        <tr><th>Age (d)</th><th>Date</th><th class="text-end">Actual (g)</th><th class="text-end">Standard (g)</th><th class="text-end">Deviation</th>
+                            <th class="text-end">Daily gain (g)</th><th class="text-end">Cum. feed/bird (g)</th><th class="text-end">FCR</th><th class="text-end">Std FCR</th>
+                            <th class="text-end">Cum. mort.</th><th class="text-end">Std mort.</th></tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var p in Model.Weekly)
+                    {
+                        <tr>
+                            <td class="fw-600">@p.Age</td>
+                            <td>@Fmt.Date(p.Date)</td>
+                            <td class="text-end">@AnalyticsUi.D(p.ActualGm, 0)</td>
+                            <td class="text-end text-muted">@AnalyticsUi.D(p.StdGm, 0)</td>
+                            <td class="text-end @DevCls(p.DeviationPct)">@AnalyticsUi.Signed(p.DeviationPct, 1, "%")</td>
+                            <td class="text-end">@AnalyticsUi.D(p.DailyGainGm, 1)</td>
+                            <td class="text-end">@AnalyticsUi.D(p.CumFeedPerBirdGm, 0)</td>
+                            <td class="text-end">@(p.Age >= 7 ? AnalyticsUi.D(p.FcrActual, 2) : "—")</td>
+                            <td class="text-end text-muted">@AnalyticsUi.D(p.FcrStd, 2)</td>
+                            <td class="text-end">@AnalyticsUi.D(p.CumMortPct, 2)%</td>
+                            <td class="text-end text-muted">@(p.StdCumMortPct.HasValue ? AnalyticsUi.D(p.StdCumMortPct, 2) + "%" : "—")</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+}
+
+@section Scripts {
+<script>
+(function () {
+    const ages = @Html.Raw(JsonSerializer.Serialize(ages));
+    if (!ages.length) return;
+    const actual = @Html.Raw(JsonSerializer.Serialize(actual));
+    const std = @Html.Raw(JsonSerializer.Serialize(std));
+    const dev = @Html.Raw(JsonSerializer.Serialize(dev));
+    const fcrA = @Html.Raw(JsonSerializer.Serialize(fcrA));
+    const fcrS = @Html.Raw(JsonSerializer.Serialize(fcrS));
+    const mortA = @Html.Raw(JsonSerializer.Serialize(mortA));
+    const mortS = @Html.Raw(JsonSerializer.Serialize(mortS));
+    const hasStd = std.some(v => v !== null);
+    const xAxis = { title: { display: true, text: 'Age (days)' }, grid: { display: false } };
+
+    const wds = [
+        { type: 'line', label: 'Actual weight (g)', data: actual, borderColor: ppColors.green, backgroundColor: ppColors.green,
+          pointRadius: 2.5, borderWidth: 2.5, spanGaps: true, tension: .25, yAxisID: 'y', order: 1 }
+    ];
+    if (hasStd) {
+        wds.push({ type: 'line', label: 'Breed standard (g)', data: std, borderColor: ppColors.slate, borderDash: [6, 4],
+                   pointRadius: 0, borderWidth: 2, spanGaps: true, tension: .25, yAxisID: 'y', order: 2 });
+        wds.push({ type: 'bar', label: 'Deviation (%)', data: dev, yAxisID: 'y2', order: 3,
+                   backgroundColor: dev.map(v => v === null ? 'transparent' : v >= 0 ? ppColors.greenSoft : ppColors.redSoft),
+                   borderColor: dev.map(v => v === null ? 'transparent' : v >= 0 ? ppColors.green : ppColors.red), borderWidth: 1 });
+    }
+    new Chart(document.getElementById('chWeight'), {
+        data: { labels: ages, datasets: wds },
+        options: {
+            interaction: { mode: 'index', intersect: false },
+            scales: {
+                x: xAxis,
+                y: { beginAtZero: true, title: { display: true, text: 'Body weight (g)' } },
+                y2: { display: hasStd, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'Deviation (%)' } }
+            }
+        }
+    });
+
+    const fds = [{ label: 'Actual FCR', data: fcrA, borderColor: ppColors.blue, backgroundColor: ppColors.blueSoft, fill: false, spanGaps: true, pointRadius: 2, tension: .25 }];
+    if (fcrS.some(v => v !== null)) fds.push({ label: 'Standard FCR', data: fcrS, borderColor: ppColors.slate, borderDash: [6, 4], pointRadius: 0, spanGaps: true, tension: .25 });
+    new Chart(document.getElementById('chFcr'), {
+        type: 'line', data: { labels: ages, datasets: fds },
+        options: { interaction: { mode: 'index', intersect: false }, scales: { x: xAxis, y: { title: { display: true, text: 'kg feed / kg gain' } } } }
+    });
+
+    const mds = [{ label: 'Actual cum. mortality (%)', data: mortA, borderColor: ppColors.red, backgroundColor: ppColors.redSoft, fill: true, pointRadius: 0, tension: .2 }];
+    if (mortS.some(v => v !== null)) mds.push({ label: 'Standard (%)', data: mortS, borderColor: ppColors.slate, borderDash: [6, 4], pointRadius: 0, spanGaps: true });
+    new Chart(document.getElementById('chMort'), {
+        type: 'line', data: { labels: ages, datasets: mds },
+        options: { interaction: { mode: 'index', intersect: false }, scales: { x: xAxis, y: { beginAtZero: true, title: { display: true, text: '% of chicks placed' } } } }
+    });
+})();
+</script>
+}

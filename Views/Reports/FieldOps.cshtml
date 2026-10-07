@@ -1,0 +1,237 @@
+@model FieldOpsReportVm
+@{
+    var officers = Model.Officers.OrderByDescending(o => o.Visits90).ToList();
+    decimal geoRadius = ViewBag.GeofenceRadius ?? VisitTrust.DefaultRadiusM;
+    var activeDays = Model.Daily.Count(d => d.Visits > 0);
+    var gpsTotal = Model.GpsBuckets.Sum(b => b.Count);
+    var goodGps = Model.GpsBuckets.Take(2).Sum(b => b.Count);
+    var neverVisited = Model.FarmCoverage.Where(f => f.Visits == 0).ToList();
+    string Dur(double? m) => m.HasValue ? (m.Value >= 60 ? $"{(int)(m.Value / 60)}h {(int)(m.Value % 60)}m" : $"{m.Value:0} min") : "—";
+}
+
+<div class="page-head">
+    <div>
+        <h4>Field operations</h4>
+        <p>@Model.Officers.Count active field officers · @Fmt.Num(Model.TotalVisits) visits and @Fmt.Num(Model.TotalRecords) daily records in the last @Model.Days days</p>
+    </div>
+    <div class="d-flex gap-2 align-items-center flex-wrap no-print">
+        <div class="btn-group btn-group-sm">
+            @foreach (var d in new[] { 30, 90, 180, 365 })
+            {
+                <a asp-action="FieldOps" asp-route-days="@d" class="btn @(Model.Days == d ? "btn-primary" : "btn-outline-secondary")">@(d == 365 ? "1 yr" : d + " d")</a>
+            }
+        </div>
+        <a asp-action="Index" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Reports</a>
+        <button onclick="window.print()" class="btn btn-sm btn-outline-secondary"><i class="bi bi-printer"></i></button>
+    </div>
+</div>
+
+<div class="stat-grid">
+    <div class="stat-tile tone-blue">
+        <div class="st-label">Visits</div>
+        <div class="st-value">@Fmt.Num(Model.TotalVisits)</div>
+        <div class="st-sub">@Model.TotalVisits30 in last 30 days · @activeDays active days</div>
+        <div class="st-icon"><i class="bi bi-geo-alt"></i></div>
+    </div>
+    <div class="stat-tile @(Model.CompletionRate >= 85 ? "tone-green" : Model.CompletionRate >= 65 ? "tone-amber" : "tone-red")">
+        <div class="st-label">Completion rate</div>
+        <div class="st-value">@(Model.TotalVisits == 0 ? "—" : Fmt.Pct(Model.CompletionRate))</div>
+        <div class="st-sub">Completed ÷ scheduled visits</div>
+        <div class="st-icon"><i class="bi bi-check2-circle"></i></div>
+    </div>
+    <div class="stat-tile tone-violet">
+        <div class="st-label">Avg visit duration</div>
+        <div class="st-value">@Dur(Model.AvgDurationMin)</div>
+        <div class="st-sub">Check-out − check-in</div>
+        <div class="st-icon"><i class="bi bi-stopwatch"></i></div>
+    </div>
+    <div class="stat-tile @(Model.AvgGpsAccuracy is null or <= 25.0 ? "tone-green" : "tone-amber")">
+        <div class="st-label">Avg GPS accuracy</div>
+        <div class="st-value">@(Model.AvgGpsAccuracy.HasValue ? $"±{Model.AvgGpsAccuracy:0} m" : "—")</div>
+        <div class="st-sub">@(gpsTotal == 0 ? "No GPS fixes" : $"{goodGps * 100 / gpsTotal}% of fixes within 25 m")</div>
+        <div class="st-icon"><i class="bi bi-crosshair"></i></div>
+    </div>
+    <div class="stat-tile @(Model.PendingSync > 0 ? "tone-red" : "tone-green")">
+        <div class="st-label">Pending sync</div>
+        <div class="st-value">@Model.PendingSync</div>
+        <div class="st-sub">Visits, records, photos &amp; signatures</div>
+        <div class="st-icon"><i class="bi bi-cloud-arrow-up"></i></div>
+    </div>
+</div>
+
+@if (!Model.Officers.Any())
+{
+    <div class="card"><div class="empty-state"><i class="bi bi-person-badge"></i>No active field officers yet.</div></div>
+}
+else
+{
+    <div class="row g-4 mb-4">
+        <div class="col-lg-8">
+            <div class="card h-100">
+                <div class="card-header"><h6><i class="bi bi-graph-up text-primary me-2"></i>Daily visits &amp; records captured</h6></div>
+                <div class="card-body"><div style="height:260px"><canvas id="dailyChart"></canvas></div></div>
+            </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="card h-100">
+                <div class="card-header"><h6><i class="bi bi-bar-chart text-success me-2"></i>Visits per officer</h6></div>
+                <div class="card-body"><div style="height:260px"><canvas id="officerChart"></canvas></div></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header">
+            <h6><i class="bi bi-person-badge text-primary me-2"></i>Officer scorecard</h6>
+            <span class="text-muted text-xs">Window = last @Model.Days days unless stated</span>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+                <thead>
+                    <tr>
+                        <th>Officer</th><th class="text-end">Visits 30 d</th><th class="text-end">Visits</th><th style="min-width:140px">Completion</th>
+                        <th class="text-end">Avg duration</th><th class="text-end">GPS ±m</th><th class="text-end" title="Share of visits whose check-in is inside the farm geofence (@geoRadius.ToString("0") m + GPS accuracy)">Geo-verified</th><th class="text-end" title="Mean Visit Trust Score (0–100): 40 GPS verified + 20 photo + 20 signature + 10 daily record + 10 synced">Avg trust</th><th class="text-end">Farms</th><th class="text-end">Records</th><th class="text-end">Photos</th><th>Pending sync</th><th>Last visit</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var o in officers)
+                    {
+                        var cr = o.CompletionRate;
+                        <tr>
+                            <td>
+                                <a asp-controller="FieldOfficers" asp-action="Detail" asp-route-id="@o.FieldOfficerId" class="fw-600 text-decoration-none">@o.FullName</a>
+                                <div class="text-xs text-muted">@(o.Zone ?? "—")</div>
+                            </td>
+                            <td class="text-end">@o.Visits30</td>
+                            <td class="text-end fw-600">@o.Visits90</td>
+                            <td>
+                                @if (o.Visits90 == 0) { <span class="text-muted">—</span> }
+                                else
+                                {
+                                    <div class="d-flex align-items-center gap-2">
+                                        <div class="prog-bar-wrap flex-grow-1" style="height:6px"><div class="prog-bar-fill @(cr < 65 ? "danger" : cr < 85 ? "warning" : "")" style="width:@((int)cr)%"></div></div>
+                                        <span class="small fw-600">@cr.ToString("0")%</span>
+                                    </div>
+                                    @if (o.Cancelled90 > 0) { <div class="text-xs text-muted">@o.Cancelled90 cancelled</div> }
+                                }
+                            </td>
+                            <td class="text-end">@Dur(o.AvgDurationMin)</td>
+                            <td class="text-end @(o.AvgGpsAccuracy > 50 ? "text-danger" : "")">@(o.AvgGpsAccuracy.HasValue ? o.AvgGpsAccuracy.Value.ToString("0") : "—")<div class="text-xs text-muted">@o.GpsFixes fixes</div></td>
+                            <td class="text-end @(o.GeoVerifiedPct < 50 ? "text-danger" : "")">@(o.GeoVerifiedPct.HasValue ? o.GeoVerifiedPct.Value.ToString("0") + "%" : "—")</td>
+                            <td class="text-end">
+                                @if (o.AvgTrustScore.HasValue)
+                                {
+                                    var ts = o.AvgTrustScore.Value;
+                                    <span class="badge @(ts >= 80 ? "badge-healthy" : ts >= 50 ? "badge-warning-soft" : "badge-danger-soft")">@ts.ToString("0")</span>
+                                }
+                                else { <span class="text-muted">—</span> }
+                            </td>
+                            <td class="text-end">@o.FarmsCovered</td>
+                            <td class="text-end">@o.DailyRecords90</td>
+                            <td class="text-end">@o.Photos90</td>
+                            <td>
+                                @if (o.PendingTotal == 0) { <span class="badge badge-healthy">Synced</span> }
+                                else
+                                {
+                                    <span class="badge badge-warning-soft" title="@o.PendingVisits visits · @o.PendingDailyRecords records · @o.PendingPhotos photos · @o.PendingSignatures signatures">@o.PendingTotal pending</span>
+                                }
+                            </td>
+                            <td class="small @(o.LastVisit.HasValue && (DateTime.Today - o.LastVisit.Value).Days > 7 ? "text-danger" : "text-muted")">@Fmt.Date(o.LastVisit)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <div class="col-lg-4">
+            <div class="card h-100">
+                <div class="card-header"><h6><i class="bi bi-crosshair text-primary me-2"></i>GPS accuracy distribution</h6></div>
+                <div class="card-body"><div style="height:220px"><canvas id="gpsChart"></canvas></div></div>
+            </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="card h-100">
+                <div class="card-header"><h6><i class="bi bi-clipboard-check text-success me-2"></i>Visit purposes</h6></div>
+                <div class="card-body"><div style="height:220px"><canvas id="purposeChart"></canvas></div></div>
+            </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="card h-100">
+                <div class="card-header"><h6><i class="bi bi-house-door text-warning me-2"></i>Farm coverage</h6></div>
+                <div class="card-body small" style="max-height:260px;overflow:auto">
+                    @foreach (var f in Model.FarmCoverage)
+                    {
+                        <div class="d-flex justify-content-between py-1 border-bottom">
+                            <span>@f.Farm</span>
+                            <span>@if (f.Visits == 0) { <span class="badge badge-danger-soft">not visited</span> } else { <strong>@f.Visits</strong> <span class="text-muted text-xs">· last @Fmt.Date(f.Last)</span> }</span>
+                        </div>
+                    }
+                    @if (neverVisited.Any())
+                    {
+                        <div class="warn-callout mt-3 py-2">@neverVisited.Count farm(s) had no field visit in this window.</div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="info-callout mt-4 small">
+        <strong>Method.</strong> Completion rate = visits with status <em>Completed</em> ÷ all visits dated in the window. Duration uses visits with both check-in and check-out (≤ 12 h).
+        GPS accuracy is the device-reported horizontal accuracy at check-in. Pending sync counts items still flagged <em>Pending</em> on the server.
+    </div>
+}
+
+@section Scripts {
+@if (Model.Officers.Any())
+{
+    <script>
+    (function () {
+        new Chart(document.getElementById('dailyChart'), {
+            data: {
+                labels: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Daily.Select(d => d.Day.ToString("dd MMM")))),
+                datasets: [
+                    { type: 'bar', label: 'Visits', data: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Daily.Select(d => d.Visits))), backgroundColor: ppColors.blue, borderRadius: 3, yAxisID: 'y' },
+                    { type: 'line', label: 'Daily records', data: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Daily.Select(d => d.Records))), borderColor: ppColors.green, backgroundColor: ppColors.greenSoft, tension: .3, pointRadius: 0, fill: true, yAxisID: 'y1' }
+                ]
+            },
+            options: { interaction: { mode: 'index', intersect: false }, plugins: { legend: { position: 'bottom' } },
+                       scales: { x: { grid: { display: false }, ticks: { autoSkip: true, maxTicksLimit: 12, maxRotation: 0 } },
+                                 y: { beginAtZero: true, ticks: { precision: 0 }, title: { display: true, text: 'Visits' } },
+                                 y1: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false }, ticks: { precision: 0 }, title: { display: true, text: 'Records' } } } }
+        });
+        new Chart(document.getElementById('officerChart'), {
+            type: 'bar',
+            data: {
+                labels: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(officers.Select(o => o.FullName))),
+                datasets: [
+                    { label: 'Completed', data: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(officers.Select(o => o.Completed90))), backgroundColor: ppColors.green },
+                    { label: 'Other', data: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(officers.Select(o => o.Visits90 - o.Completed90))), backgroundColor: ppColors.amber }
+                ]
+            },
+            options: { indexAxis: 'y', plugins: { legend: { position: 'bottom' } }, scales: { x: { stacked: true, ticks: { precision: 0 } }, y: { stacked: true } } }
+        });
+        new Chart(document.getElementById('gpsChart'), {
+            type: 'bar',
+            data: {
+                labels: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.GpsBuckets.Select(b => b.Bucket))),
+                datasets: [{ label: 'Check-ins', data: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.GpsBuckets.Select(b => b.Count))),
+                             backgroundColor: [ppColors.green, ppColors.green, ppColors.amber, ppColors.amber, ppColors.red], borderRadius: 4 }]
+            },
+            options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } }, x: { grid: { display: false } } } }
+        });
+        var purposes = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Purposes.Select(p => p.Purpose)));
+        if (purposes.length) {
+            new Chart(document.getElementById('purposeChart'), {
+                type: 'doughnut',
+                data: { labels: purposes, datasets: [{ data: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Purposes.Select(p => p.Count))), backgroundColor: ppColors.series, borderWidth: 0 }] },
+                options: { cutout: '60%', plugins: { legend: { position: 'bottom' } } }
+            });
+        } else {
+            document.getElementById('purposeChart').parentElement.innerHTML = '<div class="empty-state py-4"><i class="bi bi-clipboard"></i>No visits in this window</div>';
+        }
+    })();
+    </script>
+}
+}

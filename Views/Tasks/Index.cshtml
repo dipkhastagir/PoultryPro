@@ -1,0 +1,177 @@
+@model TaskBoardVm
+@{
+    var open = Model.Tasks.Where(t => t.Status != "Done").ToList();
+    var overdue = open.Count(t => t.IsOverdue);
+    var dueToday = open.Count(t => t.IsDueToday);
+    var urgent = open.Count(t => t.Priority is "Urgent" or "High");
+    var doneWeek = Model.Tasks.Count(t => t.Status == "Done" && t.CompletedAt >= DateTime.Today.AddDays(-7));
+    var returnUrl = Context.Request.Path + Context.Request.QueryString;
+    var cols = new[] { ("Open", "bi-circle", "#f59e0b"), ("In Progress", "bi-arrow-repeat", "#3b82f6"), ("Done", "bi-check-circle-fill", "#10b981") };
+    string PriorityColor(string p) => p switch { "Urgent" => "#ef4444", "High" => "#f59e0b", "Medium" => "#3b82f6", _ => "#94a3b8" };
+    IEnumerable<FarmTask> Sorted(string s) => s == "Done"
+        ? Model.Tasks.Where(t => t.Status == s).OrderByDescending(t => t.CompletedAt ?? t.CreatedAt)
+        : Model.Tasks.Where(t => t.Status == s).OrderBy(t => t.IsOverdue ? 0 : 1).ThenBy(t => t.PriorityRank).ThenBy(t => t.DueDate ?? DateTime.MaxValue);
+}
+
+<div class="page-head">
+    <div>
+        <h4>Task board</h4>
+        <p>@open.Count open tasks · @doneWeek completed in the last 7 days</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a asp-controller="Calendar" asp-action="Index" class="btn btn-sm btn-outline-secondary"><i class="bi bi-calendar3 me-1"></i>Calendar</a>
+        @if (Model.CanEdit)
+        {
+            <a asp-action="Create" asp-route-farmId="@Model.FarmId" asp-route-assigneeId="@Model.AssigneeId" class="btn btn-sm btn-primary"><i class="bi bi-plus-lg me-1"></i>New task</a>
+        }
+    </div>
+</div>
+
+<div class="stat-grid">
+    <div class="stat-tile tone-amber">
+        <div class="st-label">Open</div>
+        <div class="st-value">@open.Count</div>
+        <div class="st-sub">@Model.Tasks.Count(t => t.Status == "In Progress") in progress</div>
+        <div class="st-icon"><i class="bi bi-kanban"></i></div>
+    </div>
+    <div class="stat-tile tone-red">
+        <div class="st-label">Overdue</div>
+        <div class="st-value">@overdue</div>
+        <div class="st-sub">@dueToday due today</div>
+        <div class="st-icon"><i class="bi bi-alarm"></i></div>
+    </div>
+    <div class="stat-tile tone-violet">
+        <div class="st-label">High / urgent</div>
+        <div class="st-value">@urgent</div>
+        <div class="st-sub">Open tasks needing attention</div>
+        <div class="st-icon"><i class="bi bi-lightning"></i></div>
+    </div>
+    <div class="stat-tile tone-green">
+        <div class="st-label">Done (7 days)</div>
+        <div class="st-value">@doneWeek</div>
+        <div class="st-sub">@Model.Tasks.Count(t => t.Status == "Done") on board (60-day window)</div>
+        <div class="st-icon"><i class="bi bi-check2-all"></i></div>
+    </div>
+</div>
+
+<form method="get" class="filter-bar">
+    <div>
+        <label class="form-label">Farm</label>
+        <select name="farmId" class="form-select" onchange="this.form.submit()">
+            <option value="">All farms</option>
+            @foreach (var f in Model.Farms) { <option value="@f.Id" selected="@(Model.FarmId == f.Id)">@f.Name</option> }
+        </select>
+    </div>
+    <div>
+        <label class="form-label">Priority</label>
+        <select name="priority" class="form-select" onchange="this.form.submit()">
+            <option value="">Any</option>
+            @foreach (var p in FarmTask.Priorities) { <option selected="@(Model.Priority == p)">@p</option> }
+        </select>
+    </div>
+    <div>
+        <label class="form-label">Assignee</label>
+        <select name="assigneeId" class="form-select" onchange="this.form.submit()">
+            <option value="">Anyone</option>
+            @foreach (var e in Model.Employees) { <option value="@e.Id" selected="@(Model.AssigneeId == e.Id)">@e.FullName</option> }
+        </select>
+    </div>
+    <div>
+        <label class="form-label">Category</label>
+        <select name="category" class="form-select" onchange="this.form.submit()">
+            <option value="">All</option>
+            @foreach (var c in FarmTask.Categories) { <option selected="@(Model.Category == c)">@c</option> }
+        </select>
+    </div>
+    <div style="flex:1 1 180px">
+        <label class="form-label">Search cards</label>
+        <input class="form-control" id="cardFilter" placeholder="Title, farm, batch…" />
+    </div>
+    @if (Model.FarmId.HasValue || Model.AssigneeId.HasValue || !string.IsNullOrEmpty(Model.Priority) || !string.IsNullOrEmpty(Model.Category))
+    {
+        <a asp-action="Index" class="btn btn-sm btn-outline-secondary">Reset</a>
+    }
+</form>
+
+<div class="kanban">
+    @foreach (var (status, icon, color) in cols)
+    {
+        var items = Sorted(status).ToList();
+        <div class="kanban-col">
+            <h6 class="mb-3">
+                <span><i class="bi @icon me-1" style="color:@color"></i>@status</span>
+                <span class="badge badge-gray">@items.Count</span>
+            </h6>
+            @if (!items.Any())
+            {
+                <div class="text-center text-muted small py-4"><i class="bi bi-inbox d-block fs-4 mb-1 opacity-50"></i>Nothing here</div>
+            }
+            @foreach (var t in items)
+            {
+                <div class="kanban-card task-card" style="border-left:4px solid @PriorityColor(t.Priority)" data-search="@((t.Title + " " + t.FarmName + " " + t.BatchCode + " " + t.AssigneeName + " " + t.Category).ToLowerInvariant())">
+                    <div class="d-flex justify-content-between align-items-start gap-2">
+                        <a asp-action="Edit" asp-route-id="@t.Id" class="kc-title text-decoration-none text-reset @(t.Status == "Done" ? "text-decoration-line-through opacity-75" : "")">@t.Title</a>
+                        <span class="badge @Fmt.Badge(t.Priority)">@t.Priority</span>
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(t.Description))
+                    {
+                        <div class="text-muted text-xs mt-1" style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">@t.Description</div>
+                    }
+                    <div class="d-flex flex-wrap gap-1 mt-2">
+                        <span class="chip"><i class="bi bi-tag"></i>@t.Category</span>
+                        @if (t.FarmName != null) { <span class="chip"><i class="bi bi-house-door"></i>@t.FarmName</span> }
+                        @if (t.BatchCode != null) { <span class="chip"><i class="bi bi-feather"></i>@t.BatchCode</span> }
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center mt-2 text-xs">
+                        <span class="d-flex align-items-center gap-1">
+                            @if (t.AssigneeName != null)
+                            {
+                                <span class="avatar" style="width:22px;height:22px;font-size:9.5px">@(string.Concat(t.AssigneeName.Split(' ', StringSplitOptions.RemoveEmptyEntries).Where(p => char.IsLetter(p[0])).Take(2).Select(p => p[0])))</span>
+                                <span>@t.AssigneeName</span>
+                            }
+                            else { <span class="text-muted">Unassigned</span> }
+                        </span>
+                        @if (t.Status == "Done")
+                        {
+                            <span class="text-success"><i class="bi bi-check2"></i> @Fmt.Ago(t.CompletedAt)</span>
+                        }
+                        else if (t.DueDate.HasValue)
+                        {
+                            <span class="@(t.IsOverdue ? "text-danger fw-600" : t.IsDueToday ? "text-warning fw-600" : "text-muted")">
+                                <i class="bi bi-calendar-event"></i>
+                                @(t.IsOverdue ? $"Overdue {(DateTime.Today - t.DueDate.Value.Date).Days}d" : t.IsDueToday ? "Due today" : t.DueDate.Value.ToString("dd MMM"))
+                            </span>
+                        }
+                    </div>
+                    @if (Model.CanEdit)
+                    {
+                        <div class="d-flex gap-1 mt-2 pt-2 border-top">
+                            @foreach (var target in FarmTask.Statuses.Where(s => s != t.Status))
+                            {
+                                <form asp-action="Move" method="post" class="d-inline">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="id" value="@t.Id" />
+                                    <input type="hidden" name="status" value="@target" />
+                                    <input type="hidden" name="returnUrl" value="@returnUrl" />
+                                    <button class="btn btn-xs @(target == "Done" ? "btn-outline-success" : "btn-outline-secondary")">
+                                        @(target == "Done" ? "✓ Done" : target == "In Progress" ? "▶ Start" : "↺ Reopen")
+                                    </button>
+                                </form>
+                            }
+                            <a asp-action="Edit" asp-route-id="@t.Id" class="btn btn-xs btn-outline-secondary ms-auto" title="Edit"><i class="bi bi-pencil"></i></a>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@section Scripts {
+<script>
+    document.getElementById('cardFilter').addEventListener('input', function () {
+        var q = this.value.toLowerCase();
+        document.querySelectorAll('.task-card').forEach(function (c) { c.style.display = c.dataset.search.indexOf(q) >= 0 ? '' : 'none'; });
+    });
+</script>
+}

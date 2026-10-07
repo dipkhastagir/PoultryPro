@@ -1,0 +1,88 @@
+@model Supplier
+@{
+    var cats = ViewBag.Categories as string[] ?? Array.Empty<string>();
+    var isNew = Model.Id == 0;
+}
+<div class="row justify-content-center"><div class="col-lg-8">
+<div class="form-card">
+    <h6 class="fw-semibold mb-1"><i class="bi bi-buildings text-primary me-2"></i>@(isNew ? "New supplier" : "Edit " + Model.Name)</h6>
+    <p class="text-muted small mb-4">Vendor master data used on purchase orders and supplier performance analytics.</p>
+    <form asp-action="@(isNew ? "Create" : "Edit")" method="post" novalidate>
+        <input type="hidden" asp-for="Id" />
+        <div asp-validation-summary="ModelOnly" class="alert alert-danger py-2 small"></div>
+        <div class="row g-3">
+            <div class="col-md-8">
+                <label class="form-label">Supplier name *</label>
+                <input asp-for="Name" class="form-control" required maxlength="150" />
+                <span asp-validation-for="Name" class="text-danger small"></span>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Category *</label>
+                <select asp-for="Category" class="form-select">
+                    @foreach (var c in cats.Union(new[] { Model.Category }).Distinct())
+                    {
+                        <option value="@c">@c</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Contact person</label>
+                <input asp-for="ContactPerson" class="form-control" maxlength="100" />
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Phone</label>
+                <input asp-for="Phone" class="form-control" maxlength="20" placeholder="017XXXXXXXX" />
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Email</label>
+                <input asp-for="Email" type="email" class="form-control" maxlength="100" />
+                <span asp-validation-for="Email" class="text-danger small"></span>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Payment terms</label>
+                <input asp-for="PaymentTerms" class="form-control" maxlength="100" list="termsList" placeholder="e.g. Net 30" />
+                <datalist id="termsList">
+                    <option value="Cash on delivery"></option><option value="Advance"></option><option value="Advance 50%"></option>
+                    <option value="Net 7"></option><option value="Net 15"></option><option value="Net 30"></option><option value="Net 45"></option>
+                </datalist>
+            </div>
+            <div class="col-12">
+                <label class="form-label">Address</label>
+                <input asp-for="Address" class="form-control" maxlength="300" placeholder="Area, District" />
+            </div>
+            <div class="col-md-6">
+                <label class="form-label d-flex justify-content-between">Rating <span class="fw-600" id="ratingOut">@Model.Rating.ToString("0.0")</span></label>
+                <input asp-for="Rating" type="range" class="form-range" min="0" max="5" step="0.1"
+                       oninput="document.getElementById('ratingOut').textContent = Number(this.value).toFixed(1)" />
+                <span asp-validation-for="Rating" class="text-danger small"></span>
+                <div class="text-xs text-muted">Quality, price competitiveness and service — 5 is best.</div>
+            </div>
+            <div class="col-md-6">
+                @if (isNew)
+                {
+                    <input type="hidden" name="IsActive" value="true" />
+                }
+                else
+                {
+                    <label class="form-label">Status</label>
+                    <div class="form-check form-switch mt-1">
+                        <input class="form-check-input" type="checkbox" asp-for="IsActive" />
+                        <label class="form-check-label" asp-for="IsActive">Active (available on new purchase orders)</label>
+                    </div>
+                }
+            </div>
+        </div>
+        <div class="d-flex gap-2 mt-4">
+            <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>@(isNew ? "Add supplier" : "Save changes")</button>
+            @if (isNew)
+            {
+                <a asp-action="Index" class="btn btn-outline-secondary">Cancel</a>
+            }
+            else
+            {
+                <a asp-action="Detail" asp-route-id="@Model.Id" class="btn btn-outline-secondary">Cancel</a>
+            }
+        </div>
+    </form>
+</div>
+</div></div>

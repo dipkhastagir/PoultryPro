@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="420" viewBox="0 0 640 420">
+<defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0d9e75" stop-opacity=".18"/><stop offset="1" stop-color="#0d9e75" stop-opacity=".45"/></linearGradient></defs>
+<rect width="640" height="420" fill="#f8fafc"/><rect width="640" height="420" fill="url(#g)"/>
+<polygon points="80,200 320,90 560,200" fill="#94a3b8"/><rect x="100" y="200" width="440" height="140" fill="#e2e8f0" stroke="#64748b" stroke-width="3"/>
+<rect x="130" y="230" width="60" height="40" fill="#cbd5e1"/><rect x="230" y="230" width="60" height="40" fill="#cbd5e1"/><rect x="350" y="230" width="60" height="40" fill="#cbd5e1"/><rect x="450" y="230" width="60" height="40" fill="#cbd5e1"/>
+<rect x="290" y="285" width="60" height="55" fill="#64748b"/><circle cx="540" cy="70" r="30" fill="#fbbf24"/>
+<rect x="0" y="372" width="640" height="48" fill="#0f172a" opacity=".72"/>
+<text x="20" y="403" font-family="Segoe UI, Arial" font-size="18" fill="#fff">Shed overview · sample field photo</text>
+</svg>

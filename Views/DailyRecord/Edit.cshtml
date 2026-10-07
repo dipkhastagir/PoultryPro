@@ -1,0 +1,128 @@
+@model DailyFarmRecord
+@{
+    ViewData["Title"] = $"Edit Record — {Model.BatchCode} ({Model.RecordDate:dd MMM yyyy})";
+}
+
+<div class="row justify-content-center">
+<div class="col-lg-9">
+<div class="form-card">
+    <h6 class="fw-semibold mb-4"><i class="bi bi-clipboard2-check text-warning me-2"></i>Edit Daily Record</h6>
+
+    <!-- Context info -->
+    <div class="d-flex gap-3 mb-4 p-3 rounded" style="background:var(--bg);font-size:13px">
+        <span><strong>Farm:</strong> @Model.FarmName</span>
+        <span><strong>Batch:</strong> @Model.BatchCode (@Model.Breed)</span>
+        <span><strong>Officer:</strong> @Model.FieldOfficerName</span>
+    </div>
+
+    <form asp-action="Edit" method="post">
+        @Html.AntiForgeryToken()
+        <input type="hidden" asp-for="Id" />
+        <input type="hidden" asp-for="VisitId" />
+        <input type="hidden" asp-for="BatchId" />
+        <input type="hidden" asp-for="FarmId" />
+        <input type="hidden" name="returnUrl" value="@(Model.VisitId > 0 ? null : Url.Action("Index", new { batchId = Model.BatchId }))" />
+
+        <!-- Date -->
+        <div class="row g-3 mb-4">
+            <div class="col-md-4">
+                <label class="form-label">Record Date</label>
+                <input asp-for="RecordDate" type="date" class="form-control" required />
+            </div>
+        </div>
+
+        <hr class="my-3" />
+        <div class="mb-2" style="font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">🐓 Bird Count</div>
+        <div class="row g-3 mb-4">
+            <div class="col-md-4">
+                <label class="form-label">Bird Count</label>
+                <input asp-for="BirdCount" type="number" class="form-control" min="0" />
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Mortality Count</label>
+                <input asp-for="MortalityCount" type="number" class="form-control" min="0" />
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Culling Count</label>
+                <input asp-for="CullingCount" type="number" class="form-control" min="0" />
+            </div>
+        </div>
+
+        <hr class="my-3" />
+        <div class="mb-2" style="font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">🌾 Feed & Water</div>
+        <div class="row g-3 mb-4">
+            <div class="col-md-6">
+                <label class="form-label">Feed Consumption (kg)</label>
+                <input asp-for="FeedConsumptionKg" type="number" step="0.01" class="form-control" min="0" />
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Water Consumption (L)</label>
+                <input asp-for="WaterConsumptionLtr" type="number" step="0.01" class="form-control" min="0" />
+            </div>
+        </div>
+
+        <hr class="my-3" />
+        <div class="mb-2" style="font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">🌡️ Environment</div>
+        <div class="row g-3 mb-4">
+            <div class="col-md-4">
+                <label class="form-label">Temperature (°C)</label>
+                <input asp-for="TemperatureC" type="number" step="0.1" class="form-control" />
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Humidity (%)</label>
+                <input asp-for="HumidityPercent" type="number" step="0.1" class="form-control" />
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Light Hours</label>
+                <input asp-for="LightHours" type="number" step="0.5" class="form-control" />
+            </div>
+        </div>
+
+        <hr class="my-3" />
+        <div class="mb-2" style="font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">⚖️ Growth</div>
+        <div class="row g-3 mb-4">
+            <div class="col-md-6">
+                <label class="form-label">Average Weight (grams)</label>
+                <input asp-for="AverageWeightGm" type="number" step="0.01" class="form-control" />
+            </div>
+        </div>
+
+        <hr class="my-3" />
+        <div class="mb-2" style="font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">💊 Medicine & Vaccine</div>
+        <div class="row g-3 mb-4">
+            <div class="col-md-6">
+                <label class="form-label">Medicine Used</label>
+                <input asp-for="MedicineUsed" class="form-control" />
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Medicine Dosage</label>
+                <input asp-for="MedicineDosage" class="form-control" />
+            </div>
+            <div class="col-12">
+                <label class="form-label">Vaccine Used</label>
+                <input asp-for="VaccineUsed" class="form-control" />
+            </div>
+        </div>
+
+        <hr class="my-3" />
+        <div class="mb-2" style="font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">📝 Remarks</div>
+        <div class="mb-4">
+            <textarea asp-for="Remarks" class="form-control" rows="3"></textarea>
+        </div>
+
+        <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Save Changes</button>
+            @if (Model.VisitId > 0)
+            {
+                <a asp-controller="Visit" asp-action="Detail" asp-route-id="@Model.VisitId"
+                   class="btn btn-outline-secondary">Cancel</a>
+            }
+            else
+            {
+                <a asp-action="Index" asp-route-batchId="@Model.BatchId" class="btn btn-outline-secondary">Cancel</a>
+            }
+        </div>
+    </form>
+</div>
+</div>
+</div>

@@ -1,0 +1,133 @@
+@model List<DictTable>
+@{
+    var tables = Model.Where(t => t.Type == "Table").ToList();
+    var views = Model.Where(t => t.Type == "View").ToList();
+    var modules = Model.GroupBy(t => t.Module).OrderBy(g => g.Key == "Views" ? 1 : 0).ThenBy(g => g.Key).ToList();
+    string Anchor(string n) => "t-" + n;
+}
+
+<div class="page-head">
+    <div>
+        <a asp-action="Index" class="text-xs text-decoration-none"><i class="bi bi-arrow-left me-1"></i>Research data hub</a>
+        <h4 class="mt-1"><i class="bi bi-book me-2"></i>Data Dictionary</h4>
+        <p>Generated live from INFORMATION_SCHEMA — always matches the current database.</p>
+    </div>
+    <button type="button" class="btn btn-outline-secondary btn-sm no-print" onclick="window.print()"><i class="bi bi-printer me-1"></i>Print</button>
+</div>
+
+<div class="stat-grid">
+    <div class="stat-tile tone-green">
+        <div class="st-label">Tables</div>
+        <div class="st-value">@tables.Count</div>
+        <div class="st-sub">@Fmt.Num((decimal)tables.Sum(t => t.RowCount ?? 0)) rows stored</div>
+        <div class="st-icon"><i class="bi bi-table"></i></div>
+    </div>
+    <div class="stat-tile tone-blue">
+        <div class="st-label">Views</div>
+        <div class="st-value">@views.Count</div>
+        <div class="st-sub">derived analytical tables</div>
+        <div class="st-icon"><i class="bi bi-eye"></i></div>
+    </div>
+    <div class="stat-tile tone-violet">
+        <div class="st-label">Columns</div>
+        <div class="st-value">@Model.Sum(t => t.Columns.Count)</div>
+        <div class="st-sub">@Model.Sum(t => t.Columns.Count(c => c.IsNullable == "NO")) required (NOT NULL)</div>
+        <div class="st-icon"><i class="bi bi-layout-three-columns"></i></div>
+    </div>
+    <div class="stat-tile tone-amber">
+        <div class="st-label">Modules</div>
+        <div class="st-value">@modules.Count</div>
+        <div class="st-sub">functional groupings</div>
+        <div class="st-icon"><i class="bi bi-grid"></i></div>
+    </div>
+</div>
+
+@if (Model.Count == 0)
+{
+    <div class="card"><div class="card-body"><div class="empty-state"><i class="bi bi-database-x"></i><p class="mb-0">No schema information available.</p></div></div></div>
+}
+else
+{
+    <div class="row g-3">
+        <div class="col-lg-3 no-print">
+            <div class="card" style="position:sticky;top:1rem">
+                <div class="card-body">
+                    <input id="dictFilter" class="form-control form-control-sm mb-3" placeholder="Filter tables or columns…" />
+                    <div style="max-height:65vh;overflow:auto" class="small">
+                        @foreach (var g in modules)
+                        {
+                            <div class="text-xs text-muted text-uppercase fw-600 mt-2 mb-1">@g.Key</div>
+                            @foreach (var t in g.OrderBy(x => x.Name))
+                            {
+                                <div><a href="#@Anchor(t.Name)" class="text-decoration-none dict-nav" data-name="@t.Name.ToLowerInvariant()">@t.Name</a></div>
+                            }
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-9">
+            @foreach (var t in Model)
+            {
+                <div class="card mb-3 dict-table" id="@Anchor(t.Name)" data-search="@(t.Name + " " + t.Description + " " + string.Join(" ", t.Columns.Select(c => c.ColumnName))).ToLowerInvariant()">
+                    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                        <div>
+                            <h6 class="mb-0 mono">@t.Name</h6>
+                            @if (!string.IsNullOrEmpty(t.Description)) { <div class="text-xs text-muted">@t.Description</div> }
+                        </div>
+                        <div class="d-flex gap-1">
+                            <span class="badge @(t.Type == "View" ? "badge-info-soft" : "badge-healthy")">@t.Type</span>
+                            <span class="chip text-xs">@t.Module</span>
+                            @if (t.RowCount.HasValue) { <span class="badge badge-gray">@Fmt.Num((decimal)t.RowCount.Value) rows</span> }
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead><tr><th style="width:40px">#</th><th>Column</th><th>Type</th><th>Null</th><th>Default / notes</th></tr></thead>
+                            <tbody>
+                                @foreach (var c in t.Columns)
+                                {
+                                    <tr class="dict-col" data-col="@c.ColumnName.ToLowerInvariant()">
+                                        <td class="text-muted">@c.OrdinalPosition</td>
+                                        <td class="mono fw-600">@c.ColumnName
+                                            @if (c.IsIdentity) { <span class="badge badge-ready ms-1" title="Identity / primary key">PK</span> }
+                                            @if (c.IsComputed) { <span class="badge badge-info-soft ms-1">computed</span> }
+                                        </td>
+                                        <td class="mono text-xs">@c.TypeText</td>
+                                        <td>@(c.IsNullable == "YES" ? "yes" : "no")</td>
+                                        <td class="mono text-xs text-muted">@(c.ColumnDefault ?? "")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            }
+            <div class="empty-state d-none" id="dictEmpty"><i class="bi bi-search"></i><p class="mb-0">No table or column matches the filter.</p></div>
+        </div>
+    </div>
+}
+
+@section Scripts {
+<script>
+(function () {
+    const box = document.getElementById('dictFilter');
+    if (!box) return;
+    box.addEventListener('input', () => {
+        const q = box.value.trim().toLowerCase();
+        let shown = 0;
+        document.querySelectorAll('.dict-table').forEach(card => {
+            const hit = !q || card.dataset.search.includes(q);
+            card.classList.toggle('d-none', !hit);
+            if (hit) shown++;
+            card.querySelectorAll('.dict-col').forEach(r => r.classList.toggle('table-warning', !!q && r.dataset.col.includes(q)));
+        });
+        document.querySelectorAll('.dict-nav').forEach(a => {
+            const card = document.getElementById('t-' + a.textContent);
+            a.parentElement.classList.toggle('d-none', card && card.classList.contains('d-none'));
+        });
+        document.getElementById('dictEmpty').classList.toggle('d-none', shown > 0);
+    });
+})();
+</script>
+}

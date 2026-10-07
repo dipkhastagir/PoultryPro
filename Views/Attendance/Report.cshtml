@@ -1,0 +1,202 @@
+@model AttendanceMonthVm
+@{
+    var start = new DateTime(Model.Year, Model.Month, 1);
+    var prev = start.AddMonths(-1);
+    var next = start.AddMonths(1);
+    var today = DateTime.Today;
+    string Cell(string? s) => s switch
+    {
+        "Present" => "background:#dcfce7;color:#166534",
+        "Late" => "background:#fef3c7;color:#92400e",
+        "Half Day" => "background:#fef9c3;color:#854d0e",
+        "Leave" => "background:#dbeafe;color:#1e40af",
+        "Absent" => "background:#fee2e2;color:#991b1b",
+        _ => ""
+    };
+    var totals = new
+    {
+        P = Model.Rows.Sum(r => r.Present), L = Model.Rows.Sum(r => r.Late), H = Model.Rows.Sum(r => r.HalfDay),
+        LV = Model.Rows.Sum(r => r.Leave), A = Model.Rows.Sum(r => r.Absent)
+    };
+    var lowAttendance = Model.Rows.Where(r => r.AttendancePct < 80 && r.Days.Count > 0).OrderBy(r => r.AttendancePct).Take(5).ToList();
+}
+@section Head {
+<style>
+    .att-matrix { font-size: 11.5px; }
+    .att-matrix th, .att-matrix td { padding: 4px 3px !important; text-align: center; white-space: nowrap; }
+    .att-matrix td.c { min-width: 26px; font-weight: 700; }
+    .att-matrix .wk { background: repeating-linear-gradient(45deg,#f8fafc,#f8fafc 3px,#eef2f7 3px,#eef2f7 6px); color: #94a3b8; }
+    .att-matrix .sticky { position: sticky; left: 0; background: #fff; z-index: 1; text-align: left; min-width: 180px; }
+    .att-matrix thead .sticky { background: #f8fafc; }
+    .att-matrix .today { outline: 2px solid #0f172a; outline-offset: -2px; }
+</style>
+}
+
+<div class="page-head">
+    <div>
+        <h4>@Model.MonthLabel</h4>
+        <p>@Model.WorkingDays working days (@(Model.DaysInMonth - Model.WorkingDays) Fridays) · @Model.ElapsedWorkingDays elapsed · @Model.Rows.Count employees</p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+        <a asp-action="Report" asp-route-year="@prev.Year" asp-route-month="@prev.Month" class="btn btn-sm btn-outline-secondary"><i class="bi bi-chevron-left"></i> @prev.ToString("MMM")</a>
+        <form method="get" class="d-flex gap-1">
+            <input type="month" class="form-control form-control-sm" value="@start.ToString("yyyy-MM")" onchange="var p=this.value.split('-');this.form.year.value=p[0];this.form.month.value=+p[1];this.form.submit()" />
+            <input type="hidden" name="year" value="@Model.Year" /><input type="hidden" name="month" value="@Model.Month" />
+        </form>
+        <a asp-action="Report" asp-route-year="@next.Year" asp-route-month="@next.Month" class="btn btn-sm btn-outline-secondary">@next.ToString("MMM") <i class="bi bi-chevron-right"></i></a>
+        <a asp-action="Export" asp-route-year="@Model.Year" asp-route-month="@Model.Month" class="btn btn-sm btn-outline-primary"><i class="bi bi-filetype-csv me-1"></i>Export CSV</a>
+        <a asp-action="Index" class="btn btn-sm btn-primary"><i class="bi bi-pencil-square me-1"></i>Mark today</a>
+        <button onclick="window.print()" class="btn btn-sm btn-outline-secondary no-print"><i class="bi bi-printer"></i></button>
+    </div>
+</div>
+
+<div class="stat-grid">
+    <div class="stat-tile @(Model.OverallPct >= 90 ? "tone-green" : Model.OverallPct >= 75 ? "tone-amber" : "tone-red")">
+        <div class="st-label">Average attendance</div>
+        <div class="st-value">@(Model.Rows.Count == 0 ? "—" : Fmt.Pct(Model.OverallPct))</div>
+        <div class="st-sub">Present-day equivalent / expected days</div>
+        <div class="st-icon"><i class="bi bi-graph-up"></i></div>
+    </div>
+    <div class="stat-tile tone-green">
+        <div class="st-label">Present + late</div>
+        <div class="st-value">@Fmt.Num(totals.P + totals.L)</div>
+        <div class="st-sub">@totals.L late arrivals · @totals.H half days</div>
+        <div class="st-icon"><i class="bi bi-person-check"></i></div>
+    </div>
+    <div class="stat-tile tone-blue">
+        <div class="st-label">Leave days</div>
+        <div class="st-value">@totals.LV</div>
+        <div class="st-sub">Approved leave</div>
+        <div class="st-icon"><i class="bi bi-airplane"></i></div>
+    </div>
+    <div class="stat-tile tone-red">
+        <div class="st-label">Absent days</div>
+        <div class="st-value">@totals.A</div>
+        <div class="st-sub">Deducted in payroll at salary ÷ 26</div>
+        <div class="st-icon"><i class="bi bi-person-x"></i></div>
+    </div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-header">
+        <h6><i class="bi bi-grid-3x3 text-primary me-2"></i>Attendance matrix</h6>
+        <div class="d-flex gap-1 flex-wrap text-xs">
+            <span class="chip" style="@Cell("Present")">P Present</span>
+            <span class="chip" style="@Cell("Late")">L Late</span>
+            <span class="chip" style="@Cell("Half Day")">H Half day</span>
+            <span class="chip" style="@Cell("Leave")">LV Leave</span>
+            <span class="chip" style="@Cell("Absent")">A Absent</span>
+            <span class="chip wk" style="background:#f1f5f9">Fri weekend</span>
+        </div>
+    </div>
+    @if (!Model.Rows.Any())
+    {
+        <div class="empty-state"><i class="bi bi-calendar-x"></i>No employees for this month.</div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-bordered mb-0 att-matrix">
+                <thead>
+                    <tr>
+                        <th class="sticky">Employee</th>
+                        @for (var d = 1; d <= Model.DaysInMonth; d++)
+                        {
+                            var date = start.AddDays(d - 1);
+                            <th class="@(date.DayOfWeek == DayOfWeek.Friday ? "wk" : "") @(date == today ? "today" : "")">
+                                <a asp-action="Index" asp-route-date="@date.ToString("yyyy-MM-dd")" class="text-reset text-decoration-none">@d<div style="font-size:9px;font-weight:500">@(date.ToString("ddd").Length > 2 ? date.ToString("ddd")[..2] : date.ToString("ddd"))</div></a>
+                            </th>
+                        }
+                        <th title="Present">P</th><th title="Late">L</th><th title="Half day">H</th><th title="Leave">LV</th><th title="Absent">A</th><th>Days</th><th style="min-width:90px">Att. %</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var r in Model.Rows)
+                    {
+                        <tr>
+                            <td class="sticky">
+                                <a asp-controller="Employee" asp-action="Detail" asp-route-id="@r.EmployeeId" class="fw-600 text-decoration-none">@r.FullName</a>
+                                <div class="text-muted" style="font-size:10.5px">@r.Role · @(r.FarmName ?? "All farms")</div>
+                            </td>
+                            @for (var d = 1; d <= Model.DaysInMonth; d++)
+                            {
+                                var date = start.AddDays(d - 1);
+                                r.Days.TryGetValue(d, out var s);
+                                var wk = date.DayOfWeek == DayOfWeek.Friday;
+                                <td class="c @(s == null && wk ? "wk" : "")" style="@Cell(s)" title="@date.ToString("ddd dd MMM"): @(s ?? (wk ? "Weekend" : date > today ? "Upcoming" : "Not marked"))">@(s != null ? AttendanceRecord.Code(s) : wk ? "" : date <= today ? "·" : "")</td>
+                            }
+                            <td>@r.Present</td><td>@r.Late</td><td>@r.HalfDay</td><td>@r.Leave</td><td class="@(r.Absent > 0 ? "text-danger fw-600" : "")">@r.Absent</td>
+                            <td class="fw-600">@Fmt.Num(r.PresentDays, 1)</td>
+                            <td>
+                                <div class="d-flex align-items-center gap-1">
+                                    <div class="prog-bar-wrap flex-grow-1" style="height:6px"><div class="prog-bar-fill @(r.AttendancePct < 75 ? "danger" : r.AttendancePct < 90 ? "warning" : "")" style="width:@((int)r.AttendancePct)%"></div></div>
+                                    <span class="fw-600">@r.AttendancePct.ToString("0")%</span>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <td class="sticky">Daily present %</td>
+                        @for (var d = 1; d <= Model.DaysInMonth; d++)
+                        {
+                            var date = start.AddDays(d - 1);
+                            var v = Model.DailyPresentPct[d - 1];
+                            <td class="@(date.DayOfWeek == DayOfWeek.Friday ? "wk" : "")" style="font-size:9.5px;@(v > 0 && v < 80 ? "color:#b91c1c" : "")">@(v > 0 ? v.ToString("0") : "")</td>
+                        }
+                        <td>@totals.P</td><td>@totals.L</td><td>@totals.H</td><td>@totals.LV</td><td>@totals.A</td><td></td><td>@Fmt.Pct(Model.OverallPct, 0)</td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    }
+</div>
+
+@if (Model.Rows.Any())
+{
+    <div class="row g-4">
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header"><h6><i class="bi bi-activity text-success me-2"></i>Daily attendance rate</h6></div>
+                <div class="card-body"><div style="height:240px"><canvas id="dailyChart"></canvas></div></div>
+            </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="card h-100">
+                <div class="card-header"><h6><i class="bi bi-exclamation-triangle text-warning me-2"></i>Below 80% attendance</h6></div>
+                <div class="card-body">
+                    @if (!lowAttendance.Any())
+                    {
+                        <div class="text-center text-muted py-3"><i class="bi bi-emoji-smile fs-3 text-success d-block mb-1"></i>Everyone is at or above 80%.</div>
+                    }
+                    @foreach (var r in lowAttendance)
+                    {
+                        <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
+                            <div><a asp-controller="Employee" asp-action="Detail" asp-route-id="@r.EmployeeId" class="fw-600 text-decoration-none">@r.FullName</a><div class="text-xs text-muted">@r.Absent absent · @r.Leave leave · @r.Unmarked unmarked</div></div>
+                            <span class="badge badge-danger-soft">@r.AttendancePct.ToString("0")%</span>
+                        </div>
+                    }
+                    <div class="formula mt-3">Att% = (P + L + 0.5·H) ÷ expected working days</div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@section Scripts {
+@if (Model.Rows.Any())
+{
+    <script>
+        (function () {
+            var labels = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Enumerable.Range(1, Model.DaysInMonth).Select(d => start.AddDays(d - 1).ToString("dd ddd"))));
+            var data = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.DailyPresentPct.Select(v => v == 0 ? (decimal?)null : v)));
+            new Chart(document.getElementById('dailyChart'), {
+                type: 'line',
+                data: { labels: labels, datasets: [{ label: 'Present %', data: data, borderColor: ppColors.green, backgroundColor: ppColors.greenSoft, fill: true, tension: .3, spanGaps: true, pointRadius: 3 }] },
+                options: { plugins: { legend: { display: false } }, scales: { y: { min: 0, max: 100, ticks: { callback: v => v + '%' } }, x: { grid: { display: false } } } }
+            });
+        })();
+    </script>
+}
+}

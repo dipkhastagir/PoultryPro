@@ -1,0 +1,100 @@
+@model Batch
+@{
+    ViewData["Title"] = $"Batch {Model.BatchCode}";
+    ViewData["Subtitle"] = $"{Model.Breed} — {Model.FarmName}";
+    var weights = ((ViewBag.WeightRecords as IEnumerable<WeightRecord>)?.ToList() ?? new List<WeightRecord>());
+}
+
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md-3"><div class="kpi-card"><div class="kpi-label">Current Count</div><div class="kpi-value">@Model.CurrentCount.ToString("N0")</div></div></div>
+    <div class="col-6 col-md-3"><div class="kpi-card"><div class="kpi-label">Age</div><div class="kpi-value">@Model.AgeInDays d</div></div></div>
+    <div class="col-6 col-md-3"><div class="kpi-card"><div class="kpi-label">Avg Weight</div><div class="kpi-value">@Model.AverageWeightKg kg</div></div></div>
+    <div class="col-6 col-md-3"><div class="kpi-card"><div class="kpi-label">Mortality Rate</div><div class="kpi-value @(Model.MortalityRate > 2 ? "text-danger" : "")">@Model.MortalityRate%</div></div></div>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-7">
+        <div class="card">
+            <div class="card-header"><h6><i class="bi bi-graph-up text-success me-2"></i>Weight Growth</h6></div>
+            <div class="card-body"><canvas id="weightChart" height="240"></canvas></div>
+        </div>
+    </div>
+    @if (User.IsAny(Roles.AdminOrManager + "," + Roles.Veterinarian))
+    {
+    <div class="col-lg-5">
+        <!-- Log Mortality -->
+        <div class="card mb-3">
+            <div class="card-header"><h6><i class="bi bi-clipboard2-x text-danger me-2"></i>Log Mortality</h6></div>
+            <div class="card-body">
+                <form asp-action="AddMortality" method="post">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" name="BatchId" value="@Model.Id" />
+                    <div class="row g-2">
+                        <div class="col-6">
+                            <label class="form-label">Count</label>
+                            <input type="number" name="Count" class="form-control" min="1" required />
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Cause</label>
+                            <select name="Cause" class="form-select">
+                                <option>Heat Stress</option><option>Respiratory</option>
+                                <option>Disease</option><option>Injury</option><option>Unknown</option>
+                            </select>
+                        </div>
+                        <div class="col-12">
+                            <button class="btn btn-sm btn-danger w-100">Log Mortality</button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+        <!-- Log Weight -->
+        <div class="card">
+            <div class="card-header"><h6><i class="bi bi-graph-up-arrow text-primary me-2"></i>Add Weight Record</h6></div>
+            <div class="card-body">
+                <form asp-action="AddWeight" method="post">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" name="BatchId" value="@Model.Id" />
+                    <div class="row g-2">
+                        <div class="col-6">
+                            <label class="form-label">Age (days)</label>
+                            <input type="number" name="AgeInDays" class="form-control" value="@Model.AgeInDays" required />
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Avg Weight (kg)</label>
+                            <input type="number" step="0.001" name="AvgWeightKg" class="form-control" required />
+                        </div>
+                        <div class="col-12">
+                            <button class="btn btn-sm btn-primary w-100">Save Weight</button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    }
+</div>
+
+<div class="mt-3"><a asp-action="Index" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>Back</a></div>
+
+@section Scripts {
+<script>
+const ages = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(weights.Select(w => "Day " + w.AgeInDays)));
+const actuals = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(weights.Select(w => (double)w.AvgWeightKg)));
+const targets = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(weights.Select(w => w.AgeInDays switch {
+    1 => 0.04, 7 => 0.18, 14 => 0.40, 21 => 0.82, 28 => 1.30, 35 => 1.80, 42 => 2.40, _ => 0.0
+})));
+new Chart(document.getElementById('weightChart'), {
+    type: 'line',
+    data: {
+        labels: ages,
+        datasets: [
+            { label: 'Target (kg)', data: targets, borderColor: '#94a3b8', borderDash:[5,4], pointRadius: 0, tension: .4 },
+            { label: 'Actual (kg)', data: actuals, borderColor: '#0d9e75', backgroundColor:'rgba(13,158,117,.08)', fill:true, tension:.4, pointRadius: 4 }
+        ]
+    },
+    options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}},
+        scales:{ y:{ticks:{callback:v=>v+'kg', font:{size:11}}}, x:{ticks:{font:{size:11}}} } }
+});
+</script>
+}

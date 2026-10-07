@@ -1,0 +1,8 @@
+wwwroot\css\site.css
+wwwroot\img\favicon.svg
+wwwroot\img\samples\birds.svg
+wwwroot\img\samples\feed.svg
+wwwroot\img\samples\shed.svg
+wwwroot\img\samples\signature.svg
+wwwroot\img\samples\water.svg
+wwwroot\js\site.js

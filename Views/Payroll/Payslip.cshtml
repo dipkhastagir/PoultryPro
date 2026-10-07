@@ -1,0 +1,93 @@
+@model PayslipVm
+@{
+    var p = Model.Entry;
+    var gross = p.Gross;
+}
+<div class="d-flex justify-content-between align-items-center mb-3 no-print">
+    <a asp-action="Index" asp-route-year="@p.PeriodYear" asp-route-month="@p.PeriodMonth" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Payroll register</a>
+    <div class="d-flex gap-2">
+        @if (p.Status != "Paid")
+        {
+            <a asp-action="Edit" asp-route-id="@p.Id" class="btn btn-sm btn-outline-secondary"><i class="bi bi-pencil me-1"></i>Adjust</a>
+            <form asp-action="MarkPaid" method="post" class="d-inline" data-confirm="Mark this salary as paid and post it to finance?">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="id" value="@p.Id" />
+                <button class="btn btn-sm btn-success"><i class="bi bi-check-lg me-1"></i>Mark paid</button>
+            </form>
+        }
+        <button onclick="window.print()" class="btn btn-sm btn-primary"><i class="bi bi-printer me-1"></i>Print payslip</button>
+    </div>
+</div>
+
+<div class="doc-sheet">
+    <div class="d-flex justify-content-between align-items-start border-bottom pb-3 mb-3">
+        <div>
+            <div class="doc-title">@Model.CompanyName</div>
+            @if (!string.IsNullOrWhiteSpace(Model.CompanyAddress)) { <div class="text-muted small">@Model.CompanyAddress</div> }
+            @if (!string.IsNullOrWhiteSpace(Model.CompanyPhone)) { <div class="text-muted small">Phone: @Model.CompanyPhone</div> }
+        </div>
+        <div class="text-end">
+            <div class="fw-bold" style="font-size:18px;letter-spacing:.08em">PAYSLIP</div>
+            <div class="small">@p.PeriodLabel</div>
+            <div class="mono text-muted">@p.PayReference</div>
+            <span class="badge @Fmt.Badge(p.Status) mt-1">@p.Status@(p.PaidDate.HasValue ? " · " + Fmt.Date(p.PaidDate) : "")</span>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-sm-6">
+            <dl class="kv">
+                <dt>Employee</dt><dd>@p.FullName</dd>
+                <dt>Employee code</dt><dd class="mono">@p.CodeOrId</dd>
+                <dt>Designation</dt><dd>@(p.Role ?? "—")</dd>
+            </dl>
+        </div>
+        <div class="col-sm-6">
+            <dl class="kv">
+                <dt>Work location</dt><dd>@(p.FarmName ?? "Head office")</dd>
+                <dt>Date of joining</dt><dd>@Fmt.Date(p.JoinDate)</dd>
+                <dt>Days present / absent</dt><dd>@p.DaysPresent / @p.DaysAbsent <span class="text-muted small">(of @Model.WorkingDays standard days)</span></dd>
+            </dl>
+        </div>
+    </div>
+
+    <div class="row g-0 border rounded overflow-hidden">
+        <div class="col-sm-6 border-end">
+            <table class="table table-sm mb-0">
+                <thead class="table-light"><tr><th>Earnings</th><th class="text-end">Amount</th></tr></thead>
+                <tbody>
+                    <tr><td>Basic salary</td><td class="text-end">@Fmt.Money(p.BasicSalary, 2)</td></tr>
+                    <tr><td>Allowances</td><td class="text-end">@Fmt.Money(p.Allowances, 2)</td></tr>
+                    <tr><td>Overtime</td><td class="text-end">@Fmt.Money(p.Overtime, 2)</td></tr>
+                </tbody>
+                <tfoot><tr><td>Gross earnings</td><td class="text-end">@Fmt.Money(gross, 2)</td></tr></tfoot>
+            </table>
+        </div>
+        <div class="col-sm-6">
+            <table class="table table-sm mb-0">
+                <thead class="table-light"><tr><th>Deductions</th><th class="text-end">Amount</th></tr></thead>
+                <tbody>
+                    <tr><td>Absence (@p.DaysAbsent day@(p.DaysAbsent == 1 ? "" : "s") × @Fmt.Money(Model.DailyRate, 2))</td><td class="text-end">@Fmt.Money(Math.Min(p.Deductions, p.DaysAbsent * Model.DailyRate), 2)</td></tr>
+                    <tr><td>Other deductions</td><td class="text-end">@Fmt.Money(Math.Max(0, p.Deductions - p.DaysAbsent * Model.DailyRate), 2)</td></tr>
+                    <tr><td>&nbsp;</td><td></td></tr>
+                </tbody>
+                <tfoot><tr><td>Total deductions</td><td class="text-end">@Fmt.Money(p.Deductions, 2)</td></tr></tfoot>
+            </table>
+        </div>
+    </div>
+
+    <div class="d-flex justify-content-between align-items-center mt-4 p-3 rounded" style="background:#f0fdf9;border:1px solid #a7f3d0">
+        <div>
+            <div class="text-muted small text-uppercase fw-600">Net pay</div>
+            <div class="small fst-italic">@Model.AmountInWords</div>
+        </div>
+        <div style="font-size:26px;font-weight:800">@Fmt.Money(p.NetPay, 2)</div>
+    </div>
+
+    <div class="row mt-5 pt-4 text-center small text-muted">
+        <div class="col-4"><div class="border-top pt-2 mx-3">Prepared by</div></div>
+        <div class="col-4"><div class="border-top pt-2 mx-3">Authorised signatory</div></div>
+        <div class="col-4"><div class="border-top pt-2 mx-3">Employee signature</div></div>
+    </div>
+    <div class="text-center text-muted mt-4" style="font-size:11px">This is a computer-generated payslip from PoultryPro · generated @DateTime.Now.ToString("dd MMM yyyy, hh:mm tt")</div>
+</div>

@@ -1,0 +1,221 @@
+@model BiosecurityDetailVm
+@using System.Text.Json
+@{
+    var a = Model.Audit;
+    var p = Model.Previous;
+    var canWrite = User.IsAny(Roles.Health);
+    string Col(string g) => g switch { "A" => "#0d9e75", "B" => "#3b82f6", "C" => "#f59e0b", _ => "#ef4444" };
+    string GradeBadge(string g) => g switch { "A" => "badge-healthy", "B" => "badge-info-soft", "C" => "badge-warning-soft", _ => "badge-danger-soft" };
+    var inv = System.Globalization.CultureInfo.InvariantCulture;
+    var failed = Model.Items.Where(i => !i.Passed).OrderByDescending(i => i.Weight).ThenBy(i => i.Category).ToList();
+    var prevMap = Model.PreviousItems.GroupBy(i => i.Question).ToDictionary(g => g.Key, g => g.First().Passed);
+    var fixedItems = Model.Items.Where(i => i.Passed && prevMap.TryGetValue(i.Question, out var was) && !was).ToList();
+    var regressed = Model.Items.Where(i => !i.Passed && prevMap.TryGetValue(i.Question, out var was) && was).ToList();
+    var delta = p != null ? a.ScorePct - p.ScorePct : (decimal?)null;
+    var lostPts = failed.Sum(i => i.Weight);
+}
+
+<div class="page-head">
+    <div>
+        <a asp-action="Index" asp-route-farmId="@a.FarmId" class="text-xs text-decoration-none"><i class="bi bi-arrow-left me-1"></i>Audits for @a.FarmName</a>
+        <h4 class="mt-1"><i class="bi bi-shield-check text-success me-2"></i>Biosecurity audit — @a.FarmName <span class="badge @GradeBadge(a.Grade) ms-1">Grade @a.Grade</span></h4>
+        <p>@ViewData["Subtitle"]</p>
+    </div>
+    <div class="d-flex gap-2 no-print">
+        <a asp-controller="Farm" asp-action="Detail" asp-route-id="@a.FarmId" class="btn btn-outline-secondary btn-sm"><i class="bi bi-house me-1"></i>Farm profile</a>
+        <button type="button" onclick="window.print()" class="btn btn-outline-secondary btn-sm"><i class="bi bi-printer me-1"></i>Print</button>
+        @if (canWrite)
+        {
+            <a asp-action="Create" asp-route-farmId="@a.FarmId" class="btn btn-primary btn-sm"><i class="bi bi-clipboard2-check me-1"></i>Follow-up audit</a>
+        }
+    </div>
+</div>
+
+<div class="row g-3 mb-3">
+    <div class="col-lg-4">
+        <div class="card h-100">
+            <div class="card-header"><h6><i class="bi bi-bullseye text-success me-2"></i>Overall score</h6></div>
+            <div class="card-body text-center">
+                <div class="score-ring mx-auto mb-3" style="width:150px;height:150px;font-size:34px;color:@Col(a.Grade);background:conic-gradient(@Col(a.Grade) @((a.ScorePct * 3.6m).ToString("0.#", inv))deg, #e5e7eb 0deg);box-shadow:inset 0 0 0 16px #fff">
+                    @a.ScorePct.ToString("0", inv)%
+                </div>
+                <div class="fs-5 fw-600" style="color:@Col(a.Grade)">Grade @a.Grade</div>
+                <div class="text-muted small">@a.Score.ToString("0.#", inv) of @a.MaxScore.ToString("0.#", inv) weighted points</div>
+                <dl class="kv text-start mt-3 mb-0">
+                    <dt>Audit date</dt><dd>@Fmt.Date(a.AuditDate)</dd>
+                    <dt>Auditor</dt><dd>@a.AuditorName</dd>
+                    <dt>Items passed</dt><dd>@(Model.Items.Count - failed.Count) / @Model.Items.Count</dd>
+                    <dt>vs previous</dt>
+                    <dd>
+                        @if (delta.HasValue)
+                        {
+                            <span class="@(delta >= 0 ? "text-success" : "text-danger") fw-600"><i class="bi @(delta >= 0 ? "bi-arrow-up-right" : "bi-arrow-down-right")"></i> @(delta >= 0 ? "+" : "")@delta.Value.ToString("0.0", inv) pts</span>
+                        }
+                        else { <span class="text-muted">first audit</span> }
+                    </dd>
+                </dl>
+                @if (!string.IsNullOrWhiteSpace(a.Notes))
+                {
+                    <div class="info-callout text-start small mt-3 mb-0">@a.Notes</div>
+                }
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card h-100">
+            <div class="card-header"><h6><i class="bi bi-diagram-3 text-primary me-2"></i>Category profile</h6></div>
+            <div class="card-body"><div style="height:300px"><canvas id="radarChart"></canvas></div></div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card h-100">
+            <div class="card-header"><h6><i class="bi bi-bar-chart-steps text-primary me-2"></i>Category scores</h6></div>
+            <div class="card-body">
+                @foreach (var c in Model.Categories)
+                {
+                    var fill = c.Pct < 60 ? "danger" : c.Pct < 75 ? "warning" : "";
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between small">
+                            <span class="fw-600">@c.Category</span>
+                            <span>@c.Score / @c.Max
+                                @if (c.PreviousPct.HasValue)
+                                {
+                                    var d = c.Pct - c.PreviousPct.Value;
+                                    if (d != 0)
+                                    {
+                                        <span class="text-xs ms-1 @(d > 0 ? "text-success" : "text-danger")">(@(d > 0 ? "+" : "")@d.ToString("0", inv)%)</span>
+                                    }
+                                }
+                            </span>
+                        </div>
+                        <div class="prog-bar-wrap"><div class="prog-bar-fill @fill" style="width:@c.Pct.ToString("0.#", inv)%"></div></div>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 mb-3">
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-header"><h6><i class="bi bi-tools text-danger me-2"></i>Corrective actions</h6><span class="text-xs text-muted">@failed.Count gap(s) · @lostPts pts at stake</span></div>
+            <div class="card-body">
+                @if (failed.Count == 0)
+                {
+                    <div class="empty-state"><i class="bi bi-patch-check"></i>All control points passed — no corrective actions required.</div>
+                }
+                else
+                {
+                    <div class="timeline">
+                        @foreach (var f in failed)
+                        {
+                            var priority = f.Weight >= 3 ? "High" : f.Weight == 2 ? "Medium" : "Low";
+                            var wasFailedBefore = prevMap.TryGetValue(f.Question, out var prevPassed) && !prevPassed;
+                            <div class="tl-item">
+                                <div class="tl-dot" style="background:@(f.Weight >= 3 ? "#ef4444" : f.Weight == 2 ? "#f59e0b" : "#64748b")"></div>
+                                <div class="tl-date">@f.Category · <span class="badge @(priority == "High" ? "badge-danger-soft" : priority == "Medium" ? "badge-warning-soft" : "badge-gray")">@priority priority</span>
+                                    @if (wasFailedBefore) { <span class="badge badge-danger-soft ms-1">repeat finding</span> }
+                                </div>
+                                <div class="tl-title">@f.Question</div>
+                                <div class="tl-body">@(string.IsNullOrWhiteSpace(f.Remark) ? "No remark recorded — assign an owner and deadline." : f.Remark) <span class="text-muted">(+@f.Weight pts when fixed)</span></div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-header"><h6><i class="bi bi-arrow-left-right text-primary me-2"></i>Comparison with previous audit</h6></div>
+            <div class="card-body">
+                @if (p == null)
+                {
+                    <div class="empty-state"><i class="bi bi-hourglass"></i>This is the first audit for @a.FarmName — the next audit will be compared against it.</div>
+                }
+                else
+                {
+                    <div class="d-flex gap-3 align-items-center mb-3">
+                        <div class="text-center">
+                            <div class="text-xs text-muted">Previous</div>
+                            <a asp-action="Detail" asp-route-id="@p.Id" class="text-decoration-none"><div class="fs-4 fw-600" style="color:@Col(p.Grade)">@p.ScorePct.ToString("0", inv)% · @p.Grade</div></a>
+                            <div class="text-xs text-muted">@Fmt.Date(p.AuditDate)</div>
+                        </div>
+                        <i class="bi bi-arrow-right fs-4 text-muted"></i>
+                        <div class="text-center">
+                            <div class="text-xs text-muted">This audit</div>
+                            <div class="fs-4 fw-600" style="color:@Col(a.Grade)">@a.ScorePct.ToString("0", inv)% · @a.Grade</div>
+                            <div class="text-xs text-muted">@Fmt.Date(a.AuditDate) (@((a.AuditDate - p.AuditDate).Days) days later)</div>
+                        </div>
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-6"><div class="info-callout small mb-0"><b>@fixedItems.Count</b> item(s) fixed since last audit</div></div>
+                        <div class="col-6"><div class="warn-callout small mb-0"><b>@regressed.Count</b> item(s) regressed</div></div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-sm mb-0">
+                            <thead><tr><th>Control point</th><th class="text-center">Before</th><th class="text-center">Now</th></tr></thead>
+                            <tbody>
+                                @foreach (var i in Model.Items)
+                                {
+                                    var hasPrev = prevMap.TryGetValue(i.Question, out var before);
+                                    var changed = hasPrev && before != i.Passed;
+                                    <tr class="@(changed ? (i.Passed ? "table-success" : "table-danger") : "")">
+                                        <td class="small">@i.Question</td>
+                                        <td class="text-center">@if (!hasPrev) { <span class="text-muted">—</span> } else if (before) { <i class="bi bi-check-circle-fill text-success"></i> } else { <i class="bi bi-x-circle-fill text-danger"></i> }</td>
+                                        <td class="text-center">@if (i.Passed) { <i class="bi bi-check-circle-fill text-success"></i> } else { <i class="bi bi-x-circle-fill text-danger"></i> }</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header"><h6><i class="bi bi-list-check text-primary me-2"></i>Full checklist</h6></div>
+    <div class="table-responsive">
+        <table class="table table-hover mb-0">
+            <thead><tr><th>Category</th><th>Control point</th><th class="text-end">Weight</th><th>Result</th><th>Remark</th></tr></thead>
+            <tbody>
+                @foreach (var i in Model.Items)
+                {
+                    <tr>
+                        <td class="text-nowrap small">@i.Category</td>
+                        <td>@i.Question</td>
+                        <td class="text-end">@i.Weight</td>
+                        <td><span class="badge @(i.Passed ? "badge-healthy" : "badge-danger-soft")">@(i.Passed ? "Pass" : "Fail")</span></td>
+                        <td class="small text-muted">@(i.Remark ?? "—")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+(function () {
+    const cats = @Html.Raw(JsonSerializer.Serialize(Model.Categories.Select(c => new { c.Category, c.Pct, c.PreviousPct })));
+    const datasets = [{
+        label: 'This audit', data: cats.map(c => c.Pct), borderColor: ppColors.green, backgroundColor: ppColors.greenSoft,
+        pointBackgroundColor: ppColors.green, borderWidth: 2
+    }];
+    if (cats.some(c => c.PreviousPct !== null)) datasets.push({
+        label: 'Previous audit', data: cats.map(c => c.PreviousPct), borderColor: ppColors.slate, backgroundColor: 'rgba(100,116,139,.05)',
+        borderDash: [5, 4], pointBackgroundColor: ppColors.slate, borderWidth: 1.5
+    });
+    new Chart(document.getElementById('radarChart'), {
+        type: 'radar', data: { labels: cats.map(c => c.Category), datasets },
+        options: {
+            scales: { r: { min: 0, max: 100, ticks: { stepSize: 25, backdropColor: 'transparent', callback: v => v + '%' }, pointLabels: { font: { size: 11 } } } },
+            plugins: { legend: { position: 'bottom' }, tooltip: { callbacks: { label: c => c.dataset.label + ': ' + (c.raw ?? 0) + '%' } } }
+        }
+    });
+})();
+</script>
+}

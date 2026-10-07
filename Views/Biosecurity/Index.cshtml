@@ -1,0 +1,198 @@
+@model BiosecurityIndexVm
+@using System.Text.Json
+@{
+    var canWrite = User.IsAny(Roles.Health);
+    string Tone(string g) => g switch { "A" => "tone-green", "B" => "tone-blue", "C" => "tone-amber", _ => "tone-red" };
+    string GradeBadge(string g) => g switch { "A" => "badge-healthy", "B" => "badge-info-soft", "C" => "badge-warning-soft", _ => "badge-danger-soft" };
+
+    var audits = Model.Audits;
+    var chronological = audits.OrderBy(a => a.AuditDate).ThenBy(a => a.Id).ToList();
+    var dates = chronological.Select(a => a.AuditDate.Date).Distinct().OrderBy(d => d).ToList();
+    var labels = dates.Select(d => d.ToString("dd MMM yy")).ToList();
+    var series = chronological.GroupBy(a => a.FarmName).OrderBy(g => g.Key).Select(g => new
+    {
+        label = g.Key,
+        data = dates.Select(d => g.Where(a => a.AuditDate.Date == d).Select(a => (decimal?)a.ScorePct).LastOrDefault()).ToList()
+    }).ToList();
+
+    var avgPct = audits.Count > 0 ? audits.Average(a => a.ScorePct) : 0m;
+    var latestAvg = Model.LatestPerFarm.Count > 0 ? Model.LatestPerFarm.Average(a => a.ScorePct) : 0m;
+    var belowC = Model.LatestPerFarm.Count(a => a.Grade == "D" || a.Grade == "C");
+    var gradeDist = new[] { "A", "B", "C", "D" }.Select(g => Model.LatestPerFarm.Count(a => a.Grade == g)).ToList();
+    var auditedFarmIds = Model.LatestPerFarm.Select(a => a.FarmId).ToHashSet();
+    var neverAudited = Model.Farms.Where(f => f.IsActive && !auditedFarmIds.Contains(f.Id) && (!Model.FarmId.HasValue || f.Id == Model.FarmId)).ToList();
+    var overdue = Model.LatestPerFarm.Where(a => (DateTime.Today - a.AuditDate.Date).TotalDays > 90).ToList();
+}
+
+<div class="page-head">
+    <div>
+        <h4><i class="bi bi-shield-check text-success me-2"></i>Biosecurity Audits</h4>
+        <p>@ViewData["Subtitle"]</p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+        <form method="get" class="d-flex gap-2">
+            <select name="farmId" class="form-select form-select-sm" onchange="this.form.submit()" style="min-width:200px">
+                <option value="">All farms</option>
+                @foreach (var f in Model.Farms)
+                {
+                    <option value="@f.Id" selected="@(Model.FarmId == f.Id)">@f.Name</option>
+                }
+            </select>
+        </form>
+        @if (canWrite)
+        {
+            <a asp-action="Create" asp-route-farmId="@Model.FarmId" class="btn btn-primary btn-sm"><i class="bi bi-clipboard2-check me-1"></i>New audit</a>
+        }
+    </div>
+</div>
+
+<div class="stat-grid">
+    <div class="stat-tile tone-green">
+        <div class="st-label">Current average score</div>
+        <div class="st-value">@(Model.LatestPerFarm.Count > 0 ? Fmt.Pct(latestAvg, 1) : "—")</div>
+        <div class="st-sub">latest audit of @Model.LatestPerFarm.Count farm(s)</div>
+        <div class="st-icon"><i class="bi bi-speedometer2"></i></div>
+    </div>
+    <div class="stat-tile tone-blue">
+        <div class="st-label">Audits recorded</div>
+        <div class="st-value">@audits.Count</div>
+        <div class="st-sub">all-time mean @(audits.Count > 0 ? Fmt.Pct(avgPct, 1) : "—")</div>
+        <div class="st-icon"><i class="bi bi-clipboard2-data"></i></div>
+    </div>
+    <div class="stat-tile @(belowC > 0 ? "tone-amber" : "tone-slate")">
+        <div class="st-label">Farms graded C or D</div>
+        <div class="st-value">@belowC</div>
+        <div class="st-sub">need a corrective-action plan</div>
+        <div class="st-icon"><i class="bi bi-exclamation-triangle"></i></div>
+    </div>
+    <div class="stat-tile @(overdue.Count + neverAudited.Count > 0 ? "tone-red" : "tone-violet")">
+        <div class="st-label">Audit due</div>
+        <div class="st-value">@(overdue.Count + neverAudited.Count)</div>
+        <div class="st-sub">last audit &gt; 90 days ago or never audited</div>
+        <div class="st-icon"><i class="bi bi-calendar-x"></i></div>
+    </div>
+</div>
+
+@if (Model.LatestPerFarm.Count > 0 || neverAudited.Count > 0)
+{
+    <div class="section-header"><div class="section-title">Latest grade per farm</div></div>
+    <div class="stat-grid">
+        @foreach (var a in Model.LatestPerFarm)
+        {
+            var days = (int)(DateTime.Today - a.AuditDate.Date).TotalDays;
+            <a asp-action="Detail" asp-route-id="@a.Id" class="stat-tile @Tone(a.Grade) text-decoration-none">
+                <div class="st-label">@a.FarmName</div>
+                <div class="st-value">Grade @a.Grade <span class="fs-6 fw-normal">· @Fmt.Pct(a.ScorePct, 0)</span></div>
+                <div class="st-sub">@Fmt.Date(a.AuditDate) (@(days == 0 ? "today" : days + " d ago")) · @a.FailedCount gap(s)</div>
+                <div class="st-icon"><i class="bi @(a.Grade is "A" or "B" ? "bi-shield-fill-check" : "bi-shield-exclamation")"></i></div>
+            </a>
+        }
+        @foreach (var f in neverAudited)
+        {
+            <div class="stat-tile tone-slate">
+                <div class="st-label">@f.Name</div>
+                <div class="st-value">—</div>
+                <div class="st-sub">never audited
+                    @if (canWrite) { <a asp-action="Create" asp-route-farmId="@f.Id" class="ms-1">audit now</a> }
+                </div>
+                <div class="st-icon"><i class="bi bi-shield"></i></div>
+            </div>
+        }
+    </div>
+}
+
+@if (audits.Count == 0)
+{
+    <div class="card"><div class="card-body">
+        <div class="empty-state"><i class="bi bi-shield-check"></i>No biosecurity audits recorded@(Model.FarmId.HasValue ? " for this farm" : "") yet.
+            @if (canWrite) { <div class="mt-2"><a asp-action="Create" asp-route-farmId="@Model.FarmId" class="btn btn-primary btn-sm">Start the first audit</a></div> }
+        </div>
+    </div></div>
+}
+else
+{
+    <div class="row g-3 mb-3">
+        <div class="col-lg-8">
+            <div class="card h-100">
+                <div class="card-header"><h6><i class="bi bi-graph-up text-primary me-2"></i>Score trend by farm</h6><span class="text-xs text-muted">dashed lines: grade thresholds</span></div>
+                <div class="card-body"><div style="height:300px"><canvas id="trendChart"></canvas></div></div>
+            </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="card h-100">
+                <div class="card-header"><h6><i class="bi bi-pie-chart text-success me-2"></i>Current grade distribution</h6></div>
+                <div class="card-body"><div style="height:220px"><canvas id="gradeChart"></canvas></div>
+                    <div class="info-callout mt-3 text-xs mb-0">Grade bands: <b>A</b> ≥ 90% · <b>B</b> ≥ 75% · <b>C</b> ≥ 60% · <b>D</b> below 60% of the weighted maximum (29 points).</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <h6><i class="bi bi-list-check text-primary me-2"></i>Audit history</h6>
+            <input data-table-filter="#tblAudits" class="form-control form-control-sm" style="max-width:220px" placeholder="Filter…" />
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover mb-0" id="tblAudits">
+                <thead><tr><th>Date</th><th>Farm</th><th>Auditor</th><th class="text-end">Score</th><th style="min-width:160px">Score %</th><th>Grade</th><th class="text-end">Gaps</th><th>Notes</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var a in audits)
+                    {
+                        var fill = a.ScorePct < 60 ? "danger" : a.ScorePct < 75 ? "warning" : "";
+                        <tr>
+                            <td class="text-nowrap">@Fmt.Date(a.AuditDate)</td>
+                            <td><a asp-controller="Farm" asp-action="Detail" asp-route-id="@a.FarmId" class="text-decoration-none">@a.FarmName</a></td>
+                            <td>@a.AuditorName</td>
+                            <td class="text-end mono">@a.Score.ToString("0.#") / @a.MaxScore.ToString("0.#")</td>
+                            <td>
+                                <div class="d-flex align-items-center gap-2">
+                                    <div class="prog-bar-wrap flex-grow-1"><div class="prog-bar-fill @fill" style="width:@Math.Min(100, a.ScorePct).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)%"></div></div>
+                                    <span class="text-xs fw-600">@Fmt.Pct(a.ScorePct, 0)</span>
+                                </div>
+                            </td>
+                            <td><span class="badge @GradeBadge(a.Grade)">@a.Grade</span></td>
+                            <td class="text-end">@(a.FailedCount > 0 ? a.FailedCount.ToString() : "—")</td>
+                            <td class="text-xs text-muted">@a.Notes</td>
+                            <td class="text-end"><a asp-action="Detail" asp-route-id="@a.Id" class="btn btn-xs btn-outline-secondary">Open</a></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+@section Scripts {
+@if (audits.Count > 0)
+{
+<script>
+(function () {
+    const labels = @Html.Raw(JsonSerializer.Serialize(labels));
+    const series = @Html.Raw(JsonSerializer.Serialize(series));
+    const datasets = series.map((s, i) => ({
+        label: s.label, data: s.data, spanGaps: true, tension: .25, borderWidth: 2, pointRadius: 4,
+        borderColor: ppColors.series[i % ppColors.series.length], backgroundColor: ppColors.series[i % ppColors.series.length]
+    }));
+    [[90, 'A', ppColors.green], [75, 'B', ppColors.blue], [60, 'C', ppColors.amber]].forEach(t => datasets.push({
+        label: 'Grade ' + t[1] + ' (' + t[0] + '%)', data: labels.map(() => t[0]), borderColor: t[2], borderDash: [5, 4],
+        borderWidth: 1, pointRadius: 0, fill: false
+    }));
+    new Chart(document.getElementById('trendChart'), {
+        type: 'line', data: { labels, datasets },
+        options: {
+            scales: { y: { min: 0, max: 100, ticks: { callback: v => v + '%' } } },
+            plugins: { legend: { position: 'bottom', labels: { filter: i => !i.text.startsWith('Grade') } },
+                       tooltip: { callbacks: { label: c => c.dataset.label + ': ' + (c.parsed.y ?? 0).toFixed(1) + '%' } } }
+        }
+    });
+    new Chart(document.getElementById('gradeChart'), {
+        type: 'doughnut',
+        data: { labels: ['A', 'B', 'C', 'D'], datasets: [{ data: @Html.Raw(JsonSerializer.Serialize(gradeDist)),
+                backgroundColor: [ppColors.green, ppColors.blue, ppColors.amber, ppColors.red] }] },
+        options: { cutout: '62%', plugins: { legend: { position: 'right' } } }
+    });
+})();
+</script>
+}
+}

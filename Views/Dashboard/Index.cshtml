@@ -1,0 +1,412 @@
+@model DashboardVm
+@{
+    var s = Model.Summary;
+    var isViewer = User.IsInRole(Roles.Viewer);
+    var canBatch = User.IsAny(Roles.AdminOrManager + "," + Roles.Veterinarian);
+    var canOps = User.IsAny(Roles.Operations);
+    var canFinance = User.IsAny(Roles.Finance);
+    var mortDelta = Model.MortalityToday - Model.MortalityYesterday;
+    var trendMort14 = Model.Trend.Sum(t => t.Mortality);
+    var stressed = Model.Climate.Count(c => c.Band is "Alert" or "Danger" or "Emergency" && !c.Stale);
+    var hour = DateTime.Now.Hour;
+    var greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+    string BandBadge(string band) => band switch
+    {
+        "Normal" => "badge-healthy", "Alert" => "badge-warning-soft",
+        "Danger" or "Emergency" => "badge-danger-soft", _ => "badge-gray"
+    };
+    string ToneBg(string tone) => tone switch
+    {
+        "green" => "background:#e1f5ee;color:#0a7d5e", "blue" => "background:#dbeafe;color:#1d4ed8",
+        "amber" => "background:#fef3c7;color:#b45309", "violet" => "background:#ede9fe;color:#6d28d9",
+        "red" => "background:#fee2e2;color:#b91c1c", _ => "background:#f1f5f9;color:#475569"
+    };
+}
+
+@section Head {
+<style>
+    .dash-ic { width: 32px; height: 32px; border-radius: 9px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 15px; }
+    .dash-row { display: flex; gap: 10px; align-items: flex-start; padding: 10px 0; border-bottom: 1px solid var(--border); }
+    .dash-row:last-child { border-bottom: 0; }
+    .climate-tile { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; height: 100%; }
+    .climate-tile .thi { font-size: 22px; font-weight: 800; line-height: 1; }
+</style>
+}
+
+<div class="page-head">
+    <div>
+        <h4>@greeting, @User.FullName()</h4>
+        <p>
+            @Fmt.Num(s.TotalBirds) live birds in @s.ActiveBatches active flock(s) across @s.TotalFarms farm(s)
+            @if (Model.OpenAlertCount > 0) { <span>· <a asp-controller="Alerts" asp-action="Index" class="text-danger fw-600">@Model.OpenAlertCount open alert(s)</a></span> }
+        </p>
+    </div>
+    @if (!isViewer)
+    {
+        <div class="d-flex gap-2 flex-wrap">
+            @if (canOps)
+            {
+                <a asp-controller="Visit" asp-action="Create" class="btn btn-sm btn-primary"><i class="bi bi-geo-alt me-1"></i>New visit</a>
+            }
+            @if (canBatch)
+            {
+                <a asp-controller="Batch" asp-action="Create" class="btn btn-sm btn-outline-secondary"><i class="bi bi-plus-lg me-1"></i>Place flock</a>
+                <a asp-controller="Health" asp-action="Index" class="btn btn-sm btn-outline-secondary"><i class="bi bi-heart-pulse me-1"></i>Health</a>
+            }
+            @if (canFinance)
+            {
+                <a asp-controller="Market" asp-action="Create" class="btn btn-sm btn-outline-secondary"><i class="bi bi-cart-plus me-1"></i>New order</a>
+            }
+            <a asp-controller="Tasks" asp-action="Index" class="btn btn-sm btn-outline-secondary"><i class="bi bi-kanban me-1"></i>Tasks</a>
+        </div>
+    }
+</div>
+
+<!-- KPI ROW -->
+<div class="stat-grid">
+    <div class="stat-tile tone-green">
+        <div class="st-label">Live birds</div>
+        <div class="st-value">@Fmt.Num(s.TotalBirds)</div>
+        <div class="st-sub">@s.ActiveBatches active flocks · @s.TotalFarms farms</div>
+        <div class="st-icon"><i class="bi bi-feather"></i></div>
+    </div>
+    <div class="stat-tile tone-blue">
+        <div class="st-label">Avg FCR (meat)</div>
+        <div class="st-value">@(Model.AvgFcr > 0 ? Model.AvgFcr.ToString("0.00") : "—")</div>
+        <div class="st-sub">@Model.MeatFlocks broiler / Sonali flock(s)</div>
+        <div class="st-icon"><i class="bi bi-arrow-left-right"></i></div>
+    </div>
+    <div class="stat-tile tone-violet">
+        <div class="st-label">Avg EPEF</div>
+        <div class="st-value">@(Model.AvgEpef > 0 ? Model.AvgEpef.ToString("0") : "—")</div>
+        <div class="st-sub">@(Model.AvgEpef >= 350 ? "excellent" : Model.AvgEpef >= 300 ? "good" : Model.AvgEpef > 0 ? "below target (300+)" : "no meat flocks")</div>
+        <div class="st-icon"><i class="bi bi-speedometer2"></i></div>
+    </div>
+    <div class="stat-tile @(Model.MortalityToday > Model.MortalityYesterday && Model.MortalityToday > 0 ? "tone-red" : "tone-slate")">
+        <div class="st-label">Mortality today</div>
+        <div class="st-value">@Model.MortalityToday</div>
+        <div class="st-sub">
+            @if (mortDelta != 0) { <span class="@(mortDelta > 0 ? "text-danger" : "text-success")"><i class="bi @(mortDelta > 0 ? "bi-arrow-up" : "bi-arrow-down")"></i>@Math.Abs(mortDelta)</span> }
+            vs yesterday · @trendMort14 in 14 d
+        </div>
+        <div class="st-icon"><i class="bi bi-heartbreak"></i></div>
+    </div>
+    <div class="stat-tile tone-amber">
+        <div class="st-label">Eggs @(Model.EggsDate?.Date == DateTime.Today ? "today" : "latest day")</div>
+        <div class="st-value">@Fmt.Num(Model.EggsToday)</div>
+        <div class="st-sub">@(Model.EggsDate.HasValue ? $"hen-day {Model.HenDayPct:0.#}% · {Model.EggsDate:dd MMM}" : "no laying records")</div>
+        <div class="st-icon"><i class="bi bi-egg"></i></div>
+    </div>
+    @if (Model.ShowFinance)
+    {
+        <div class="stat-tile tone-green">
+            <div class="st-label">Revenue (month)</div>
+            <div class="st-value">@Fmt.MoneyShort(s.MonthlyRevenue)</div>
+            <div class="st-sub">expenses @Fmt.MoneyShort(s.MonthlyExpenses)</div>
+            <div class="st-icon"><i class="bi bi-cash-stack"></i></div>
+        </div>
+        <div class="stat-tile @(s.NetProfit >= 0 ? "tone-blue" : "tone-red")">
+            <div class="st-label">Net profit (month)</div>
+            <div class="st-value">@Fmt.MoneyShort(s.NetProfit)</div>
+            <div class="st-sub">margin @Fmt.Pct(s.ProfitMargin)</div>
+            <div class="st-icon"><i class="bi bi-graph-up-arrow"></i></div>
+        </div>
+    }
+    else
+    {
+        <div class="stat-tile @(s.OverdueVaccinations > 0 ? "tone-red" : "tone-green")">
+            <div class="st-label">Overdue vaccinations</div>
+            <div class="st-value">@s.OverdueVaccinations</div>
+            <div class="st-sub">@(s.OverdueVaccinations > 0 ? "action required" : "all up to date")</div>
+            <div class="st-icon"><i class="bi bi-shield-exclamation"></i></div>
+        </div>
+    }
+</div>
+
+<div class="row g-4 mb-4">
+    <!-- ALERTS -->
+    <div class="col-lg-5">
+        <div class="card h-100">
+            <div class="card-header">
+                <h6><i class="bi bi-bell-fill text-warning me-2"></i>Open alerts</h6>
+                <a asp-controller="Alerts" asp-action="Index" class="btn btn-xs btn-outline-secondary">All @(Model.OpenAlertCount > 0 ? "(" + Model.OpenAlertCount + ")" : "")</a>
+            </div>
+            <div class="card-body py-1">
+                @if (Model.Alerts.Count == 0)
+                {
+                    <div class="empty-state py-4"><i class="bi bi-check-circle-fill text-success"></i>No open alerts — all rules are within limits.</div>
+                }
+                else
+                {
+                    foreach (var a in Model.Alerts)
+                    {
+                        <div class="dash-row">
+                            <i class="bi @Fmt.SeverityIcon(a.Severity) fs-5"></i>
+                            <div class="flex-grow-1" style="min-width:0">
+                                <div class="fw-600" style="font-size:13px">
+                                    @if (!string.IsNullOrEmpty(a.Link)) { <a href="@Url.Content("~" + a.Link)" class="text-decoration-none">@a.Title</a> } else { <span>@a.Title</span> }
+                                </div>
+                                @if (!string.IsNullOrEmpty(a.Message)) { <div class="text-xs text-muted text-truncate" title="@a.Message">@a.Message</div> }
+                                <div class="text-xs text-muted">@(a.FarmName ?? "All farms") · @Fmt.Ago(a.CreatedAt)</div>
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+    </div>
+
+    <!-- LIVE CLIMATE -->
+    <div class="col-lg-7">
+        <div class="card h-100">
+            <div class="card-header">
+                <h6><i class="bi bi-thermometer-sun text-primary me-2"></i>Live shed climate</h6>
+                <span class="text-xs text-muted">@(stressed > 0 ? stressed + " shed(s) heat-stressed · " : "")THI warn @Model.ThiWarning.ToString("0") / crit @Model.ThiCritical.ToString("0")</span>
+            </div>
+            <div class="card-body">
+                @if (Model.Climate.Count == 0)
+                {
+                    <div class="empty-state py-4"><i class="bi bi-cpu"></i>No sensor readings yet. <a asp-controller="Sensors" asp-action="Index">Set up IoT sensors</a> to see live THI per shed.</div>
+                }
+                else
+                {
+                    <div class="row g-2">
+                        @foreach (var c in Model.Climate.Take(6))
+                        {
+                            <div class="col-sm-6 col-xl-4">
+                                <a asp-controller="Sensors" asp-action="Readings" asp-route-farmId="@c.FarmId" class="text-decoration-none text-reset">
+                                    <div class="climate-tile @(c.Stale ? "opacity-50" : "")">
+                                        <div class="d-flex justify-content-between align-items-start">
+                                            <div class="text-xs fw-600 text-truncate">@c.FarmName@(string.IsNullOrEmpty(c.ShedNo) ? "" : " · " + c.ShedNo)</div>
+                                            <span class="badge @BandBadge(c.Band)">@c.Band</span>
+                                        </div>
+                                        <div class="d-flex align-items-end gap-2 mt-2">
+                                            <div class="thi">@(c.Thi?.ToString("0") ?? "—")</div>
+                                            <div class="text-xs text-muted mb-1">THI</div>
+                                        </div>
+                                        <div class="text-xs text-muted mt-1">
+                                            @(c.TemperatureC?.ToString("0.0") ?? "—") °C · @(c.HumidityPercent?.ToString("0") ?? "—") % RH@(c.AmmoniaPpm.HasValue ? $" · NH₃ {c.AmmoniaPpm:0}" : "")
+                                        </div>
+                                        <div class="text-xs @(c.Stale ? "text-danger" : "text-muted")">@(c.Stale ? "stale · " : "")@Fmt.Ago(c.ReadingTime)</div>
+                                    </div>
+                                </a>
+                            </div>
+                        }
+                    </div>
+                    @if (Model.Climate.Count > 6)
+                    {
+                        <div class="text-end mt-2"><a asp-controller="Sensors" asp-action="Index" class="text-xs">+@(Model.Climate.Count - 6) more devices →</a></div>
+                    }
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4 mb-4">
+    @if (Model.ShowFinance)
+    {
+        <div class="col-lg-6">
+            <div class="card h-100">
+                <div class="card-header"><h6><i class="bi bi-bar-chart-fill text-primary me-2"></i>Revenue vs expenses (6 months)</h6>
+                    @if (canFinance) { <a asp-controller="Finance" asp-action="Index" class="btn btn-xs btn-outline-secondary">Finance</a> }</div>
+                <div class="card-body">
+                    @if (Model.Monthly.Count == 0)
+                    {
+                        <div class="empty-state py-4"><i class="bi bi-bar-chart"></i>No transactions recorded yet.</div>
+                    }
+                    else
+                    {
+                        <div style="height:260px"><canvas id="revenueChart"></canvas></div>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+    <div class="@(Model.ShowFinance ? "col-lg-6" : "col-12")">
+        <div class="card h-100">
+            <div class="card-header"><h6><i class="bi bi-activity text-primary me-2"></i>Farm-wide mortality &amp; feed (14 days)</h6>
+                <a asp-controller="DailyRecord" asp-action="Index" class="btn btn-xs btn-outline-secondary">Daily records</a></div>
+            <div class="card-body">
+                @if (Model.Trend.All(t => t.Mortality == 0 && t.FeedKg == 0))
+                {
+                    <div class="empty-state py-4"><i class="bi bi-journal-x"></i>No daily records in the last 14 days.</div>
+                }
+                else
+                {
+                    <div style="height:260px"><canvas id="trendChart"></canvas></div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4 mb-4">
+    <!-- FLOCK PERFORMANCE -->
+    <div class="col-xl-8">
+        <div class="card h-100">
+            <div class="card-header">
+                <h6><i class="bi bi-collection text-success me-2"></i>Active flock performance</h6>
+                <a asp-controller="Batch" asp-action="Index" class="btn btn-xs btn-outline-secondary">All batches</a>
+            </div>
+            @if (Model.Flocks.Count == 0)
+            {
+                <div class="empty-state"><i class="bi bi-collection"></i>No active flocks.@if (canBatch) { <span> <a asp-controller="Batch" asp-action="Create">Place a flock</a>.</span> }</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover table-sm mb-0">
+                        <thead><tr><th>Batch</th><th>Farm</th><th class="text-end">Age</th><th class="text-end">Birds</th><th class="text-end">Livability</th><th class="text-end">FCR</th><th class="text-end">EPEF</th><th class="text-end">Weight vs std</th><th>Status</th></tr></thead>
+                        <tbody>
+                        @foreach (var f in Model.Flocks)
+                        {
+                            var b = f.Batch;
+                            var dev = f.WeightVsStdPct;
+                            <tr>
+                                <td><a asp-controller="Batch" asp-action="Detail" asp-route-id="@b.Id" class="fw-600">@b.BatchCode</a><div class="text-xs text-muted">@b.Breed · @b.BatchType</div></td>
+                                <td class="text-xs">@b.FarmName</td>
+                                <td class="text-end">@b.AgeInDays d</td>
+                                <td class="text-end">@Fmt.Num(b.CurrentCount)</td>
+                                <td class="text-end @(b.LivabilityPct < 95 ? "text-danger" : "")">@Fmt.Pct(b.LivabilityPct)</td>
+                                <td class="text-end">@(b.FCR > 0 ? b.FCR.ToString("0.00") : "—")@if (f.StdFcr.HasValue && b.FCR > 0) { <div class="text-xs text-muted">std @f.StdFcr.Value.ToString("0.00")</div> }</td>
+                                <td class="text-end">@(b.EPEF > 0 ? b.EPEF.ToString("0") : "—")</td>
+                                <td class="text-end">
+                                    @((b.AverageWeightKg * 1000).ToString("N0")) g
+                                    @if (dev.HasValue)
+                                    {
+                                        <div class="text-xs @(dev < -10 ? "text-danger" : dev < -3 ? "text-warning" : "text-success")">@(dev > 0 ? "+" : "")@dev.Value.ToString("0.0")% vs @((f.StdWeightKg!.Value * 1000).ToString("N0")) g</div>
+                                    }
+                                </td>
+                                <td><span class="badge @Fmt.Badge(b.HealthStatus)">@b.HealthStatus</span></td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+
+    <!-- UPCOMING -->
+    <div class="col-xl-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <h6><i class="bi bi-calendar-week text-primary me-2"></i>Next 7 days</h6>
+                <a asp-controller="Calendar" asp-action="Index" class="btn btn-xs btn-outline-secondary">Calendar</a>
+            </div>
+            <div class="card-body py-1" style="max-height:440px;overflow:auto">
+                @if (Model.Upcoming.Count == 0)
+                {
+                    <div class="empty-state py-4"><i class="bi bi-calendar-check"></i>Nothing scheduled for the coming week.</div>
+                }
+                else
+                {
+                    foreach (var u in Model.Upcoming.Take(12))
+                    {
+                        <div class="dash-row">
+                            <div class="dash-ic" style="@ToneBg(u.Tone)"><i class="bi @u.Icon"></i></div>
+                            <div class="flex-grow-1" style="min-width:0">
+                                <div class="fw-600 text-truncate" style="font-size:13px">
+                                    @if (!string.IsNullOrEmpty(u.Url)) { <a href="@Url.Content("~" + u.Url)" class="text-decoration-none">@u.Title</a> } else { <span>@u.Title</span> }
+                                </div>
+                                <div class="text-xs text-muted text-truncate">@u.Kind · @u.Sub</div>
+                            </div>
+                            <div class="text-xs text-nowrap @(u.Date.Date == DateTime.Today ? "fw-600 text-primary" : "text-muted")">@(u.Date.Date == DateTime.Today ? "Today" : u.Date.Date == DateTime.Today.AddDays(1) ? "Tomorrow" : u.Date.ToString("ddd dd MMM"))</div>
+                        </div>
+                    }
+                    @if (Model.Upcoming.Count > 12)
+                    {
+                        <div class="text-center py-2"><a asp-controller="Calendar" asp-action="Index" class="text-xs">+@(Model.Upcoming.Count - 12) more in the calendar</a></div>
+                    }
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- FARM CAPACITY -->
+<div class="card">
+    <div class="card-header">
+        <h6><i class="bi bi-geo-alt-fill text-primary me-2"></i>Farm capacity</h6>
+        <div class="d-flex gap-2">
+            <a asp-controller="Farm" asp-action="Map" class="btn btn-xs btn-outline-secondary"><i class="bi bi-map me-1"></i>Map</a>
+            <a asp-controller="Farm" asp-action="Index" class="btn btn-xs btn-outline-secondary">Manage</a>
+        </div>
+    </div>
+    <div class="card-body">
+        @if (Model.Farms.Count == 0)
+        {
+            <div class="empty-state py-3"><i class="bi bi-house"></i>No farms registered.</div>
+        }
+        else
+        {
+            <div class="row g-3">
+                @foreach (var farm in Model.Farms)
+                {
+                    var pct = (int)Math.Min(farm.UtilizationPercent, 100);
+                    var barClass = pct > 90 ? "danger" : pct > 75 ? "warning" : "";
+                    <div class="col-md-6 col-xl-4">
+                        <div class="d-flex justify-content-between mb-1">
+                            <a asp-controller="Farm" asp-action="Detail" asp-route-id="@farm.Id" class="fw-600 text-decoration-none" style="font-size:13px">@farm.Name</a>
+                            <span class="text-xs text-muted">@Fmt.Num(farm.CurrentStock) / @Fmt.Num(farm.Capacity)</span>
+                        </div>
+                        <div class="prog-bar-wrap"><div class="prog-bar-fill @barClass" style="width:@pct%"></div></div>
+                        <div class="d-flex justify-content-between mt-1">
+                            <span class="text-xs text-muted">@farm.UtilizationPercent.ToString("0")% utilized</span>
+                            <span class="badge @(farm.CertStatus == "Valid" ? "badge-healthy" : "badge-warning-soft")" style="font-size:10px">@farm.CertStatus</span>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@section Scripts {
+<script>
+(function () {
+    const C = window.ppColors || { green: '#0d9e75', red: '#ef4444', amber: '#f59e0b', blue: '#3b82f6' };
+    const rev = document.getElementById('revenueChart');
+    if (rev) {
+        const monthly = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Monthly.Select(m => new { l = m.MonthName + " " + m.Year, r = m.Revenue, e = m.Expenses })));
+        new Chart(rev, {
+            type: 'bar',
+            data: {
+                labels: monthly.map(m => m.l),
+                datasets: [
+                    { label: 'Revenue', data: monthly.map(m => m.r), backgroundColor: 'rgba(13,158,117,0.75)', borderRadius: 6 },
+                    { label: 'Expenses', data: monthly.map(m => m.e), backgroundColor: 'rgba(239,68,68,0.6)', borderRadius: 6 }
+                ]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { position: 'top' }, tooltip: { callbacks: { label: c => c.dataset.label + ': ' + (window.ppMoney ? ppMoney(c.parsed.y) : '৳' + c.parsed.y.toLocaleString()) } } },
+                scales: { y: { ticks: { callback: v => '৳' + (v / 1000).toFixed(0) + 'K' } } }
+            }
+        });
+    }
+    const tr = document.getElementById('trendChart');
+    if (tr) {
+        const trend = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Trend.Select(t => new { d = t.Day.ToString("dd MMM"), m = t.Mortality, f = t.FeedKg })));
+        new Chart(tr, {
+            data: {
+                labels: trend.map(t => t.d),
+                datasets: [
+                    { type: 'bar', label: 'Mortality (birds)', data: trend.map(t => t.m), backgroundColor: 'rgba(239,68,68,0.65)', borderRadius: 4, yAxisID: 'y' },
+                    { type: 'line', label: 'Feed (kg)', data: trend.map(t => t.f), borderColor: C.amber, backgroundColor: C.amber, tension: .3, pointRadius: 2, yAxisID: 'y1' }
+                ]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+                plugins: { legend: { position: 'top' } },
+                scales: {
+                    y: { beginAtZero: true, title: { display: true, text: 'birds' }, ticks: { precision: 0 } },
+                    y1: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'kg feed' } }
+                }
+            }
+        });
+    }
+})();
+</script>
+}

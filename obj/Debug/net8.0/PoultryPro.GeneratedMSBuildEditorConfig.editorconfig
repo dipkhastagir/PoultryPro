@@ -1,0 +1,576 @@
+is_global = true
+build_property.TargetFramework = net8.0
+build_property.TargetFrameworkIdentifier = .NETCoreApp
+build_property.TargetFrameworkVersion = v8.0
+build_property.TargetPlatformMinVersion = 
+build_property.UsingMicrosoftNETSdkWeb = true
+build_property.ProjectTypeGuids = 
+build_property.InvariantGlobalization = 
+build_property.PlatformNeutralAssembly = 
+build_property.EnforceExtendedAnalyzerRules = 
+build_property.EntryPointFilePath = 
+build_property._SupportedPlatformList = Linux,macOS,Windows
+build_property.RootNamespace = PoultryPro
+build_property.RootNamespace = PoultryPro
+build_property.ProjectDir = E:\.NET Project\PoultryPro\
+build_property.EnableComHosting = 
+build_property.EnableGeneratedComInterfaceComImportInterop = 
+build_property.RazorLangVersion = 8.0
+build_property.SupportLocalizedComponentNames = 
+build_property.GenerateRazorMetadataSourceChecksumAttributes = true
+build_property.MSBuildProjectDirectory = E:\.NET Project\PoultryPro
+build_property._RazorSourceGeneratorDebug = 
+build_property.EffectiveAnalysisLevelStyle = 8.0
+build_property.EnableCodeStyleSeverity = 
+
+[E:/.NET Project/PoultryPro/Views/Account/AccessDenied.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcQWNjb3VudFxBY2Nlc3NEZW5pZWQuY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Account/ChangePassword.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcQWNjb3VudFxDaGFuZ2VQYXNzd29yZC5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Account/Login.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcQWNjb3VudFxMb2dpbi5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Account/Profile.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcQWNjb3VudFxQcm9maWxlLmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Alerts/Index.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcQWxlcnRzXEluZGV4LmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Analytics/Anomalies.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcQW5hbHl0aWNzXEFub21hbGllcy5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Analytics/Benchmark.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcQW5hbHl0aWNzXEJlbmNobWFyay5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Analytics/Carbon.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcQW5hbHl0aWNzXENhcmJvbi5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Analytics/Efficiency.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcQW5hbHl0aWNzXEVmZmljaWVuY3kuY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Analytics/FeedForecast.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcQW5hbHl0aWNzXEZlZWRGb3JlY2FzdC5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Analytics/Forecast.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcQW5hbHl0aWNzXEZvcmVjYXN0LmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Analytics/GrowthCurve.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcQW5hbHl0aWNzXEdyb3d0aEN1cnZlLmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Analytics/HeatStress.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcQW5hbHl0aWNzXEhlYXRTdHJlc3MuY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Analytics/Index.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcQW5hbHl0aWNzXEluZGV4LmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Analytics/RiskScore.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcQW5hbHl0aWNzXFJpc2tTY29yZS5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Analytics/_AnalyticsNav.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcQW5hbHl0aWNzXF9BbmFseXRpY3NOYXYuY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Attendance/Index.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcQXR0ZW5kYW5jZVxJbmRleC5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Attendance/Report.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcQXR0ZW5kYW5jZVxSZXBvcnQuY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/AuditLog/Index.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcQXVkaXRMb2dcSW5kZXguY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Batch/Close.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcQmF0Y2hcQ2xvc2UuY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Batch/Create.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcQmF0Y2hcQ3JlYXRlLmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Batch/Detail.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcQmF0Y2hcRGV0YWlsLmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Batch/Edit.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcQmF0Y2hcRWRpdC5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Batch/Index.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcQmF0Y2hcSW5kZXguY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Biosecurity/Create.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcQmlvc2VjdXJpdHlcQ3JlYXRlLmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Biosecurity/Detail.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcQmlvc2VjdXJpdHlcRGV0YWlsLmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Biosecurity/Index.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcQmlvc2VjdXJpdHlcSW5kZXguY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Bird/Create.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcQmlyZFxDcmVhdGUuY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Bird/Detail.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcQmlyZFxEZXRhaWwuY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Bird/Edit.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcQmlyZFxFZGl0LmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Bird/Index.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcQmlyZFxJbmRleC5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/BreedStandards/Form.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcQnJlZWRTdGFuZGFyZHNcRm9ybS5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/BreedStandards/Index.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcQnJlZWRTdGFuZGFyZHNcSW5kZXguY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Calendar/Index.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcQ2FsZW5kYXJcSW5kZXguY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/DailyRecord/Create.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcRGFpbHlSZWNvcmRcQ3JlYXRlLmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/DailyRecord/Edit.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcRGFpbHlSZWNvcmRcRWRpdC5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/DailyRecord/Index.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcRGFpbHlSZWNvcmRcSW5kZXguY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Dashboard/Index.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcRGFzaGJvYXJkXEluZGV4LmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/DiseaseLibrary/Detail.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcRGlzZWFzZUxpYnJhcnlcRGV0YWlsLmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/DiseaseLibrary/Form.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcRGlzZWFzZUxpYnJhcnlcRm9ybS5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/DiseaseLibrary/Index.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcRGlzZWFzZUxpYnJhcnlcSW5kZXguY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/EggProduction/Form.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcRWdnUHJvZHVjdGlvblxGb3JtLmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/EggProduction/Index.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcRWdnUHJvZHVjdGlvblxJbmRleC5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Employee/Create.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcRW1wbG95ZWVcQ3JlYXRlLmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Employee/Detail.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcRW1wbG95ZWVcRGV0YWlsLmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Employee/Edit.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcRW1wbG95ZWVcRWRpdC5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Employee/Index.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcRW1wbG95ZWVcSW5kZXguY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Employee/_EmployeeForm.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcRW1wbG95ZWVcX0VtcGxveWVlRm9ybS5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Farm/Create.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcRmFybVxDcmVhdGUuY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Farm/Detail.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcRmFybVxEZXRhaWwuY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Farm/Edit.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcRmFybVxFZGl0LmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Farm/Index.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcRmFybVxJbmRleC5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Farm/Map.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcRmFybVxNYXAuY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Farm/_FarmForm.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcRmFybVxfRmFybUZvcm0uY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Farm/_PickMapScripts.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcRmFybVxfUGlja01hcFNjcmlwdHMuY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Feed/Form.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcRmVlZFxGb3JtLmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Feed/Index.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcRmVlZFxJbmRleC5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Feed/Planner.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcRmVlZFxQbGFubmVyLmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/FieldOfficers/Create.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcRmllbGRPZmZpY2Vyc1xDcmVhdGUuY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/FieldOfficers/Detail.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcRmllbGRPZmZpY2Vyc1xEZXRhaWwuY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/FieldOfficers/Edit.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcRmllbGRPZmZpY2Vyc1xFZGl0LmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/FieldOfficers/Index.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcRmllbGRPZmZpY2Vyc1xJbmRleC5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Finance/Budget.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcRmluYW5jZVxCdWRnZXQuY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Finance/BudgetForm.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcRmluYW5jZVxCdWRnZXRGb3JtLmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Finance/Create.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcRmluYW5jZVxDcmVhdGUuY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Finance/Index.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcRmluYW5jZVxJbmRleC5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Finance/ProfitLoss.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcRmluYW5jZVxQcm9maXRMb3NzLmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Health/AddDisease.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcSGVhbHRoXEFkZERpc2Vhc2UuY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Health/AddVaccination.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcSGVhbHRoXEFkZFZhY2NpbmF0aW9uLmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Health/EditDisease.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcSGVhbHRoXEVkaXREaXNlYXNlLmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Health/EditVaccination.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcSGVhbHRoXEVkaXRWYWNjaW5hdGlvbi5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Health/Index.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcSGVhbHRoXEluZGV4LmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Home/About.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcSG9tZVxBYm91dC5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Home/Error.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcSG9tZVxFcnJvci5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Inventory/Create.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcSW52ZW50b3J5XENyZWF0ZS5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Inventory/Index.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcSW52ZW50b3J5XEluZGV4LmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Inventory/Ledger.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcSW52ZW50b3J5XExlZGdlci5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Market/AddCustomer.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcTWFya2V0XEFkZEN1c3RvbWVyLmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Market/Create.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcTWFya2V0XENyZWF0ZS5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Market/CustomerDetail.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcTWFya2V0XEN1c3RvbWVyRGV0YWlsLmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Market/Customers.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcTWFya2V0XEN1c3RvbWVycy5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Market/Detail.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcTWFya2V0XERldGFpbC5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Market/Edit.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcTWFya2V0XEVkaXQuY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Market/EditCustomer.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcTWFya2V0XEVkaXRDdXN0b21lci5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Market/Index.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcTWFya2V0XEluZGV4LmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Market/Invoice.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcTWFya2V0XEludm9pY2UuY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Market/_CustomerForm.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcTWFya2V0XF9DdXN0b21lckZvcm0uY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Market/_OrderForm.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcTWFya2V0XF9PcmRlckZvcm0uY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Payroll/Edit.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcUGF5cm9sbFxFZGl0LmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Payroll/Index.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcUGF5cm9sbFxJbmRleC5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Payroll/Payslip.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcUGF5cm9sbFxQYXlzbGlwLmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Purchase/Create.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcUHVyY2hhc2VcQ3JlYXRlLmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Purchase/Detail.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcUHVyY2hhc2VcRGV0YWlsLmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Purchase/Index.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcUHVyY2hhc2VcSW5kZXguY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Reports/Farm.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcUmVwb3J0c1xGYXJtLmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Reports/FieldOps.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcUmVwb3J0c1xGaWVsZE9wcy5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Reports/Financial.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcUmVwb3J0c1xGaW5hbmNpYWwuY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Reports/Health.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcUmVwb3J0c1xIZWFsdGguY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Reports/HR.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcUmVwb3J0c1xIUi5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Reports/Index.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcUmVwb3J0c1xJbmRleC5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Reports/Inventory.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcUmVwb3J0c1xJbnZlbnRvcnkuY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Reports/Market.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcUmVwb3J0c1xNYXJrZXQuY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Reports/Production.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcUmVwb3J0c1xQcm9kdWN0aW9uLmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Research/Correlations.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcUmVzZWFyY2hcQ29ycmVsYXRpb25zLmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Research/DataDictionary.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcUmVzZWFyY2hcRGF0YURpY3Rpb25hcnkuY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Research/Index.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcUmVzZWFyY2hcSW5kZXguY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Search/Index.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcU2VhcmNoXEluZGV4LmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Sensors/ApiDocs.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcU2Vuc29yc1xBcGlEb2NzLmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Sensors/Form.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcU2Vuc29yc1xGb3JtLmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Sensors/Index.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcU2Vuc29yc1xJbmRleC5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Sensors/Readings.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcU2Vuc29yc1xSZWFkaW5ncy5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Settings/Index.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcU2V0dGluZ3NcSW5kZXguY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Setup/Index.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcU2V0dXBcSW5kZXguY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Shared/_AuthLayout.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcU2hhcmVkXF9BdXRoTGF5b3V0LmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Shared/_Layout.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcU2hhcmVkXF9MYXlvdXQuY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Shared/_ValidationScriptsPartial.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcU2hhcmVkXF9WYWxpZGF0aW9uU2NyaXB0c1BhcnRpYWwuY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Supplier/Detail.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcU3VwcGxpZXJcRGV0YWlsLmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Supplier/Form.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcU3VwcGxpZXJcRm9ybS5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Supplier/Index.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcU3VwcGxpZXJcSW5kZXguY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Tasks/Form.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcVGFza3NcRm9ybS5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Tasks/Index.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcVGFza3NcSW5kZXguY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Trace/Index.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcVHJhY2VcSW5kZXguY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Trace/Public.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcVHJhY2VcUHVibGljLmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Trace/Timeline.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcVHJhY2VcVGltZWxpbmUuY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Trials/Detail.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcVHJpYWxzXERldGFpbC5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Trials/Form.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcVHJpYWxzXEZvcm0uY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Trials/Index.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcVHJpYWxzXEluZGV4LmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Users/Form.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcVXNlcnNcRm9ybS5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Users/Index.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcVXNlcnNcSW5kZXguY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/VaccineSchedule/Detail.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcVmFjY2luZVNjaGVkdWxlXERldGFpbC5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/VaccineSchedule/Form.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcVmFjY2luZVNjaGVkdWxlXEZvcm0uY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/VaccineSchedule/Index.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcVmFjY2luZVNjaGVkdWxlXEluZGV4LmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Visit/Create.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcVmlzaXRcQ3JlYXRlLmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Visit/Detail.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcVmlzaXRcRGV0YWlsLmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Visit/Edit.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcVmlzaXRcRWRpdC5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/Visit/Index.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcVmlzaXRcSW5kZXguY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/_ViewImports.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcX1ZpZXdJbXBvcnRzLmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[E:/.NET Project/PoultryPro/Views/_ViewStart.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcX1ZpZXdTdGFydC5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 

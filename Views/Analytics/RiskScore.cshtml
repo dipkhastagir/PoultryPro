@@ -1,0 +1,204 @@
+@model RiskScoreVm
+@using System.Text.Json
+@using System.Globalization
+@{
+    var ci = CultureInfo.InvariantCulture;
+    var flocks = Model.Flocks;
+    var compNames = flocks.FirstOrDefault()?.Components.Select(c => c.Name).ToList() ?? new List<string>();
+    var compWeights = flocks.FirstOrDefault()?.Components.Select(c => c.Weight).ToList() ?? new List<double>();
+    var chartLabels = flocks.Select(f => f.BatchCode).ToList();
+    var chartSets = compNames.Select((n, i) => new { label = n, data = flocks.Select(f => f.Components.ElementAtOrDefault(i)?.Points ?? 0).ToList() }).ToList();
+    var critical = flocks.Count(f => f.Score >= 65);
+    var high = flocks.Count(f => f.Score >= 45 && f.Score < 65);
+    var mean = flocks.Count > 0 ? flocks.Average(f => f.Score) : 0;
+    // which component contributes most across all flocks
+    var driver = compNames.Select((n, i) => (Name: n, Total: flocks.Sum(f => f.Components.ElementAtOrDefault(i)?.Points ?? 0)))
+                          .OrderByDescending(x => x.Total).FirstOrDefault();
+}
+
+<partial name="_AnalyticsNav" />
+
+<div class="page-head">
+    <div>
+        <h4>Composite flock risk index (0–100)</h4>
+        <p>Six evidence-based components, each scaled 0–1 and multiplied by a fixed weight. Every point on this page can be traced back to its evidence.</p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+        <span class="chip"><span class="badge badge-healthy">0–24 Low</span></span>
+        <span class="chip"><span class="badge badge-info-soft">25–44 Moderate</span></span>
+        <span class="chip"><span class="badge badge-warning-soft">45–64 High</span></span>
+        <span class="chip"><span class="badge badge-danger-soft">65+ Critical</span></span>
+    </div>
+</div>
+
+<div class="stat-grid">
+    <div class="stat-tile tone-blue">
+        <div class="st-label">Flocks scored</div>
+        <div class="st-value">@flocks.Count</div>
+        <div class="st-sub">all active flocks</div>
+        <div class="st-icon"><i class="bi bi-radar"></i></div>
+    </div>
+    <div class="stat-tile tone-red">
+        <div class="st-label">Critical</div>
+        <div class="st-value">@critical</div>
+        <div class="st-sub">score ≥ 65 — act today</div>
+        <div class="st-icon"><i class="bi bi-exclamation-octagon"></i></div>
+    </div>
+    <div class="stat-tile tone-amber">
+        <div class="st-label">High</div>
+        <div class="st-value">@high</div>
+        <div class="st-sub">score 45–64 — act this week</div>
+        <div class="st-icon"><i class="bi bi-exclamation-triangle"></i></div>
+    </div>
+    <div class="stat-tile tone-violet">
+        <div class="st-label">Mean score</div>
+        <div class="st-value">@(flocks.Count > 0 ? mean.ToString("0.0", ci) : "—")</div>
+        <div class="st-sub">@(driver.Name != null && driver.Total > 0 ? $"top driver overall: {driver.Name}" : "no material risk drivers")</div>
+        <div class="st-icon"><i class="bi bi-speedometer2"></i></div>
+    </div>
+</div>
+
+@if (flocks.Count == 0)
+{
+    <div class="card"><div class="empty-state"><i class="bi bi-radar"></i>No active flocks to score. Place a flock to start risk monitoring.</div></div>
+}
+else
+{
+    <div class="row g-3 mb-3">
+        <div class="col-xl-7">
+            <div class="card h-100">
+                <div class="card-header"><h6 class="mb-0"><i class="bi bi-bar-chart-steps me-1"></i>Score decomposition by component</h6></div>
+                <div class="card-body"><div style="height:@(Math.Max(220, 46 * flocks.Count + 80))px"><canvas id="chRisk"></canvas></div></div>
+            </div>
+        </div>
+        <div class="col-xl-5">
+            <div class="card h-100">
+                <div class="card-header"><h6 class="mb-0"><i class="bi bi-calculator me-1"></i>Methodology</h6></div>
+                <div class="card-body">
+                    <div class="formula mb-2">Risk = Σ wₖ · fₖ,   fₖ ∈ [0, 1],   Σ wₖ = 100</div>
+                    <div class="table-responsive mb-2">
+                        <table class="table table-sm mb-0 text-xs">
+                            <thead><tr><th>Component</th><th class="text-end">w</th><th>Scaling fₖ</th></tr></thead>
+                            <tbody>
+                                <tr><td>Mortality trend</td><td class="text-end">25</td><td>0.6·[EWMA signal in 7 d] + 0.4·min(max z₇/5, 1)</td></tr>
+                                <tr><td>Heat stress (THI)</td><td class="text-end">20</td><td>(THI − 75) ÷ (@((Model.Crit + 5).ToString("0", ci)) − 75); ×0.5 for meat chicks &lt; 21 d</td></tr>
+                                <tr><td>Overdue vaccinations</td><td class="text-end">15</td><td>0.5·n + 0.05·max days overdue</td></tr>
+                                <tr><td>Active disease</td><td class="text-end">15</td><td>0.5·open cases + 5·(affected ÷ birds)</td></tr>
+                                <tr><td>Growth lag vs standard</td><td class="text-end">15</td><td>% below standard weight ÷ 20</td></tr>
+                                <tr><td>Farm biosecurity</td><td class="text-end">10</td><td>(100 − audit %) ÷ 50; no audit = 0.5</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="info-callout text-xs">
+                        <b>How to read this.</b> Each coloured segment is the points one component adds; the full bar is the score.
+                        All fₖ are clipped to [0, 1]. Weights reflect the relative weight of evidence for flock losses in commercial broiler
+                        production and can be argued in a paper — they are deliberately fixed and transparent rather than learned, so the index
+                        is explainable to farmers and can later be validated against actual outcomes (e.g. as a predictor of final mortality).
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h6 class="mb-0"><i class="bi bi-table me-1"></i>Flocks ranked high → low</h6>
+            <input type="search" class="form-control form-control-sm" placeholder="Filter…" data-table-filter="#tblRisk" style="width:180px" />
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle" id="tblRisk">
+                <thead>
+                    <tr><th>Flock</th><th style="min-width:170px">Score</th>
+                        @for (int i = 0; i < compNames.Count; i++) { <th class="text-end text-nowrap" title="@compNames[i]">@compNames[i].Split(' ')[0] <span class="text-xs text-muted">/@compWeights[i].ToString("0", ci)</span></th> }
+                        <th>Recommendation</th></tr>
+                </thead>
+                <tbody>
+                @foreach (var f in flocks)
+                {
+                    <tr>
+                        <td class="text-nowrap">
+                            <a asp-controller="Batch" asp-action="Detail" asp-route-id="@f.BatchId" class="fw-600 text-decoration-none">@f.BatchCode</a>
+                            <div class="text-xs text-muted">@f.FarmName · @f.Breed · day @f.AgeInDays · @Fmt.Num(f.Birds) birds</div>
+                        </td>
+                        <td>
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <span class="fw-600" style="font-size:16px;color:@AnalyticsUi.RiskColor(f.Score)">@f.Score.ToString("0.0", ci)</span>
+                                <span class="badge @AnalyticsUi.RiskBadge(f.Score)">@f.Level</span>
+                            </div>
+                            <div class="risk-bar"><div class="marker" style="left:calc(@Math.Clamp(f.Score, 0, 100).ToString("0.0", ci)% - 2px)"></div></div>
+                        </td>
+                        @foreach (var c in f.Components)
+                        {
+                            <td class="text-end @(c.Fraction >= 0.5 ? "text-danger fw-600" : c.Fraction > 0 ? "" : "text-muted")" title="@c.Evidence">@c.Points.ToString("0.0", ci)</td>
+                        }
+                        <td class="small" style="min-width:220px">@f.Recommendation</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+        <div class="card-body border-top">
+            <div class="section-header mb-2"><h6 class="section-title">Evidence behind each component</h6><span class="text-xs text-muted">hover a number in the table for the same text</span></div>
+            <div class="row g-3">
+                @foreach (var f in flocks)
+                {
+                    <div class="col-md-6 col-xl-4">
+                        <div class="border rounded-3 p-3 h-100">
+                            <div class="d-flex justify-content-between mb-2">
+                                <span class="fw-600">@f.BatchCode <span class="text-xs text-muted">@f.FarmName</span></span>
+                                <span class="badge @AnalyticsUi.RiskBadge(f.Score)">@f.Score.ToString("0.0", ci)</span>
+                            </div>
+                            @foreach (var c in f.Components)
+                            {
+                                var pct = c.Weight > 0 ? c.Points / c.Weight * 100 : 0;
+                                <div class="mb-2">
+                                    <div class="d-flex justify-content-between text-xs">
+                                        <span><i class="bi @c.Icon me-1"></i>@c.Name</span>
+                                        <span class="fw-600">@c.Points.ToString("0.0", ci) / @c.Weight.ToString("0", ci)</span>
+                                    </div>
+                                    <div class="prog-bar-wrap"><div class="prog-bar-fill @(pct >= 60 ? "danger" : pct >= 30 ? "warning" : "")" style="width:@pct.ToString("0", ci)%"></div></div>
+                                    <div class="text-xs text-muted">@c.Evidence</div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@section Scripts {
+<script>
+(function () {
+    const el = document.getElementById('chRisk');
+    if (!el) return;
+    const labels = @Html.Raw(JsonSerializer.Serialize(chartLabels));
+    const sets = @Html.Raw(JsonSerializer.Serialize(chartSets));
+    const palette = [ppColors.red, ppColors.amber, ppColors.blue, ppColors.violet, ppColors.green, ppColors.slate];
+    new Chart(el, {
+        type: 'bar',
+        data: { labels, datasets: sets.map((s, i) => ({ label: s.label, data: s.data, backgroundColor: palette[i % palette.length], borderRadius: 2, barThickness: 22 })) },
+        options: {
+            indexAxis: 'y',
+            interaction: { mode: 'index', intersect: false },
+            scales: {
+                x: { stacked: true, min: 0, max: 100, title: { display: true, text: 'Risk points (0–100)' } },
+                y: { stacked: true, grid: { display: false } }
+            },
+            plugins: { tooltip: { callbacks: { footer: items => 'Total: ' + items.reduce((a, b) => a + b.raw, 0).toFixed(1) } } }
+        },
+        plugins: [{
+            id: 'levels', beforeDatasetsDraw(chart) {
+                const { ctx, chartArea: a, scales: { x } } = chart;
+                [25, 45, 65].forEach(v => {
+                    const px = x.getPixelForValue(v);
+                    ctx.save(); ctx.setLineDash([4, 4]); ctx.strokeStyle = '#94a3b8';
+                    ctx.beginPath(); ctx.moveTo(px, a.top); ctx.lineTo(px, a.bottom); ctx.stroke(); ctx.restore();
+                });
+            }
+        }]
+    });
+})();
+</script>
+}

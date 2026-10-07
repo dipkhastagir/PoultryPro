@@ -1,0 +1,188 @@
+@model List<Farm>
+@using PoultryPro.Models.ViewModels
+@{
+    ViewData["Title"] = "Farm Management";
+    var certs = ((ViewBag.Certifications as IEnumerable<Certification>)?.ToList() ?? new List<Certification>());
+    var bench = ViewBag.Benchmarks as Dictionary<int, FarmBenchmarkRow> ?? new();
+    var zones = ((ViewBag.AllZones as IEnumerable<string>)?.ToList() ?? new List<string>());
+    var types = ((ViewBag.AllTypes as IEnumerable<string>)?.ToList() ?? new List<string>());
+    string? selType = ViewBag.Type; string? selZone = ViewBag.Zone;
+    var canEdit = User.IsAny(Roles.AdminOrManager);
+    var totalCap = Model.Sum(f => f.Capacity);
+    var totalStock = Model.Sum(f => f.CurrentStock);
+    var expiring = certs.Where(c => Model.Any(f => f.Id == c.FarmId) && c.EffectiveStatus != "Valid").ToList();
+    string TypeTone(string t) => t switch { "Broiler" => "badge-healthy", "Layer" => "badge-warning-soft", "Sonali" => "badge-info-soft", _ => "badge-gray" };
+}
+
+<div class="page-head">
+    <div>
+        <h4>Farms</h4>
+        <p>@Model.Count farm(s) · @Fmt.Num(totalStock) birds housed of @Fmt.Num(totalCap) capacity</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a asp-action="Map" class="btn btn-sm btn-outline-secondary"><i class="bi bi-map me-1"></i>Farm map</a>
+        @if (canEdit)
+        {
+            <a asp-action="Create" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg me-1"></i>Add Farm</a>
+        }
+    </div>
+</div>
+
+<div class="stat-grid">
+    <div class="stat-tile tone-blue">
+        <div class="st-label">Farms</div>
+        <div class="st-value">@Model.Count</div>
+        <div class="st-sub">@Model.Sum(f => f.ShedCount) sheds in total</div>
+        <div class="st-icon"><i class="bi bi-house-gear"></i></div>
+    </div>
+    <div class="stat-tile tone-green">
+        <div class="st-label">Utilization</div>
+        <div class="st-value">@(totalCap > 0 ? Fmt.Pct((decimal)totalStock / totalCap * 100) : "—")</div>
+        <div class="st-sub">@Fmt.Num(totalStock) / @Fmt.Num(totalCap) birds</div>
+        <div class="st-icon"><i class="bi bi-pie-chart"></i></div>
+    </div>
+    <div class="stat-tile tone-violet">
+        <div class="st-label">Active flocks</div>
+        <div class="st-value">@bench.Values.Where(b => Model.Any(f => f.Id == b.FarmId)).Sum(b => b.ActiveBatches)</div>
+        <div class="st-sub">across all listed farms</div>
+        <div class="st-icon"><i class="bi bi-collection"></i></div>
+    </div>
+    <div class="stat-tile @(expiring.Any() ? "tone-amber" : "tone-slate")">
+        <div class="st-label">Certificates needing action</div>
+        <div class="st-value">@expiring.Count</div>
+        <div class="st-sub">expired or expiring in 30 days</div>
+        <div class="st-icon"><i class="bi bi-patch-exclamation"></i></div>
+    </div>
+</div>
+
+<form method="get" class="filter-bar">
+    <div>
+        <label class="form-label">Farm type</label>
+        <select name="type" class="form-select" onchange="this.form.submit()">
+            <option value="">All types</option>
+            @foreach (var t in types) { <option value="@t" selected="@(selType == t)">@t</option> }
+        </select>
+    </div>
+    <div>
+        <label class="form-label">Zone</label>
+        <select name="zone" class="form-select" onchange="this.form.submit()">
+            <option value="">All zones</option>
+            @foreach (var z in zones) { <option value="@z" selected="@(selZone == z)">@z</option> }
+        </select>
+    </div>
+    @if (!string.IsNullOrEmpty(selType) || !string.IsNullOrEmpty(selZone))
+    {
+        <a asp-action="Index" class="btn btn-sm btn-outline-secondary">Clear</a>
+    }
+</form>
+
+@if (!Model.Any())
+{
+    <div class="card"><div class="empty-state">
+        <i class="bi bi-house-gear"></i>
+        <div class="fw-600">No farms found</div>
+        <div class="text-xs">@(string.IsNullOrEmpty(selType) && string.IsNullOrEmpty(selZone) ? "Add your first farm to start tracking flocks." : "No farm matches the selected filters.")</div>
+        @if (canEdit && string.IsNullOrEmpty(selType) && string.IsNullOrEmpty(selZone))
+        {
+            <a asp-action="Create" class="btn btn-primary btn-sm mt-3"><i class="bi bi-plus-lg me-1"></i>Add Farm</a>
+        }
+    </div></div>
+}
+
+<div class="row g-3 mb-4">
+    @foreach (var farm in Model)
+    {
+        var pct = (int)Math.Min(100, farm.UtilizationPercent);
+        bench.TryGetValue(farm.Id, out var bm);
+        <div class="col-md-6 col-xl-4">
+            <div class="farm-cap-card h-100 d-flex flex-column">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <div>
+                        <a asp-action="Detail" asp-route-id="@farm.Id" class="text-reset text-decoration-none" style="font-size:14.5px;font-weight:600">@farm.Name</a>
+                        <div style="font-size:12px;color:var(--text-muted)"><i class="bi bi-geo-alt me-1"></i>@farm.Location</div>
+                        <div class="d-flex flex-wrap gap-1 mt-1">
+                            <span class="badge @TypeTone(farm.FarmType)">@farm.FarmType</span>
+                            @if (!string.IsNullOrEmpty(farm.Zone)) { <span class="chip"><i class="bi bi-signpost"></i>@farm.Zone</span> }
+                            @if (farm.Latitude.HasValue) { <span class="chip" title="GPS recorded"><i class="bi bi-pin-map"></i>GPS</span> }
+                        </div>
+                    </div>
+                    <span class="badge @Fmt.Badge(farm.CertStatus)">@farm.CertStatus</span>
+                </div>
+                <div class="row g-2 mb-2 text-center">
+                    <div class="col-3">
+                        <div style="font-size:11px;color:var(--text-muted)">Capacity</div>
+                        <div style="font-size:13.5px;font-weight:600">@farm.Capacity.ToString("N0")</div>
+                    </div>
+                    <div class="col-3">
+                        <div style="font-size:11px;color:var(--text-muted)">Current</div>
+                        <div style="font-size:13.5px;font-weight:600">@farm.CurrentStock.ToString("N0")</div>
+                    </div>
+                    <div class="col-3">
+                        <div style="font-size:11px;color:var(--text-muted)">Flocks</div>
+                        <div style="font-size:13.5px;font-weight:600">@(bm?.ActiveBatches ?? 0)</div>
+                    </div>
+                    <div class="col-3">
+                        <div style="font-size:11px;color:var(--text-muted)">Sheds</div>
+                        <div style="font-size:13.5px;font-weight:600">@farm.ShedCount</div>
+                    </div>
+                </div>
+                @if (bm != null && bm.TotalBatches > 0)
+                {
+                    <div class="d-flex justify-content-between text-xs text-muted mb-2">
+                        <span>FCR <strong class="text-body">@(bm.AvgFCR > 0 ? bm.AvgFCR.ToString("0.00") : "—")</strong></span>
+                        <span>EPEF <strong class="text-body">@(bm.AvgEPEF > 0 ? bm.AvgEPEF.ToString("0") : "—")</strong></span>
+                        <span>Mort. <strong class="text-body">@Fmt.Pct(bm.AvgMortalityRate)</strong></span>
+                        <span>Bio <strong class="text-body">@(bm.LastBiosecurityPct.HasValue ? Fmt.Pct(bm.LastBiosecurityPct.Value, 0) : "—")</strong></span>
+                    </div>
+                }
+                <div class="prog-bar-wrap mb-1 mt-auto">
+                    <div class="prog-bar-fill @(pct > 90 ? "danger" : pct > 75 ? "warning" : "")" style="width:@pct%"></div>
+                </div>
+                <div class="d-flex justify-content-between align-items-center mt-2">
+                    <small class="text-muted">@((int)farm.UtilizationPercent)% utilized</small>
+                    <div class="d-flex gap-1">
+                        <a asp-action="Detail" asp-route-id="@farm.Id" class="btn btn-xs btn-outline-primary" title="Open profile"><i class="bi bi-eye"></i></a>
+                        @if (canEdit)
+                        {
+                            <a asp-action="Edit" asp-route-id="@farm.Id" class="btn btn-xs btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></a>
+                            <form asp-action="Delete" method="post" style="display:inline" data-confirm="Remove this farm? Its history is kept but it will no longer be listed.">
+                                <input type="hidden" name="id" value="@farm.Id" />
+                                @Html.AntiForgeryToken()
+                                <button class="btn btn-xs btn-outline-danger" title="Remove"><i class="bi bi-trash"></i></button>
+                            </form>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@if (certs.Any())
+{
+    <div class="card">
+        <div class="card-header">
+            <h6><i class="bi bi-patch-check text-primary me-2"></i>Certifications</h6>
+            <input class="form-control form-control-sm" style="max-width:220px" placeholder="Filter…" data-table-filter="#tblCerts" />
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover mb-0" id="tblCerts">
+                <thead><tr><th>Farm</th><th>Certificate</th><th>Authority</th><th>No.</th><th>Issued</th><th>Expiry</th><th>Status</th></tr></thead>
+                <tbody>
+                    @foreach (var c in certs)
+                    {
+                        <tr>
+                            <td><a asp-action="Detail" asp-route-id="@c.FarmId">@c.FarmName</a></td>
+                            <td class="fw-600">@c.CertName</td>
+                            <td>@(c.IssuingAuthority ?? "—")</td>
+                            <td class="mono text-xs">@(c.CertificateNo ?? "—")</td>
+                            <td>@Fmt.Date(c.IssuedDate)</td>
+                            <td>@Fmt.Date(c.ExpiryDate) <span class="text-xs text-muted">(@(c.DaysToExpiry >= 0 ? $"{c.DaysToExpiry} d left" : $"{-c.DaysToExpiry} d ago"))</span></td>
+                            <td><span class="badge @Fmt.Badge(c.EffectiveStatus)">@c.EffectiveStatus</span></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}

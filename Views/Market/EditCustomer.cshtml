@@ -1,0 +1,20 @@
+@model Customer
+<div class="page-head">
+    <div>
+        <h4><i class="bi bi-person-gear text-primary me-2"></i>Edit Customer</h4>
+        <p>@Model.Name · customer since @Fmt.Date(Model.CreatedAt == default ? null : Model.CreatedAt)</p>
+    </div>
+    <a asp-action="CustomerDetail" asp-route-id="@Model.Id" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Statement</a>
+</div>
+<div class="row g-4">
+    <div class="col-lg-8">
+        <div class="form-card"><partial name="_CustomerForm" model="Model" /></div>
+    </div>
+    <div class="col-lg-4">
+        <div class="info-callout small">
+            <i class="bi bi-info-circle me-1"></i>Changing the name or contact details updates every invoice and statement for this customer,
+            including past orders. Lowering the credit limit below the current outstanding balance flags the account as
+            <strong>over limit</strong> on the customer list.
+        </div>
+    </div>
+</div>

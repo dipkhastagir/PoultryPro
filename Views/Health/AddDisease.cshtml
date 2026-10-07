@@ -1,0 +1,54 @@
+@model DiseaseCase
+@{
+    ViewData["Title"] = "Log Disease Case";
+    var batches = ViewBag.Batches as IEnumerable<Batch> ?? new List<Batch>();
+}
+<div class="row justify-content-center"><div class="col-lg-6">
+<div class="form-card">
+    <h6 class="fw-semibold mb-4"><i class="bi bi-virus text-danger me-2"></i>Log Disease Case</h6>
+    <form asp-action="AddDisease" method="post">
+        @Html.AntiForgeryToken()
+        <div class="row g-3">
+            <div class="col-12">
+                <label class="form-label">Batch *</label>
+                <select asp-for="BatchId" class="form-select" required>
+                    <option value="">-- Select Batch --</option>
+                    @foreach (var b in batches)
+                    { <option value="@b.Id">@b.BatchCode — @b.Breed (@b.FarmName)</option> }
+                </select>
+            </div>
+            <div class="col-md-8">
+                <label class="form-label">Disease Name *</label>
+                <input asp-for="DiseaseName" class="form-control" placeholder="e.g. Respiratory Syndrome" required />
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Reported Date *</label>
+                <input asp-for="ReportedDate" type="date" class="form-control" required />
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Affected Count</label>
+                <input asp-for="AffectedCount" type="number" class="form-control" min="0" />
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Status</label>
+                <select asp-for="Status" class="form-select">
+                    <option>Active</option><option>Under Treatment</option>
+                    <option>Monitoring</option><option>Resolved</option>
+                </select>
+            </div>
+            <div class="col-12">
+                <label class="form-label">Treatment</label>
+                <textarea asp-for="Treatment" class="form-control" rows="2" placeholder="e.g. Enrofloxacin 10mg/L water"></textarea>
+            </div>
+            <div class="col-12">
+                <label class="form-label">Notes</label>
+                <textarea asp-for="Notes" class="form-control" rows="2"></textarea>
+            </div>
+        </div>
+        <div class="d-flex gap-2 mt-4">
+            <button type="submit" class="btn btn-danger"><i class="bi bi-check-lg me-1"></i>Log Case</button>
+            <a asp-action="Index" class="btn btn-outline-secondary">Cancel</a>
+        </div>
+    </form>
+</div>
+</div></div>

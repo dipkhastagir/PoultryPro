@@ -1,0 +1,188 @@
+@model FeedPlannerVm
+@using System.Text.Json
+@{
+    var inv = System.Globalization.CultureInfo.InvariantCulture;
+    var rows = Model.Rows;
+    var totalDaily = rows.Sum(r => r.DailyKg);
+    var totalWeekly = rows.Sum(r => r.WeeklyKg);
+    var totalCost = rows.Sum(r => r.CostPerDay);
+    var birds = rows.Sum(r => r.Birds);
+    var missing = rows.Count(r => r.Formulation == null);
+    var switching = rows.Where(r => r.DaysToNextStage is >= 0 and <= 7).OrderBy(r => r.DaysToNextStage).ToList();
+}
+
+<div class="page-head">
+    <div>
+        <a asp-action="Index" class="text-xs text-decoration-none no-print"><i class="bi bi-arrow-left me-1"></i>Feed formulations</a>
+        <h4 class="mt-1"><i class="bi bi-calendar2-week text-success me-2"></i>Feed Planner</h4>
+        <p>@ViewData["Subtitle"] · as of @Fmt.Date(DateTime.Today)</p>
+    </div>
+    <div class="d-flex gap-2 no-print">
+        @if (rows.Count > 0)
+        {
+            <a asp-action="PlannerCsv" class="btn btn-outline-secondary btn-sm"><i class="bi bi-download me-1"></i>CSV</a>
+            <button type="button" onclick="window.print()" class="btn btn-outline-secondary btn-sm"><i class="bi bi-printer me-1"></i>Print</button>
+        }
+        <a asp-controller="Inventory" asp-action="Index" class="btn btn-outline-secondary btn-sm"><i class="bi bi-box-seam me-1"></i>Feed stock</a>
+    </div>
+</div>
+
+<div class="stat-grid">
+    <div class="stat-tile tone-green">
+        <div class="st-label">Daily requirement</div>
+        <div class="st-value">@Fmt.Num(totalDaily, 0) kg</div>
+        <div class="st-sub">@Fmt.Num(Math.Ceiling(totalDaily / 50m), 0) × 50 kg bags per day</div>
+        <div class="st-icon"><i class="bi bi-basket"></i></div>
+    </div>
+    <div class="stat-tile tone-blue">
+        <div class="st-label">Weekly requirement</div>
+        <div class="st-value">@Fmt.Num(totalWeekly / 1000m, 2) t</div>
+        <div class="st-sub">@Fmt.Num(Model.Totals.Sum(t => t.WeeklyBags50), 0) bags across @Model.Totals.Count ration(s)</div>
+        <div class="st-icon"><i class="bi bi-truck"></i></div>
+    </div>
+    <div class="stat-tile tone-amber">
+        <div class="st-label">Feed cost per day</div>
+        <div class="st-value">@Fmt.Money(totalCost)</div>
+        <div class="st-sub">@Fmt.MoneyShort(totalCost * 7) per week · @(birds > 0 ? Fmt.Money(totalCost / birds, 2) : "—")/bird</div>
+        <div class="st-icon"><i class="bi bi-cash-stack"></i></div>
+    </div>
+    <div class="stat-tile @(switching.Count > 0 ? "tone-violet" : "tone-slate")">
+        <div class="st-label">Ration change ≤ 7 days</div>
+        <div class="st-value">@switching.Count</div>
+        <div class="st-sub">@Fmt.Num(birds) birds in @rows.Count active flock(s)@(missing > 0 ? $" · {missing} without ration" : "")</div>
+        <div class="st-icon"><i class="bi bi-arrow-repeat"></i></div>
+    </div>
+</div>
+
+@if (rows.Count == 0)
+{
+    <div class="card"><div class="card-body">
+        <div class="empty-state"><i class="bi bi-calendar2-week"></i>No active flocks — the planner shows feed requirements once flocks are placed.
+            <div class="mt-2"><a asp-controller="Batch" asp-action="Index" class="btn btn-outline-secondary btn-sm">Flock register</a></div>
+        </div>
+    </div></div>
+}
+else
+{
+    @if (missing > 0)
+    {
+        <div class="warn-callout small"><i class="bi bi-exclamation-triangle me-1"></i>@missing flock(s) have no active ration for their type — <a asp-action="Create">add a formulation</a> to cost their feed.</div>
+    }
+    @if (switching.Count > 0)
+    {
+        <div class="info-callout small">
+            <i class="bi bi-arrow-repeat me-1"></i><b>Upcoming ration changes:</b>
+            @string.Join(" · ", switching.Select(r => $"{r.Batch.BatchCode} → {r.NextFormulation!.Name} in {r.DaysToNextStage} day(s)"))
+        </div>
+    }
+
+    <div class="card mb-3">
+        <div class="card-header">
+            <h6><i class="bi bi-table text-primary me-2"></i>Requirement by flock</h6>
+            <input data-table-filter="#tblPlan" class="form-control form-control-sm no-print" style="max-width:220px" placeholder="Filter…" />
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover mb-0" id="tblPlan">
+                <thead>
+                    <tr><th>Flock</th><th>Farm</th><th>Type</th><th class="text-end">Age</th><th class="text-end">Birds</th><th>Current ration</th>
+                        <th class="text-end">g/bird/day</th><th class="text-end">Daily kg</th><th class="text-end">Weekly kg</th><th class="text-end">Cost/day</th><th>Next stage</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var r in rows)
+                    {
+                        <tr>
+                            <td><a asp-controller="Batch" asp-action="Detail" asp-route-id="@r.Batch.Id" class="fw-600 text-decoration-none">@r.Batch.BatchCode</a>
+                                <div class="text-xs text-muted">@r.Batch.Breed</div></td>
+                            <td>@r.Batch.FarmName</td>
+                            <td><span class="chip">@r.Batch.BatchType</span></td>
+                            <td class="text-end text-nowrap">@r.AgeDays d <div class="text-xs text-muted">wk @(r.AgeDays / 7 + 1)</div></td>
+                            <td class="text-end">@Fmt.Num(r.Birds)</td>
+                            <td>
+                                @if (r.Formulation != null)
+                                {
+                                    <a asp-action="Edit" asp-route-id="@r.Formulation.Id" class="text-decoration-none">@r.Formulation.Name</a>
+                                    <div class="text-xs text-muted">@r.Formulation.Stage · CP @r.Formulation.CrudeProteinPct.ToString("0.#", inv)% · @Fmt.Money(r.Formulation.CostPerKg, 2)/kg</div>
+                                }
+                                else { <span class="badge badge-warning-soft">No ration defined</span> }
+                            </td>
+                            <td class="text-end" title="@r.FeedBasis">@r.FeedPerBirdGm.ToString("0.#", inv)<div class="text-xs text-muted text-truncate" style="max-width:150px">@r.FeedBasis</div></td>
+                            <td class="text-end fw-600">@Fmt.Num(r.DailyKg, 1)</td>
+                            <td class="text-end">@Fmt.Num(r.WeeklyKg, 0)</td>
+                            <td class="text-end">@(r.Formulation != null ? Fmt.Money(r.CostPerDay) : "—")</td>
+                            <td>
+                                @if (r.NextFormulation != null)
+                                {
+                                    <span class="@(r.DaysToNextStage <= 7 ? "fw-600 text-primary" : "")">@r.NextFormulation.Stage</span>
+                                    <div class="text-xs text-muted">in @r.DaysToNextStage d (day @r.NextFormulation.FromAgeDay)</div>
+                                }
+                                else { <span class="text-muted">—</span> }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+                <tfoot class="fw-600">
+                    <tr><td colspan="4">Total</td><td class="text-end">@Fmt.Num(birds)</td><td colspan="2"></td>
+                        <td class="text-end">@Fmt.Num(totalDaily, 1)</td><td class="text-end">@Fmt.Num(totalWeekly, 0)</td><td class="text-end">@Fmt.Money(totalCost)</td><td></td></tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+
+    <div class="row g-3">
+        <div class="col-lg-7">
+            <div class="card h-100">
+                <div class="card-header"><h6><i class="bi bi-cart-check text-success me-2"></i>Totals per ration — order sheet</h6></div>
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead><tr><th>Ration</th><th>Stage</th><th class="text-end">Flocks</th><th class="text-end">Birds</th><th class="text-end">Daily kg</th><th class="text-end">Weekly kg</th><th class="text-end">50 kg bags/wk</th><th class="text-end">Cost/day</th><th class="text-end">Cost/week</th></tr></thead>
+                        <tbody>
+                            @foreach (var t in Model.Totals)
+                            {
+                                <tr>
+                                    <td class="fw-600">@t.Formulation</td>
+                                    <td>@t.Stage</td>
+                                    <td class="text-end">@t.Flocks</td>
+                                    <td class="text-end">@Fmt.Num(t.Birds)</td>
+                                    <td class="text-end">@Fmt.Num(t.DailyKg, 1)</td>
+                                    <td class="text-end">@Fmt.Num(t.WeeklyKg, 0)</td>
+                                    <td class="text-end fw-600">@Fmt.Num(t.WeeklyBags50, 0)</td>
+                                    <td class="text-end">@Fmt.Money(t.CostPerDay)</td>
+                                    <td class="text-end">@Fmt.Money(t.CostPerDay * 7)</td>
+                                </tr>
+                            }
+                        </tbody>
+                        <tfoot class="fw-600">
+                            <tr><td colspan="3">Total</td><td class="text-end">@Fmt.Num(birds)</td><td class="text-end">@Fmt.Num(totalDaily, 1)</td><td class="text-end">@Fmt.Num(totalWeekly, 0)</td>
+                                <td class="text-end">@Fmt.Num(Model.Totals.Sum(t => t.WeeklyBags50), 0)</td><td class="text-end">@Fmt.Money(totalCost)</td><td class="text-end">@Fmt.Money(totalCost * 7)</td></tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-5">
+            <div class="card h-100">
+                <div class="card-header"><h6><i class="bi bi-pie-chart text-primary me-2"></i>Daily feed by ration</h6></div>
+                <div class="card-body">
+                    <div style="height:240px"><canvas id="rationChart"></canvas></div>
+                    <div class="formula text-xs mt-3">Daily kg = birds × g/bird/day ÷ 1000<br />g/bird/day = breed standard at current age (layers: 112 g)<br />Cost/day = daily kg × ration cost/kg</div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@section Scripts {
+@if (rows.Count > 0)
+{
+<script>
+(function () {
+    const t = @Html.Raw(JsonSerializer.Serialize(Model.Totals.Select(x => new { l = x.Formulation, kg = x.DailyKg })));
+    new Chart(document.getElementById('rationChart'), {
+        type: 'doughnut',
+        data: { labels: t.map(x => x.l), datasets: [{ data: t.map(x => x.kg), backgroundColor: ppColors.series }] },
+        options: { cutout: '58%', plugins: { legend: { position: 'right' }, tooltip: { callbacks: { label: c => c.label + ': ' + Number(c.raw).toLocaleString() + ' kg/day' } } } }
+    });
+})();
+</script>
+}
+}

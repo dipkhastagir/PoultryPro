@@ -1,0 +1,176 @@
+@model VisitCreateVm
+@{
+    ViewData["Title"]    = "New Farm Visit";
+    ViewData["Subtitle"] = "Schedule a field visit with batch selection";
+    var farms = ViewBag.Farms as IEnumerable<Farm> ?? new List<Farm>();
+    var officers = ViewBag.Officers as IEnumerable<FieldOfficer> ?? new List<FieldOfficer>();
+    var batches = ViewBag.Batches as IEnumerable<Batch> ?? new List<Batch>();
+}
+
+<div class="row justify-content-center">
+<div class="col-lg-8">
+<div class="form-card">
+    <h6 class="fw-semibold mb-4"><i class="bi bi-geo-alt-fill text-success me-2"></i>Create Farm Visit</h6>
+
+    <form asp-action="Create" method="post">
+        @Html.AntiForgeryToken()
+
+        <!-- Farm & Officer -->
+        <div class="mb-3" style="font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">
+            Assignment
+        </div>
+        <div class="row g-3 mb-4">
+            <div class="col-md-6">
+                <label class="form-label">Field Officer *</label>
+                <select asp-for="FieldOfficerId" class="form-select" required>
+                    <option value="">-- Select Officer --</option>
+                    @foreach (var o in officers)
+                    { <option value="@o.Id">@o.FullName (@o.Designation)</option> }
+                </select>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Farm *</label>
+                <select asp-for="FarmId" class="form-select" id="farmSelect"
+                        onchange="loadBatches(this.value)" required>
+                    <option value="">-- Select Farm --</option>
+                    @foreach (var f in farms)
+                    { <option value="@f.Id">@f.Name — @f.Location</option> }
+                </select>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Batch</label>
+                <select asp-for="BatchId" class="form-select" id="batchSelect">
+                    <option value="">-- Select Farm first --</option>
+                    @foreach (var b in batches)
+                    {
+                        <option value="@b.Id">@b.BatchCode — @b.Breed (Day @b.AgeInDays, @b.CurrentCount.ToString("N0") birds)</option>
+                    }
+                </select>
+                <div class="form-text">Optional — select specific batch for this visit</div>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Visit Purpose</label>
+                <select asp-for="VisitPurpose" class="form-select">
+                    <option>Routine Check</option>
+                    <option>Vaccination</option>
+                    <option>Health Inspection</option>
+                    <option>Weight Recording</option>
+                    <option>Harvest Planning</option>
+                    <option>Disease Follow-up</option>
+                    <option>Feed Audit</option>
+                    <option>Biosecurity Check</option>
+                </select>
+            </div>
+        </div>
+
+        <hr class="my-3" />
+
+        <!-- Visit Timing -->
+        <div class="mb-3" style="font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">
+            Timing
+        </div>
+        <div class="row g-3 mb-4">
+            <div class="col-md-6">
+                <label class="form-label">Visit Date *</label>
+                <input asp-for="VisitDate" type="date" class="form-control" required />
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Status</label>
+                <select asp-for="VisitStatus" class="form-select">
+                    <option>Pending</option>
+                    <option>In Progress</option>
+                    <option>Completed</option>
+                </select>
+            </div>
+        </div>
+
+        <hr class="my-3" />
+
+        <!-- GPS -->
+        <div class="mb-3" style="font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">
+            GPS Check-In (Optional)
+        </div>
+        <div class="row g-3 mb-4">
+            <div class="col-md-5">
+                <label class="form-label">Latitude</label>
+                <input asp-for="CheckInLatitude" type="number" step="0.000001"
+                       class="form-control" id="latInput" placeholder="23.810331" />
+            </div>
+            <div class="col-md-5">
+                <label class="form-label">Longitude</label>
+                <input asp-for="CheckInLongitude" type="number" step="0.000001"
+                       class="form-control" id="lngInput" placeholder="90.412521" />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Accuracy (m)</label>
+                <input asp-for="GpsAccuracyMeters" type="number" step="0.01"
+                       class="form-control" id="accInput" placeholder="5.0" />
+            </div>
+            <div class="col-12">
+                <button type="button" class="btn btn-sm btn-outline-success" onclick="getGps()">
+                    <i class="bi bi-crosshair me-1"></i>Get My GPS Location
+                </button>
+                <small class="text-muted ms-2" id="gpsStatus"></small>
+            </div>
+        </div>
+
+        <!-- Overall Remark -->
+        <div class="mb-4">
+            <label class="form-label">Overall Remark</label>
+            <textarea asp-for="OverallRemark" class="form-control" rows="3"
+                      placeholder="General observations about the farm visit..."></textarea>
+        </div>
+
+        <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary">
+                <i class="bi bi-check-lg me-1"></i>Create Visit
+            </button>
+            <a asp-action="Index" class="btn btn-outline-secondary">Cancel</a>
+        </div>
+    </form>
+</div>
+</div>
+</div>
+
+@section Scripts {
+<script>
+async function loadBatches(farmId) {
+    const sel = document.getElementById('batchSelect');
+    const keep = sel.value;
+    sel.innerHTML = '<option value="">Loading...</option>';
+    if (!farmId) { sel.innerHTML = '<option value="">-- Select Farm first --</option>'; return; }
+    try {
+        const res  = await fetch(`/Visit/GetBatchesByFarm?farmId=${farmId}`);
+        const data = await res.json();
+        sel.innerHTML = '<option value="">-- No Batch --</option>';
+        data.forEach(b => {
+            const opt = document.createElement('option');
+            opt.value = b.id;
+            opt.textContent = `${b.batchCode} — ${b.breed} (Day ${b.ageInDays}, ${b.currentCount.toLocaleString()} birds)`;
+            sel.appendChild(opt);
+        });
+        if (keep && data.some(b => String(b.id) === keep)) sel.value = keep;
+    } catch { sel.innerHTML = '<option value="">Error loading batches</option>'; }
+}
+
+function getGps() {
+    const status = document.getElementById('gpsStatus');
+    if (!navigator.geolocation) { status.textContent = 'GPS not supported.'; return; }
+    status.textContent = 'Getting location...';
+    navigator.geolocation.getCurrentPosition(
+        pos => {
+            document.getElementById('latInput').value = pos.coords.latitude.toFixed(6);
+            document.getElementById('lngInput').value = pos.coords.longitude.toFixed(6);
+            document.getElementById('accInput').value = pos.coords.accuracy.toFixed(2);
+            status.textContent = `✓ GPS captured (±${pos.coords.accuracy.toFixed(0)}m)`;
+            status.style.color = '#10b981';
+        },
+        err => { status.textContent = 'GPS error: ' + err.message; }
+    );
+}
+
+// if farm pre-selected (from batch link), trigger load
+const preselected = document.getElementById('farmSelect').value;
+if (preselected && preselected !== '0') loadBatches(preselected);
+</script>
+}

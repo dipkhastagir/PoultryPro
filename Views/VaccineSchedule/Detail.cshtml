@@ -1,0 +1,231 @@
+@model VaccineTemplateDetailVm
+@{
+    var t = Model.Template;
+    var canEdit = User.IsAny(Roles.Health);
+    var routes = ViewBag.Routes as string[] ?? Array.Empty<string>();
+    int? selectedBatch = ViewBag.SelectedBatchId as int?;
+    var matching = Model.ActiveBatches.Where(b => b.BatchType == t.BatchType).ToList();
+    var others = Model.ActiveBatches.Where(b => b.BatchType != t.BatchType).ToList();
+    var maxDay = Model.Items.Any() ? Math.Max(Model.Items.Max(i => i.AgeDay), 1) : 1;
+    var byRoute = Model.Items.GroupBy(i => string.IsNullOrWhiteSpace(i.Route) ? "Unspecified" : i.Route!).Select(g => new { Route = g.Key, Count = g.Count() }).ToList();
+}
+
+<div class="page-head">
+    <div>
+        <a asp-action="Index" class="text-xs text-decoration-none"><i class="bi bi-arrow-left me-1"></i>All programmes</a>
+        <h4 class="mt-1">@t.Name
+            <span class="chip ms-1">@t.BatchType</span>
+            <span class="badge @(t.IsActive ? "badge-healthy" : "badge-gray") ms-1">@(t.IsActive ? "Active" : "Inactive")</span>
+        </h4>
+        <p>@(string.IsNullOrWhiteSpace(t.Description) ? "No description." : t.Description)</p>
+    </div>
+    @if (canEdit)
+    {
+        <a asp-action="Edit" asp-route-id="@t.Id" class="btn btn-outline-secondary btn-sm"><i class="bi bi-pencil me-1"></i>Edit programme</a>
+    }
+</div>
+
+<div class="stat-grid">
+    <div class="stat-tile tone-blue">
+        <div class="st-label">Vaccines</div>
+        <div class="st-value">@Model.Items.Count</div>
+        <div class="st-sub">@Model.Items.Select(i => i.VaccineName).Distinct().Count() distinct product(s)</div>
+        <div class="st-icon"><i class="bi bi-eyedropper"></i></div>
+    </div>
+    <div class="stat-tile tone-green">
+        <div class="st-label">Age span</div>
+        <div class="st-value">@(Model.Items.Any() ? $"D{Model.Items.Min(i => i.AgeDay)}–D{Model.Items.Max(i => i.AgeDay)}" : "—")</div>
+        <div class="st-sub">days after placement</div>
+        <div class="st-icon"><i class="bi bi-calendar-range"></i></div>
+    </div>
+    <div class="stat-tile tone-violet">
+        <div class="st-label">Routes</div>
+        <div class="st-value">@byRoute.Count</div>
+        <div class="st-sub">@string.Join(", ", byRoute.Take(3).Select(r => r.Route))</div>
+        <div class="st-icon"><i class="bi bi-droplet-half"></i></div>
+    </div>
+    <div class="stat-tile tone-amber">
+        <div class="st-label">Eligible flocks</div>
+        <div class="st-value">@matching.Count</div>
+        <div class="st-sub">active @t.BatchType flock(s)</div>
+        <div class="st-icon"><i class="bi bi-collection"></i></div>
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-xl-8">
+        <div class="card mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h6 class="mb-0">Schedule (by age)</h6>
+                <span class="text-xs text-muted">Due date = placement date + age day</span>
+            </div>
+            @if (!Model.Items.Any())
+            {
+                <div class="card-body">
+                    <div class="empty-state">
+                        <i class="bi bi-list-ol"></i>
+                        <h6>No vaccines in this programme yet</h6>
+                        <p class="text-muted small">@(canEdit ? "Use the form below to add the first dose." : "A veterinarian or manager can add doses.")</p>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th style="width:80px">Age</th>
+                                <th>Vaccine</th>
+                                <th>Route</th>
+                                <th class="text-end">Dose (ml)</th>
+                                <th>Notes</th>
+                                <th style="width:30%">Timeline</th>
+                                @if (canEdit) { <th></th> }
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var i in Model.Items)
+                            {
+                                <tr>
+                                    <td><span class="badge badge-info-soft mono">Day @i.AgeDay</span></td>
+                                    <td class="fw-600">@i.VaccineName</td>
+                                    <td>@(i.Route ?? "—")</td>
+                                    <td class="text-end">@(i.DoseMl.HasValue ? Fmt.Num(i.DoseMl.Value, 2) : "—")</td>
+                                    <td class="text-xs text-muted">@i.Notes</td>
+                                    <td>
+                                        <div class="prog-bar-wrap" title="Day @i.AgeDay of @maxDay">
+                                            <div class="prog-bar-fill" style="width:@(Math.Max(3, i.AgeDay * 100 / maxDay))%"></div>
+                                        </div>
+                                    </td>
+                                    @if (canEdit)
+                                    {
+                                        <td class="text-end">
+                                            <form asp-action="RemoveItem" method="post" data-confirm="Remove @i.VaccineName (day @i.AgeDay) from this programme? Already-scheduled flock records are not affected.">
+                                                <input type="hidden" name="id" value="@i.Id" />
+                                                <button class="btn btn-xs btn-outline-danger" title="Remove"><i class="bi bi-trash"></i></button>
+                                            </form>
+                                        </td>
+                                    }
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+            @if (canEdit)
+            {
+                <div class="card-body border-top">
+                    <div class="section-title mb-2"><i class="bi bi-plus-circle me-1"></i>Add vaccine</div>
+                    <form asp-action="AddItem" method="post" class="row g-2 align-items-end">
+                        <input type="hidden" name="TemplateId" value="@t.Id" />
+                        <div class="col-6 col-md-2">
+                            <label class="form-label small">Age day *</label>
+                            <input type="number" name="AgeDay" value="@Model.NewItem.AgeDay" min="0" max="1000" class="form-control form-control-sm" required />
+                        </div>
+                        <div class="col-6 col-md-4">
+                            <label class="form-label small">Vaccine *</label>
+                            <input name="VaccineName" class="form-control form-control-sm" maxlength="150" required list="vaxNames" placeholder="e.g. ND + IB (live)" />
+                            <datalist id="vaxNames">
+                                <option value="Marek's (HVT)"></option><option value="ND + IB (live)"></option><option value="ND (Lasota)"></option>
+                                <option value="IBD / Gumboro (intermediate)"></option><option value="IBD / Gumboro booster"></option>
+                                <option value="Fowl Pox"></option><option value="Fowl Cholera"></option><option value="Avian Influenza (H5)"></option>
+                                <option value="EDS-76"></option><option value="Infectious Coryza"></option><option value="ND (killed)"></option>
+                            </datalist>
+                        </div>
+                        <div class="col-6 col-md-2">
+                            <label class="form-label small">Route</label>
+                            <select name="Route" class="form-select form-select-sm">
+                                <option value="">—</option>
+                                @foreach (var r in routes) { <option value="@r">@r</option> }
+                            </select>
+                        </div>
+                        <div class="col-6 col-md-1">
+                            <label class="form-label small">Dose ml</label>
+                            <input type="number" name="DoseMl" step="0.01" min="0" class="form-control form-control-sm" />
+                        </div>
+                        <div class="col-9 col-md-2">
+                            <label class="form-label small">Notes</label>
+                            <input name="Notes" maxlength="300" class="form-control form-control-sm" />
+                        </div>
+                        <div class="col-3 col-md-1">
+                            <button class="btn btn-primary btn-sm w-100" title="Add"><i class="bi bi-plus-lg"></i></button>
+                        </div>
+                    </form>
+                </div>
+            }
+        </div>
+    </div>
+
+    <div class="col-xl-4">
+        <div class="card mb-3">
+            <div class="card-header"><h6>Apply to a flock</h6></div>
+            <div class="card-body">
+                @if (!Model.Items.Any())
+                {
+                    <p class="text-muted small mb-0">Add at least one vaccine before applying this programme.</p>
+                }
+                else if (!Model.ActiveBatches.Any())
+                {
+                    <div class="empty-state py-3">
+                        <i class="bi bi-collection"></i>
+                        <p class="text-muted small mb-0">No active flocks. Place a flock first.</p>
+                    </div>
+                }
+                else if (!canEdit)
+                {
+                    <p class="text-muted small mb-0">Read-only access — a veterinarian or manager can apply programmes to flocks.</p>
+                }
+                else
+                {
+                    <form asp-action="Apply" method="post" data-confirm="Schedule all vaccines of this programme for the selected flock?">
+                        <input type="hidden" name="templateId" value="@t.Id" />
+                        <label class="form-label small">Active flock</label>
+                        <select name="batchId" class="form-select form-select-sm mb-2" required>
+                            @if (matching.Any())
+                            {
+                                <optgroup label="@t.BatchType flocks (recommended)">
+                                    @foreach (var b in matching)
+                                    {
+                                        <option value="@b.Id" selected="@(selectedBatch == b.Id)">@b.BatchCode · @b.FarmName · day @b.AgeInDays</option>
+                                    }
+                                </optgroup>
+                            }
+                            @if (others.Any())
+                            {
+                                <optgroup label="Other flock types">
+                                    @foreach (var b in others)
+                                    {
+                                        <option value="@b.Id" selected="@(selectedBatch == b.Id)">@b.BatchCode · @b.FarmName · @b.BatchType · day @b.AgeInDays</option>
+                                    }
+                                </optgroup>
+                            }
+                        </select>
+                        <button class="btn btn-success btn-sm w-100"><i class="bi bi-calendar-plus me-1"></i>Apply programme</button>
+                        <div class="text-xs text-muted mt-2">Doses whose due date has already passed are created as <span class="badge badge-danger-soft">Overdue</span>; duplicates are skipped.</div>
+                    </form>
+                }
+            </div>
+        </div>
+
+        @if (Model.Items.Any())
+        {
+            <div class="card">
+                <div class="card-header"><h6>Programme timeline</h6></div>
+                <div class="card-body">
+                    <div class="timeline">
+                        @foreach (var g in Model.Items.GroupBy(i => i.AgeDay))
+                        {
+                            <div class="tl-item">
+                                <div class="tl-dot"></div>
+                                <div class="tl-date">Day @g.Key · week @(g.Key / 7 + 1)</div>
+                                <div class="tl-title">@string.Join(" + ", g.Select(i => i.VaccineName))</div>
+                                <div class="tl-body text-xs text-muted">@string.Join(", ", g.Select(i => i.Route).Where(r => !string.IsNullOrWhiteSpace(r)).Distinct())</div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+</div>

@@ -1,0 +1,228 @@
+@model PurchaseOrderCreateVm
+@{
+    var suppliers = ((ViewBag.Suppliers as IEnumerable<Supplier>)?.ToList() ?? new List<Supplier>());
+    var farms = ((ViewBag.Farms as IEnumerable<Farm>)?.ToList() ?? new List<Farm>());
+    var items = ((ViewBag.Items as IEnumerable<InventoryItem>)?.ToList() ?? new List<InventoryItem>());
+    var itemJson = items.Select(i => new { id = i.Id, name = i.Name, sku = i.SKU, cat = i.Category, unit = i.Unit, cost = i.UnitCost, qty = i.Quantity, min = i.MinimumLevel, sup = i.SupplierId, status = i.StockStatus });
+    var lines = Model.Lines.Count > 0 ? Model.Lines : new List<PurchaseLineInput> { new() };
+}
+
+<form asp-action="Create" method="post" id="poForm" novalidate>
+<div class="row g-4">
+    <div class="col-xl-8">
+        <div class="form-card mb-4">
+            <div class="d-flex justify-content-between align-items-start mb-3">
+                <div>
+                    <h6 class="fw-semibold mb-0"><i class="bi bi-truck text-primary me-2"></i>Purchase order</h6>
+                    <div class="text-xs text-muted">Number will be assigned on save</div>
+                </div>
+                <span class="chip mono">@ViewBag.NextPoNumber</span>
+            </div>
+            <div asp-validation-summary="All" class="alert alert-danger py-2 small"></div>
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label">Supplier *</label>
+                    <select asp-for="SupplierId" class="form-select" id="supplierSel" required>
+                        <option value="0">-- Select supplier --</option>
+                        @foreach (var s in suppliers)
+                        {
+                            <option value="@s.Id" data-terms="@s.PaymentTerms">@s.Name (@s.Category)</option>
+                        }
+                    </select>
+                    <div class="text-xs text-muted mt-1" id="supTerms"></div>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Deliver to farm</label>
+                    <select asp-for="FarmId" class="form-select">
+                        <option value="">Central store (no specific farm)</option>
+                        @foreach (var f in farms)
+                        {
+                            <option value="@f.Id">@f.Name</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Order date *</label>
+                    <input asp-for="OrderDate" type="date" class="form-control" asp-format="{0:yyyy-MM-dd}" required />
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Expected delivery</label>
+                    <input asp-for="ExpectedDate" type="date" class="form-control" asp-format="{0:yyyy-MM-dd}" />
+                </div>
+                <div class="col-12">
+                    <label class="form-label">Notes / delivery instructions</label>
+                    <textarea asp-for="Notes" class="form-control" rows="2" maxlength="500"></textarea>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h6><i class="bi bi-list-ol text-primary me-2"></i>Line items</h6>
+                <button type="button" class="btn btn-sm btn-outline-primary" id="addLine"><i class="bi bi-plus-lg me-1"></i>Add line</button>
+            </div>
+            <div class="table-responsive">
+                <table class="table mb-0 align-middle" id="lineTable">
+                    <thead><tr><th style="min-width:260px">Item</th><th style="width:140px">Quantity</th><th style="width:150px">Unit cost (৳)</th><th class="text-end" style="width:140px">Line total</th><th style="width:40px"></th></tr></thead>
+                    <tbody id="lineBody">
+                    @for (var i = 0; i < lines.Count; i++)
+                    {
+                        var l = lines[i];
+                        <tr class="po-line">
+                            <td>
+                                <select class="form-select form-select-sm line-item" name="Lines[@i].InventoryItemId">
+                                    <option value="0">-- Select item --</option>
+                                    @foreach (var it in items)
+                                    {
+                                        <option value="@it.Id" selected="@(it.Id == l.InventoryItemId)">@it.Name@(string.IsNullOrEmpty(it.SKU) ? "" : $" [{it.SKU}]")</option>
+                                    }
+                                </select>
+                                <div class="text-xs text-muted line-info mt-1"></div>
+                            </td>
+                            <td>
+                                <div class="input-group input-group-sm">
+                                    <input type="number" class="form-control line-qty" name="Lines[@i].Quantity" value="@(l.Quantity > 0 ? l.Quantity.ToString(System.Globalization.CultureInfo.InvariantCulture) : "")" step="0.01" min="0.01" />
+                                    <span class="input-group-text line-unit">—</span>
+                                </div>
+                            </td>
+                            <td><input type="number" class="form-control form-control-sm line-cost" name="Lines[@i].UnitCost" value="@l.UnitCost.ToString(System.Globalization.CultureInfo.InvariantCulture)" step="0.01" min="0" /></td>
+                            <td class="text-end fw-600 line-total">৳0</td>
+                            <td><button type="button" class="btn btn-xs btn-outline-danger line-del" title="Remove"><i class="bi bi-x-lg"></i></button></td>
+                        </tr>
+                    }
+                    </tbody>
+                    <tfoot>
+                        <tr><td colspan="3" class="text-end">Order total</td><td class="text-end fs-6" id="grandTotal">৳0</td><td></td></tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-4">
+        <div class="card mb-3" style="position:sticky;top:80px">
+            <div class="card-header"><h6><i class="bi bi-receipt text-primary me-2"></i>Summary</h6></div>
+            <div class="card-body">
+                <dl class="kv mb-3">
+                    <dt>Lines</dt><dd id="sumLines">0</dd>
+                    <dt>Total quantity</dt><dd id="sumQty">0</dd>
+                    <dt>Order value</dt><dd class="fs-5 fw-bold text-primary" id="sumTotal">৳0</dd>
+                </dl>
+                <div class="info-callout mb-3"><i class="bi bi-info-circle me-1"></i>Stock and finance are only updated when the PO is <strong>received</strong>. Unit cost is moved to a weighted average on receipt.</div>
+                <div class="d-grid gap-2">
+                    <button type="submit" name="SaveAs" value="Ordered" class="btn btn-primary"><i class="bi bi-send me-1"></i>Save &amp; mark ordered</button>
+                    <button type="submit" name="SaveAs" value="Draft" class="btn btn-outline-primary"><i class="bi bi-save me-1"></i>Save as draft</button>
+                    <a asp-action="Index" class="btn btn-link text-muted">Cancel</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+</form>
+
+<template id="lineTpl">
+    <tr class="po-line">
+        <td>
+            <select class="form-select form-select-sm line-item" name="Lines[__i__].InventoryItemId">
+                <option value="0">-- Select item --</option>
+                @foreach (var it in items)
+                {
+                    <option value="@it.Id">@it.Name@(string.IsNullOrEmpty(it.SKU) ? "" : $" [{it.SKU}]")</option>
+                }
+            </select>
+            <div class="text-xs text-muted line-info mt-1"></div>
+        </td>
+        <td>
+            <div class="input-group input-group-sm">
+                <input type="number" class="form-control line-qty" name="Lines[__i__].Quantity" step="0.01" min="0.01" />
+                <span class="input-group-text line-unit">—</span>
+            </div>
+        </td>
+        <td><input type="number" class="form-control form-control-sm line-cost" name="Lines[__i__].UnitCost" value="0" step="0.01" min="0" /></td>
+        <td class="text-end fw-600 line-total">৳0</td>
+        <td><button type="button" class="btn btn-xs btn-outline-danger line-del" title="Remove"><i class="bi bi-x-lg"></i></button></td>
+    </tr>
+</template>
+
+@section Scripts {
+<script>
+(function () {
+    const items = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(itemJson));
+    const byId = Object.fromEntries(items.map(i => [String(i.id), i]));
+    const body = document.getElementById('lineBody');
+    const tpl = document.getElementById('lineTpl').innerHTML;
+    const money = v => '৳' + Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    function renumber() {
+        body.querySelectorAll('tr.po-line').forEach((tr, i) => {
+            tr.querySelectorAll('[name]').forEach(el => el.name = el.name.replace(/Lines\[[^\]]*\]/, 'Lines[' + i + ']'));
+        });
+    }
+    function describe(tr, setCost) {
+        const it = byId[tr.querySelector('.line-item').value];
+        tr.querySelector('.line-unit').textContent = it ? it.unit : '—';
+        tr.querySelector('.line-info').innerHTML = it
+            ? `${it.cat} · on hand ${Number(it.qty).toLocaleString()} ${it.unit} (min ${Number(it.min).toLocaleString()})` +
+              (it.status !== 'In Stock' ? ` <span class="badge badge-warning-soft">${it.status}</span>` : '')
+            : '';
+        if (it && setCost) tr.querySelector('.line-cost').value = it.cost;
+    }
+    function recalc() {
+        let total = 0, qty = 0, n = 0;
+        const seen = {};
+        body.querySelectorAll('tr.po-line').forEach(tr => {
+            const id = tr.querySelector('.line-item').value;
+            const q = parseFloat(tr.querySelector('.line-qty').value) || 0;
+            const c = parseFloat(tr.querySelector('.line-cost').value) || 0;
+            const t = Math.round(q * c * 100) / 100;
+            tr.querySelector('.line-total').textContent = money(t);
+            tr.classList.toggle('table-warning', id !== '0' && !!seen[id]);
+            if (id !== '0') { seen[id] = true; n++; total += t; qty += q; }
+        });
+        document.getElementById('grandTotal').textContent = money(total);
+        document.getElementById('sumTotal').textContent = money(total);
+        document.getElementById('sumLines').textContent = n;
+        document.getElementById('sumQty').textContent = qty.toLocaleString();
+    }
+    document.getElementById('addLine').addEventListener('click', () => {
+        body.insertAdjacentHTML('beforeend', tpl.replace(/__i__/g, body.children.length));
+        renumber(); recalc();
+        body.lastElementChild.querySelector('.line-item').focus();
+    });
+    body.addEventListener('click', e => {
+        const btn = e.target.closest('.line-del');
+        if (!btn) return;
+        if (body.querySelectorAll('tr.po-line').length === 1) {
+            const tr = btn.closest('tr');
+            tr.querySelector('.line-item').value = '0'; tr.querySelector('.line-qty').value = ''; tr.querySelector('.line-cost').value = 0;
+            describe(tr, false);
+        } else btn.closest('tr').remove();
+        renumber(); recalc();
+    });
+    body.addEventListener('change', e => {
+        if (e.target.classList.contains('line-item')) describe(e.target.closest('tr'), true);
+        recalc();
+    });
+    body.addEventListener('input', recalc);
+
+    const supSel = document.getElementById('supplierSel');
+    function showTerms() {
+        const opt = supSel.options[supSel.selectedIndex];
+        const t = opt ? opt.dataset.terms : '';
+        document.getElementById('supTerms').textContent = t ? 'Payment terms: ' + t : '';
+    }
+    supSel.addEventListener('change', showTerms);
+    showTerms();
+
+    document.getElementById('poForm').addEventListener('submit', e => {
+        const valid = [...body.querySelectorAll('tr.po-line')].filter(tr => tr.querySelector('.line-item').value !== '0' && parseFloat(tr.querySelector('.line-qty').value) > 0);
+        if (supSel.value === '0') { e.preventDefault(); alert('Please choose a supplier.'); return; }
+        if (valid.length === 0) { e.preventDefault(); alert('Add at least one line item with a quantity.'); return; }
+        if (body.querySelector('tr.table-warning')) { e.preventDefault(); alert('The same item appears on more than one line — please combine them.'); }
+    });
+
+    body.querySelectorAll('tr.po-line').forEach(tr => describe(tr, false));
+    recalc();
+})();
+</script>
+}

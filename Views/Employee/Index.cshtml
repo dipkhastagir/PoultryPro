@@ -1,0 +1,159 @@
+@model EmployeeDirectoryVm
+@{
+    var canEdit = User.IsAny(Roles.Finance);
+    var canSeeHr = User.IsAny(Roles.Finance);
+    string RoleUrl(string? r) => Url.Action("Index", new { q = Model.Q, farmId = Model.FarmId, role = r, status = Model.Status, inactive = Model.ShowInactive })!;
+}
+
+<div class="page-head">
+    <div>
+        <h4>Staff directory</h4>
+        <p>@Model.TotalActive active employees across @Model.Farms.Count farms</p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+        @if (canSeeHr)
+        {
+            <a asp-controller="Attendance" asp-action="Index" class="btn btn-outline-secondary btn-sm"><i class="bi bi-calendar-check me-1"></i>Attendance</a>
+            <a asp-controller="Payroll" asp-action="Index" class="btn btn-outline-secondary btn-sm"><i class="bi bi-wallet2 me-1"></i>Payroll</a>
+        }
+        @if (canEdit)
+        {
+            <a asp-action="Create" class="btn btn-primary btn-sm"><i class="bi bi-person-plus me-1"></i>Add employee</a>
+        }
+    </div>
+</div>
+
+<div class="stat-grid">
+    <div class="stat-tile tone-green">
+        <div class="st-label">Active staff</div>
+        <div class="st-value">@Model.TotalActive</div>
+        <div class="st-sub">@Model.OnDuty on duty</div>
+        <div class="st-icon"><i class="bi bi-people"></i></div>
+    </div>
+    <div class="stat-tile tone-amber">
+        <div class="st-label">On leave</div>
+        <div class="st-value">@Model.OnLeave</div>
+        <div class="st-sub">@(Model.TotalActive - Model.OnDuty - Model.OnLeave) off duty / other</div>
+        <div class="st-icon"><i class="bi bi-person-dash"></i></div>
+    </div>
+    <div class="stat-tile tone-blue">
+        <div class="st-label">Attendance today</div>
+        <div class="st-value">@(Model.MarkedToday == 0 ? "—" : Fmt.Pct(Model.AttendanceTodayPct, 0))</div>
+        <div class="st-sub">@Model.MarkedToday of @Model.TotalActive marked</div>
+        <div class="st-icon"><i class="bi bi-calendar-check"></i></div>
+    </div>
+    <div class="stat-tile tone-violet">
+        <div class="st-label">Monthly payroll</div>
+        <div class="st-value">@Fmt.MoneyShort(Model.MonthlyPayroll)</div>
+        <div class="st-sub">Basic salaries · @Fmt.Money(Model.TotalActive == 0 ? 0 : Model.MonthlyPayroll / Model.TotalActive) avg</div>
+        <div class="st-icon"><i class="bi bi-cash-stack"></i></div>
+    </div>
+</div>
+
+<form method="get" class="filter-bar">
+    <div style="flex:1 1 220px">
+        <label class="form-label">Search</label>
+        <input name="q" value="@Model.Q" class="form-control" placeholder="Name, code, phone or email" />
+    </div>
+    <div>
+        <label class="form-label">Farm</label>
+        <select name="farmId" class="form-select" onchange="this.form.submit()">
+            <option value="">All farms</option>
+            <option value="0" selected="@(Model.FarmId == 0)">Head office / unassigned</option>
+            @foreach (var f in Model.Farms) { <option value="@f.Id" selected="@(Model.FarmId == f.Id)">@f.Name</option> }
+        </select>
+    </div>
+    <div>
+        <label class="form-label">Duty status</label>
+        <select name="status" class="form-select" onchange="this.form.submit()">
+            <option value="">Any</option>
+            @foreach (var s in new[] { "On Duty", "On Leave", "Off Duty", "Resigned" }) { <option selected="@(Model.Status == s)">@s</option> }
+        </select>
+    </div>
+    <input type="hidden" name="role" value="@Model.Role" />
+    <div class="form-check mb-1">
+        <input class="form-check-input" type="checkbox" name="inactive" value="true" id="inactive" checked="@Model.ShowInactive" onchange="this.form.submit()" />
+        <label class="form-check-label small" for="inactive">Show former staff</label>
+    </div>
+    <button class="btn btn-sm btn-primary"><i class="bi bi-search"></i></button>
+    @if (!string.IsNullOrEmpty(Model.Q) || Model.FarmId.HasValue || !string.IsNullOrEmpty(Model.Role) || !string.IsNullOrEmpty(Model.Status) || Model.ShowInactive)
+    {
+        <a asp-action="Index" class="btn btn-sm btn-outline-secondary">Reset</a>
+    }
+</form>
+
+<div class="d-flex flex-wrap gap-2 mb-3">
+    <a href="@RoleUrl(null)" class="chip text-decoration-none @(string.IsNullOrEmpty(Model.Role) ? "bg-success-subtle text-success-emphasis fw-600" : "")">All roles · @Model.TotalActive</a>
+    @foreach (var rc in Model.RoleCounts)
+    {
+        <a href="@RoleUrl(rc.Key)" class="chip text-decoration-none @(Model.Role == rc.Key ? "bg-success-subtle text-success-emphasis fw-600" : "")">@rc.Key · @rc.Value</a>
+    }
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h6><i class="bi bi-person-vcard text-primary me-2"></i>Employees <span class="text-muted fw-normal">(@Model.Employees.Count)</span></h6>
+        <span class="text-muted text-xs">Total salary shown: <strong>@Fmt.Money(Model.Employees.Sum(e => e.MonthlySalary))</strong></span>
+    </div>
+    @if (!Model.Employees.Any())
+    {
+        <div class="empty-state"><i class="bi bi-people"></i>No employees match these filters.</div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+                <thead>
+                    <tr><th>Employee</th><th>Role</th><th>Farm</th><th>Contact</th><th class="text-end">Salary / month</th><th>Joined</th><th>Status</th><th></th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var emp in Model.Employees)
+                    {
+                        <tr class="@(emp.IsActive ? "" : "opacity-50")">
+                            <td>
+                                <a asp-action="Detail" asp-route-id="@emp.Id" class="d-flex align-items-center gap-2 text-decoration-none text-reset">
+                                    <div class="avatar">@emp.Initials</div>
+                                    <div>
+                                        <div class="fw-600">@emp.FullName</div>
+                                        <div class="mono text-muted">@(emp.EmployeeCode ?? $"#{emp.Id}")</div>
+                                    </div>
+                                </a>
+                            </td>
+                            <td>@emp.Role</td>
+                            <td><span class="text-muted small">@(emp.FarmName ?? "All farms")</span></td>
+                            <td class="small">
+                                @if (!string.IsNullOrEmpty(emp.Phone)) { <div><i class="bi bi-telephone text-muted me-1"></i>@emp.Phone</div> }
+                                @if (!string.IsNullOrEmpty(emp.Email)) { <div class="text-muted text-xs">@emp.Email</div> }
+                                @if (string.IsNullOrEmpty(emp.Phone) && string.IsNullOrEmpty(emp.Email)) { <span class="text-muted">—</span> }
+                            </td>
+                            <td class="text-end fw-600">@Fmt.Money(emp.MonthlySalary)</td>
+                            <td class="small text-muted">@Fmt.Date(emp.JoinDate)<div class="text-xs">@(emp.TenureMonths >= 12 ? $"{emp.TenureMonths / 12}y {emp.TenureMonths % 12}m" : $"{emp.TenureMonths}m") tenure</div></td>
+                            <td>
+                                @if (!emp.IsActive) { <span class="badge badge-danger-soft">Inactive</span> }
+                                else { <span class="badge @Fmt.Badge(emp.Status)">@emp.Status</span> }
+                            </td>
+                            <td class="text-end text-nowrap">
+                                <a asp-action="Detail" asp-route-id="@emp.Id" class="btn btn-xs btn-outline-secondary" title="Profile"><i class="bi bi-eye"></i></a>
+                                @if (canEdit)
+                                {
+                                    <a asp-action="Edit" asp-route-id="@emp.Id" class="btn btn-xs btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></a>
+                                    @if (emp.IsActive)
+                                    {
+                                        <form asp-action="Delete" method="post" class="d-inline" data-confirm="Deactivate @emp.FullName? Attendance and payroll history is kept.">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="id" value="@emp.Id" />
+                                            <button class="btn btn-xs btn-outline-danger" title="Deactivate"><i class="bi bi-person-x"></i></button>
+                                        </form>
+                                    }
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+                <tfoot>
+                    <tr><td colspan="4">Total (@Model.Employees.Count)</td><td class="text-end">@Fmt.Money(Model.Employees.Sum(e => e.MonthlySalary))</td><td colspan="3"></td></tr>
+                </tfoot>
+            </table>
+        </div>
+    }
+</div>

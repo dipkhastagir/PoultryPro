@@ -1,0 +1,261 @@
+@model FieldOfficer
+@{
+    var assignments  = ((ViewBag.Assignments as IEnumerable<FieldOfficerFarmAssignment>)?.ToList() ?? new List<FieldOfficerFarmAssignment>());
+    var visits       = ((ViewBag.Visits as IEnumerable<FarmVisit>)?.ToList() ?? new List<FarmVisit>());
+    var dailyRecords = ((ViewBag.DailyRecords as IEnumerable<DailyFarmRecord>)?.ToList() ?? new List<DailyFarmRecord>());
+    var canEdit = User.IsAny(Roles.AdminOrManager);
+    var canSync = User.IsAny(Roles.Operations);
+    double? avgTrust = ViewBag.AvgTrust;
+    double? geoPct = ViewBag.GeoVerifiedPct;
+    decimal radius = ViewBag.GeofenceRadius ?? VisitTrust.DefaultRadiusM;
+    var inv = System.Globalization.CultureInfo.InvariantCulture;
+}
+
+<div class="d-flex gap-2 mb-4">
+    <a asp-action="Index" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-arrow-left me-1"></i>Back
+    </a>
+    @if (canEdit)
+    {
+    <a asp-action="Edit" asp-route-id="@Model.Id" class="btn btn-sm btn-primary">
+        <i class="bi bi-pencil me-1"></i>Edit
+    </a>
+    <form asp-action="ToggleActive" method="post" style="display:inline">
+        @Html.AntiForgeryToken()
+        <input type="hidden" name="id" value="@Model.Id" />
+        <button class="btn btn-sm @(Model.IsActive ? "btn-outline-warning" : "btn-outline-success")">
+            <i class="bi bi-@(Model.IsActive ? "pause-circle" : "play-circle") me-1"></i>
+            @(Model.IsActive ? "Deactivate" : "Activate")
+        </button>
+    </form>
+    }
+</div>
+
+<!-- Profile Card -->
+<div class="row g-4 mb-4">
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body text-center py-4">
+                <div class="mx-auto mb-3" style="width:64px;height:64px;border-radius:50%;background:var(--primary-light);display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;color:var(--primary-dark)">
+                    @Model.Initials
+                </div>
+                <h6 class="fw-bold mb-1">@Model.FullName</h6>
+                <div class="text-muted small mb-2">@Model.Designation</div>
+                <span class="badge @(Model.IsActive ? "badge-healthy" : "badge-danger-soft") mb-3">
+                    @(Model.IsActive ? "Active" : "Inactive")
+                </span>
+                <div class="text-start mt-2">
+                    @if (Model.Phone != null)
+                    {
+                        <div class="d-flex align-items-center gap-2 mb-2">
+                            <i class="bi bi-telephone text-muted" style="width:16px"></i>
+                            <small>@Model.Phone</small>
+                        </div>
+                    }
+                    @if (Model.Email != null)
+                    {
+                        <div class="d-flex align-items-center gap-2 mb-2">
+                            <i class="bi bi-envelope text-muted" style="width:16px"></i>
+                            <small>@Model.Email</small>
+                        </div>
+                    }
+                    @if (Model.Zone != null)
+                    {
+                        <div class="d-flex align-items-center gap-2 mb-2">
+                            <i class="bi bi-map text-muted" style="width:16px"></i>
+                            <small>@Model.Zone</small>
+                        </div>
+                    }
+                    <div class="d-flex align-items-center gap-2 mb-2">
+                        <i class="bi bi-person text-muted" style="width:16px"></i>
+                        <small><code>@Model.Username</code></small>
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                        <i class="bi bi-clock-history text-muted" style="width:16px"></i>
+                        <small class="text-muted">
+                            Last login: @(Model.LastLoginAt.HasValue ? Model.LastLoginAt.Value.ToString("dd MMM yyyy, HH:mm") : "Never")
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-8">
+        <!-- Stats -->
+        <div class="row g-3 mb-3">
+            <div class="col-6 col-lg-4"><div class="kpi-card">
+                <div class="kpi-label">Assigned Farms</div>
+                <div class="kpi-value">@Model.AssignedFarmCount</div>
+            </div></div>
+            <div class="col-6 col-lg-4"><div class="kpi-card">
+                <div class="kpi-label">Total Visits</div>
+                <div class="kpi-value">@visits.Count</div>
+            </div></div>
+            <div class="col-6 col-lg-4"><div class="kpi-card">
+                <div class="kpi-label">Pending Syncs</div>
+                <div class="kpi-value @(Model.PendingVisits > 0 ? "text-warning" : "")">@Model.PendingVisits</div>
+            </div></div>
+            <div class="col-6 col-lg-4"><div class="kpi-card">
+                <div class="kpi-label">Daily Records</div>
+                <div class="kpi-value">@dailyRecords.Count</div>
+            </div></div>
+            <div class="col-6 col-lg-4"><div class="kpi-card">
+                <div class="kpi-label">Avg Visit Trust Score</div>
+                <div class="kpi-value @(avgTrust is null ? "" : avgTrust >= 80 ? "text-success" : avgTrust >= 50 ? "text-warning" : "text-danger")">@(avgTrust.HasValue ? avgTrust.Value.ToString("0", inv) : "—")<small class="text-muted" style="font-size:13px"> / 100</small></div>
+                <div class="kpi-sub">photo · signature · records · sync · GPS</div>
+            </div></div>
+            <div class="col-6 col-lg-4"><div class="kpi-card">
+                <div class="kpi-label">Geo-verified Visits</div>
+                <div class="kpi-value">@(geoPct.HasValue ? geoPct.Value.ToString("0", inv) + "%" : "—")</div>
+                <div class="kpi-sub">check-in within @radius.ToString("0", inv) m + GPS accuracy</div>
+            </div></div>
+        </div>
+
+        <!-- Assigned Farms -->
+        <div class="card">
+            <div class="card-header"><h6><i class="bi bi-geo-alt-fill text-primary me-2"></i>Assigned Farms</h6></div>
+            <div class="card-body p-0">
+                @if (!assignments.Any())
+                {
+                    <div class="text-center text-muted py-3 small">No farms assigned.</div>
+                }
+                @foreach (var a in assignments)
+                {
+                    <div class="d-flex align-items-center justify-content-between px-3 py-2 border-bottom">
+                        <div>
+                            <div class="fw-semibold" style="font-size:13.5px">@a.FarmName</div>
+                            <small class="text-muted"><i class="bi bi-geo-alt me-1"></i>@a.FarmLocation</small>
+                        </div>
+                        <small class="text-muted">Since @a.AssignedDate.ToString("dd MMM yyyy")</small>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Visit History -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h6><i class="bi bi-calendar2-check text-success me-2"></i>Visit History</h6>
+        <span class="badge badge-info-soft">@visits.Count total</span>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-hover mb-0">
+            <thead>
+                <tr><th>Farm</th><th>Batch</th><th>Visit Date</th><th>Check-In</th><th>GPS</th><th class="text-center">Trust</th><th>Status</th><th>Sync</th><th></th></tr>
+            </thead>
+            <tbody>
+                @foreach (var v in visits)
+                {
+                    <tr>
+                        <td>
+                            <div class="fw-semibold" style="font-size:13px">@v.FarmName</div>
+                            <small class="text-muted">@v.FarmLocation</small>
+                        </td>
+                        <td>
+                            @if (!string.IsNullOrEmpty(v.BatchCode))
+                            { <span class="badge badge-info-soft">@v.BatchCode <small>(Day @v.AgeInDays)</small></span> }
+                            else { <span class="text-muted small">—</span> }
+                        </td>
+                        <td>@v.VisitDate.ToString("dd MMM yyyy")</td>
+                        <td><small>@(v.CheckInTime.HasValue ? v.CheckInTime.Value.ToString("HH:mm") : "—")</small></td>
+                        <td>
+                            @if (v.CheckInLatitude.HasValue)
+                            {
+                                <small class="text-success">
+                                    <i class="bi bi-geo-alt-fill"></i>
+                                    @v.CheckInLatitude.Value.ToString("F5"),
+                                    @v.CheckInLongitude!.Value.ToString("F5")
+                                    @if (v.GpsAccuracyMeters.HasValue)
+                                    {<text> <span class="text-muted">(±@v.GpsAccuracyMeters.Value.ToString("F0")m)</span></text>}
+                                </small>
+                            }
+                            else { <small class="text-muted">No GPS</small> }
+                            @if (v.Trust != null)
+                            {
+                                <div><span class="badge @v.Trust.GpsBadge" title="@(v.Trust.DistanceM.HasValue ? v.Trust.DistanceM.Value.ToString("N0", inv) + " m from farm" : v.Trust.GpsNote)">@v.Trust.GpsStatus@(v.Trust.DistanceM.HasValue ? " · " + v.Trust.DistanceM.Value.ToString("N0", inv) + " m" : "")</span></div>
+                            }
+                        </td>
+                        <td class="text-center">
+                            @if (v.Trust != null) { <span class="badge @v.Trust.ScoreBadge">@v.Trust.Score</span> } else { <span class="text-muted">—</span> }
+                        </td>
+                        <td>
+                            <span class="badge @(v.VisitStatus=="Completed"?"badge-healthy":v.VisitStatus=="In Progress"?"badge-info-soft":"badge-gray")">
+                                @v.VisitStatus
+                            </span>
+                        </td>
+                        <td>
+                            <span class="badge @(v.SyncStatus=="Synced"?"badge-healthy":"badge-warning-soft")">
+                                @v.SyncStatus
+                            </span>
+                        </td>
+                        <td>
+                            @if (canSync && v.SyncStatus != "Synced")
+                            {
+                                <form asp-action="MarkSynced" method="post" style="display:inline">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="visitId" value="@v.Id" />
+                                    <input type="hidden" name="officerId" value="@Model.Id" />
+                                    <button class="btn btn-xs btn-outline-success" title="Mark as synced">
+                                        <i class="bi bi-check2-all"></i>
+                                    </button>
+                                </form>
+                            }
+                        </td>
+                    </tr>
+                }
+                @if (!visits.Any())
+                {
+                    <tr><td colspan="9" class="text-center text-muted py-3 small">No visits recorded yet.</td></tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Daily Records -->
+<div class="card">
+    <div class="card-header">
+        <h6><i class="bi bi-clipboard2-data text-info me-2"></i>Daily Farm Records</h6>
+        <span class="badge badge-info-soft">@dailyRecords.Count records</span>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-hover mb-0" style="font-size:12px">
+            <thead>
+                <tr>
+                    <th>Date</th><th>Farm</th><th>Batch</th><th>Birds</th>
+                    <th>Mortality</th><th>Culling</th><th>Feed (kg)</th><th>Water (L)</th>
+                    <th>Temp °C</th><th>Avg Wt (g)</th><th>Sync</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var r in dailyRecords)
+                {
+                    <tr>
+                        <td>@r.RecordDate.ToString("dd MMM")</td>
+                        <td>@r.FarmName</td>
+                        <td><span class="badge badge-gray">@r.BatchCode</span></td>
+                        <td class="fw-semibold">@r.BirdCount.ToString("N0")</td>
+                        <td class="@(r.MortalityCount > 0 ? "text-danger fw-semibold" : "text-muted")">@r.MortalityCount</td>
+                        <td class="text-muted">@r.CullingCount</td>
+                        <td>@r.FeedConsumptionKg</td>
+                        <td>@r.WaterConsumptionLtr</td>
+                        <td>@(r.TemperatureC.HasValue ? r.TemperatureC.Value.ToString("F1") : "—")</td>
+                        <td>@(r.AverageWeightGm.HasValue ? r.AverageWeightGm.Value.ToString("F0") : "—")</td>
+                        <td>
+                            <span class="badge @(r.SyncStatus=="Synced"?"badge-healthy":"badge-warning-soft")">
+                                @r.SyncStatus
+                            </span>
+                        </td>
+                    </tr>
+                }
+                @if (!dailyRecords.Any())
+                {
+                    <tr><td colspan="11" class="text-center text-muted py-3">No daily records yet.</td></tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>

@@ -1,0 +1,141 @@
+@model List<CustomerAccount>
+@{
+    var canEdit = User.IsAny(Roles.Finance);
+    var types = ((ViewBag.Types as IEnumerable<string>)?.ToList() ?? new List<string>());
+    string? type = ViewBag.Type;
+    string? q = ViewBag.Q;
+    bool inactive = ViewBag.Inactive ?? false;
+    var inv = System.Globalization.CultureInfo.InvariantCulture;
+}
+
+<div class="page-head">
+    <div>
+        <h4><i class="bi bi-people text-primary me-2"></i>Customers</h4>
+        <p>Customer accounts with lifetime sales, collections, outstanding balance and credit usage.</p>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+        <a asp-action="Index" class="btn btn-sm btn-outline-secondary"><i class="bi bi-bag me-1"></i>Orders</a>
+        <a asp-controller="Reports" asp-action="Market" class="btn btn-sm btn-outline-secondary"><i class="bi bi-graph-up me-1"></i>Sales report</a>
+        @if (canEdit) { <a asp-action="AddCustomer" class="btn btn-sm btn-primary"><i class="bi bi-plus-lg me-1"></i>Add customer</a> }
+    </div>
+</div>
+
+<div class="stat-grid mb-4">
+    <div class="stat-tile tone-blue">
+        <div class="st-label">Active customers</div>
+        <div class="st-value">@ViewBag.ActiveCount</div>
+        <div class="st-sub">accounts open for orders</div>
+        <div class="st-icon"><i class="bi bi-people"></i></div>
+    </div>
+    <div class="stat-tile tone-green">
+        <div class="st-label">Lifetime billed</div>
+        <div class="st-value">@Fmt.MoneyShort((decimal)ViewBag.TotalBilled)</div>
+        <div class="st-sub">excluding cancelled orders</div>
+        <div class="st-icon"><i class="bi bi-receipt"></i></div>
+    </div>
+    <div class="stat-tile tone-amber">
+        <div class="st-label">Receivables</div>
+        <div class="st-value">@Fmt.MoneyShort((decimal)ViewBag.Outstanding)</div>
+        <div class="st-sub">outstanding across all accounts</div>
+        <div class="st-icon"><i class="bi bi-hourglass-split"></i></div>
+    </div>
+    <div class="stat-tile @((int)ViewBag.OverLimit > 0 ? "tone-red" : "tone-slate")">
+        <div class="st-label">Over credit limit</div>
+        <div class="st-value">@ViewBag.OverLimit</div>
+        <div class="st-sub">accounts needing follow-up</div>
+        <div class="st-icon"><i class="bi bi-exclamation-octagon"></i></div>
+    </div>
+</div>
+
+<form method="get" asp-action="Customers" class="filter-bar mb-3">
+    <div class="row g-2 align-items-end">
+        <div class="col-md-4">
+            <label class="form-label small mb-1">Search</label>
+            <input name="q" value="@q" class="form-control form-control-sm" placeholder="Name, phone or address" />
+        </div>
+        <div class="col-md-3">
+            <label class="form-label small mb-1">Type</label>
+            <select name="type" class="form-select form-select-sm">
+                <option value="">All types</option>
+                @foreach (var t in types) { <option value="@t" selected="@(t == type)">@t</option> }
+            </select>
+        </div>
+        <div class="col-md-3">
+            <div class="form-check mt-4">
+                <input class="form-check-input" type="checkbox" name="inactive" value="true" id="chkInactive" checked="@inactive" />
+                <label class="form-check-label small" for="chkInactive">Include inactive</label>
+            </div>
+        </div>
+        <div class="col-md-2 d-flex gap-1">
+            <button class="btn btn-sm btn-primary flex-fill"><i class="bi bi-funnel me-1"></i>Filter</button>
+            @if (!string.IsNullOrEmpty(q) || !string.IsNullOrEmpty(type) || inactive) { <a asp-action="Customers" class="btn btn-sm btn-outline-secondary"><i class="bi bi-x-lg"></i></a> }
+        </div>
+    </div>
+</form>
+
+<div class="card">
+    @if (Model.Count == 0)
+    {
+        <div class="card-body">
+            <div class="empty-state">
+                <i class="bi bi-people"></i>
+                <h6>No customers found</h6>
+                <p class="text-muted small">@(string.IsNullOrEmpty(q) && string.IsNullOrEmpty(type) ? "Register your first buyer to start taking orders." : "Try a different search or filter.")</p>
+                @if (canEdit) { <a asp-action="AddCustomer" class="btn btn-sm btn-primary"><i class="bi bi-plus-lg me-1"></i>Add customer</a> }
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead>
+                    <tr><th>Customer</th><th>Type</th><th>Contact</th><th class="text-end">Orders</th><th class="text-end">Billed</th><th class="text-end">Paid</th><th class="text-end">Outstanding</th><th style="min-width:150px">Credit usage</th><th>Last order</th><th></th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var c in Model)
+                    {
+                        <tr class="@(c.IsActive ? "" : "text-muted")">
+                            <td>
+                                <a asp-action="CustomerDetail" asp-route-id="@c.Id" class="fw-600 text-decoration-none">@c.Name</a>
+                                @if (!c.IsActive) { <span class="badge badge-gray ms-1">Inactive</span> }
+                                @if (!string.IsNullOrEmpty(c.Address)) { <div class="text-xs text-muted">@c.Address</div> }
+                            </td>
+                            <td><span class="badge badge-info-soft">@c.CustomerType</span></td>
+                            <td class="small">@(c.Phone ?? "—")@if (!string.IsNullOrEmpty(c.Email)) { <div class="text-xs text-muted">@c.Email</div> }</td>
+                            <td class="text-end">@c.OrderCount @if (c.OpenOrders > 0) { <div class="text-xs text-muted">@c.OpenOrders open</div> }</td>
+                            <td class="text-end">@Fmt.Money(c.TotalBilled)</td>
+                            <td class="text-end text-success">@Fmt.Money(c.TotalPaid)</td>
+                            <td class="text-end fw-600 @(c.Outstanding > 0 ? (c.OverLimit ? "text-danger" : "text-warning") : "")">@Fmt.Money(c.Outstanding)</td>
+                            <td>
+                                @if (c.CreditLimit > 0)
+                                {
+                                    <div class="d-flex align-items-center gap-2" title="@Fmt.Money(c.Outstanding) of @Fmt.Money(c.CreditLimit)">
+                                        <div class="prog-bar-wrap flex-fill"><div class="prog-bar-fill @(c.CreditUsedPct > 100 ? "danger" : c.CreditUsedPct > 80 ? "warning" : "")" style="width:@Math.Min(100m, c.CreditUsedPct).ToString(inv)%"></div></div>
+                                        <span class="text-xs">@Fmt.Pct(c.CreditUsedPct, 0)</span>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <span class="text-xs text-muted">Cash only</span>
+                                }
+                            </td>
+                            <td class="small">@(c.LastOrderDate.HasValue ? Fmt.Date(c.LastOrderDate) : "—")</td>
+                            <td class="text-end text-nowrap">
+                                <a asp-action="CustomerDetail" asp-route-id="@c.Id" class="btn btn-xs btn-outline-primary" title="Statement"><i class="bi bi-journal-text"></i></a>
+                                @if (canEdit)
+                                {
+                                    <a asp-action="EditCustomer" asp-route-id="@c.Id" class="btn btn-xs btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></a>
+                                    if (c.IsActive)
+                                    {
+                                        <a asp-action="Create" asp-route-customerId="@c.Id" class="btn btn-xs btn-outline-success" title="New order"><i class="bi bi-plus-lg"></i></a>
+                                    }
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>

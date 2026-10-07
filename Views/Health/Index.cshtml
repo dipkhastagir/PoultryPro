@@ -1,0 +1,245 @@
+@{
+    var vaccinations = ((ViewBag.Vaccinations as IEnumerable<VaccinationRecord>)?.ToList() ?? new List<VaccinationRecord>());
+    var diseases = ((ViewBag.DiseaseCases as IEnumerable<DiseaseCase>)?.ToList() ?? new List<DiseaseCase>());
+    var compliance = (ViewBag.Compliance as IEnumerable<VaccinationComplianceRow>)?.ToList() ?? new();
+    decimal overall = ViewBag.OverallCompliance is decimal oc ? oc : 100m;
+    var canWrite = User.IsAny(Roles.Health);
+    var returnUrl = Context.Request.Path + Context.Request.QueryString;
+    var pending = vaccinations.Where(v => v.CompletedDate == null).OrderBy(v => v.DueDate).ToList();
+    var done = vaccinations.Where(v => v.CompletedDate != null).OrderByDescending(v => v.CompletedDate).ToList();
+    var openCases = diseases.Where(d => d.Status != "Resolved").ToList();
+    var closedCases = diseases.Where(d => d.Status == "Resolved").ToList();
+}
+
+<div class="page-head">
+    <div>
+        <h4>Flock Health</h4>
+        <p>Vaccination programme execution, compliance per flock and disease case management.</p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+        <a asp-controller="VaccineSchedule" asp-action="Index" class="btn btn-sm btn-outline-secondary"><i class="bi bi-list-check me-1"></i>Vaccine programmes</a>
+        <a asp-controller="DiseaseLibrary" asp-action="Index" class="btn btn-sm btn-outline-secondary"><i class="bi bi-book me-1"></i>Disease library</a>
+        <a asp-controller="Reports" asp-action="Health" class="btn btn-sm btn-outline-secondary"><i class="bi bi-file-earmark-bar-graph me-1"></i>Health report</a>
+        @if (canWrite)
+        {
+            <a asp-action="AddVaccination" class="btn btn-sm btn-primary"><i class="bi bi-plus-lg me-1"></i>Schedule vaccination</a>
+            <a asp-action="AddDisease" class="btn btn-sm btn-outline-danger"><i class="bi bi-virus me-1"></i>Log disease case</a>
+        }
+    </div>
+</div>
+
+<div class="stat-grid">
+    <div class="stat-tile tone-red">
+        <div class="st-label">Overdue vaccinations</div>
+        <div class="st-value">@ViewBag.OverdueCount</div>
+        <div class="st-sub">past due date, not administered</div>
+        <div class="st-icon"><i class="bi bi-exclamation-octagon"></i></div>
+    </div>
+    <div class="stat-tile tone-amber">
+        <div class="st-label">Due in next 7 days</div>
+        <div class="st-value">@ViewBag.UpcomingCount</div>
+        <div class="st-sub">plan vaccinator & cold chain</div>
+        <div class="st-icon"><i class="bi bi-calendar-event"></i></div>
+    </div>
+    <div class="stat-tile tone-violet">
+        <div class="st-label">Open disease cases</div>
+        <div class="st-value">@ViewBag.ActiveDiseases</div>
+        <div class="st-sub">@closedCases.Count resolved in total</div>
+        <div class="st-icon"><i class="bi bi-virus"></i></div>
+    </div>
+    <div class="stat-tile @(overall >= 90 ? "tone-green" : overall >= 75 ? "tone-amber" : "tone-red")">
+        <div class="st-label">Programme compliance</div>
+        <div class="st-value">@overall.ToString("0.#")%</div>
+        <div class="st-sub">doses given ÷ doses due to date (active flocks)</div>
+        <div class="st-icon"><i class="bi bi-shield-check"></i></div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-xl-8">
+        <div class="card">
+            <div class="card-header">
+                <h6><i class="bi bi-syringe text-success me-2"></i>Pending vaccinations</h6>
+                <input data-table-filter="#tblPending" class="form-control form-control-sm" style="max-width:220px" placeholder="Filter…" />
+            </div>
+            @if (!pending.Any())
+            {
+                <div class="empty-state"><i class="bi bi-check2-all"></i><p>No pending vaccinations — every scheduled dose has been given.</p></div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0" id="tblPending">
+                        <thead><tr><th>Flock</th><th>Vaccine</th><th>Route / dose</th><th>Farm</th><th>Due</th><th>Status</th><th></th></tr></thead>
+                        <tbody>
+                            @foreach (var v in pending)
+                            {
+                                <tr class="@(v.IsOverdue ? "table-danger" : "")">
+                                    <td><a asp-controller="Batch" asp-action="Detail" asp-route-id="@v.BatchId" class="fw-600 text-decoration-none">@v.BatchCode</a><div class="text-xs text-muted">@v.Breed</div></td>
+                                    <td>@v.VaccineName</td>
+                                    <td class="text-xs">@(v.Route ?? "—")@(v.DoseMl.HasValue ? $" · {v.DoseMl:0.##} ml" : "")</td>
+                                    <td><small class="text-muted">@v.FarmName</small></td>
+                                    <td class="text-nowrap">
+                                        @v.DueDate.ToString("dd MMM yyyy")
+                                        @if (v.IsOverdue) { <span class="badge badge-danger-soft ms-1">@v.DaysOverdue d late</span> }
+                                    </td>
+                                    <td><span class="badge @Fmt.Badge(v.IsOverdue ? "Overdue" : v.Status)">@(v.IsOverdue ? "Overdue" : v.Status)</span></td>
+                                    <td class="text-end text-nowrap">
+                                        @if (canWrite)
+                                        {
+                                            <form asp-action="MarkDone" method="post" class="d-inline">
+                                                <input type="hidden" name="id" value="@v.Id" />
+                                                <input type="hidden" name="returnUrl" value="@returnUrl" />
+                                                <button class="btn btn-xs btn-success" title="Mark as given today"><i class="bi bi-check-lg"></i> Done</button>
+                                            </form>
+                                            <a asp-action="EditVaccination" asp-route-id="@v.Id" asp-route-returnUrl="@returnUrl" class="btn btn-xs btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></a>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h6><i class="bi bi-clipboard2-pulse text-primary me-2"></i>Compliance by active flock</h6>
+                <span class="text-xs text-muted">On-time = given within 2 days of due date</span>
+            </div>
+            @if (!compliance.Any())
+            {
+                <div class="empty-state"><i class="bi bi-clipboard-x"></i><p>No active flocks with a vaccination programme.</p></div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead><tr><th>Flock</th><th>Farm</th><th class="text-end">Due to date</th><th class="text-end">Given</th><th class="text-end">Overdue</th><th class="text-end">Upcoming</th><th style="min-width:160px">Compliance</th><th class="text-end">On-time</th></tr></thead>
+                        <tbody>
+                            @foreach (var c in compliance.OrderBy(c => c.CompliancePct))
+                            {
+                                var cls = c.CompliancePct >= 90 ? "" : c.CompliancePct >= 75 ? "warning" : "danger";
+                                <tr>
+                                    <td><a asp-controller="Batch" asp-action="Detail" asp-route-id="@c.BatchId" class="fw-600 text-decoration-none">@c.BatchCode</a></td>
+                                    <td><small class="text-muted">@c.FarmName</small></td>
+                                    <td class="text-end">@c.DueToDate</td>
+                                    <td class="text-end">@c.Done</td>
+                                    <td class="text-end @(c.Overdue > 0 ? "text-danger fw-600" : "")">@c.Overdue</td>
+                                    <td class="text-end">@c.Upcoming</td>
+                                    <td>
+                                        <div class="d-flex align-items-center gap-2">
+                                            <div class="prog-bar-wrap flex-grow-1"><div class="prog-bar-fill @cls" style="width:@(Math.Min(100, c.CompliancePct).ToString(System.Globalization.CultureInfo.InvariantCulture))%"></div></div>
+                                            <span class="text-xs fw-600">@c.CompliancePct.ToString("0.#")%</span>
+                                        </div>
+                                    </td>
+                                    <td class="text-end">@(c.Done > 0 ? c.OnTimePct.ToString("0.#") + "%" : "—")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+
+        <div class="card">
+            <div class="card-header"><h6><i class="bi bi-clock-history text-secondary me-2"></i>Recently administered</h6></div>
+            @if (!done.Any())
+            {
+                <div class="empty-state"><i class="bi bi-hourglass"></i><p>No vaccinations recorded as given yet.</p></div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0">
+                        <thead><tr><th>Flock</th><th>Vaccine</th><th>Due</th><th>Given</th><th>By</th><th></th></tr></thead>
+                        <tbody>
+                            @foreach (var v in done.Take(15))
+                            {
+                                var lateDays = v.CompletedDate.HasValue ? (v.CompletedDate.Value.Date - v.DueDate.Date).Days : 0;
+                                <tr>
+                                    <td>@v.BatchCode</td>
+                                    <td>@v.VaccineName</td>
+                                    <td class="text-xs">@v.DueDate.ToString("dd MMM")</td>
+                                    <td class="text-xs">@Fmt.Date(v.CompletedDate) @if (lateDays > 2) { <span class="badge badge-warning-soft ms-1">+@lateDays d</span> }</td>
+                                    <td class="text-xs">@(v.AdministeredBy ?? "—")</td>
+                                    <td class="text-end">@if (canWrite) { <a asp-action="EditVaccination" asp-route-id="@v.Id" asp-route-returnUrl="@returnUrl" class="btn btn-xs btn-outline-secondary"><i class="bi bi-pencil"></i></a> }</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+
+    <div class="col-xl-4">
+        <div class="card">
+            <div class="card-header">
+                <h6><i class="bi bi-virus text-danger me-2"></i>Open disease cases</h6>
+                <span class="badge badge-danger-soft">@openCases.Count</span>
+            </div>
+            <div class="card-body p-0">
+                @if (!openCases.Any())
+                {
+                    <div class="empty-state"><i class="bi bi-emoji-smile"></i><p>No open disease cases.</p></div>
+                }
+                @foreach (var d in openCases)
+                {
+                    <div class="alert-item-row px-3">
+                        <div class="alert-icon-box bg-danger-subtle"><i class="bi bi-virus text-danger"></i></div>
+                        <div class="flex-grow-1">
+                            <div class="fw-600" style="font-size:13px">@d.DiseaseName — <a asp-controller="Batch" asp-action="Detail" asp-route-id="@d.BatchId" class="text-decoration-none">@d.BatchCode</a></div>
+                            <div class="text-xs text-muted">@d.FarmName · reported @d.ReportedDate.ToString("dd MMM") · @d.AffectedCount affected@(d.DeathCount > 0 ? $" · {d.DeathCount} deaths" : "")</div>
+                            @if (!string.IsNullOrEmpty(d.Treatment))
+                            {
+                                <div class="text-xs mt-1" style="color:var(--text-secondary)"><i class="bi bi-capsule me-1"></i>@d.Treatment</div>
+                            }
+                        </div>
+                        <div class="d-flex flex-column align-items-end gap-1">
+                            <span class="badge @Fmt.Badge(d.Status)">@d.Status</span>
+                            @if (canWrite)
+                            {
+                                <div class="d-flex gap-1">
+                                    <a asp-action="EditDisease" asp-route-id="@d.Id" asp-route-returnUrl="@returnUrl" class="btn btn-xs btn-outline-secondary" title="Update"><i class="bi bi-pencil"></i></a>
+                                    <form asp-action="ResolveDisease" method="post" data-confirm="Mark this case as resolved?">
+                                        <input type="hidden" name="id" value="@d.Id" />
+                                        <input type="hidden" name="returnUrl" value="@returnUrl" />
+                                        <button class="btn btn-xs btn-outline-success" title="Resolve"><i class="bi bi-check2"></i></button>
+                                    </form>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header"><h6><i class="bi bi-archive text-secondary me-2"></i>Resolved cases</h6></div>
+            <div class="card-body p-0">
+                @if (!closedCases.Any())
+                {
+                    <div class="empty-state"><i class="bi bi-inbox"></i><p>No resolved cases yet.</p></div>
+                }
+                @foreach (var d in closedCases.OrderByDescending(c => c.ResolvedDate ?? c.ReportedDate).Take(8))
+                {
+                    <div class="alert-item-row px-3">
+                        <div class="alert-icon-box bg-success-subtle"><i class="bi bi-check-circle text-success"></i></div>
+                        <div class="flex-grow-1">
+                            <div class="fw-600" style="font-size:13px">@d.DiseaseName — @d.BatchCode</div>
+                            <div class="text-xs text-muted">@d.FarmName · @d.ReportedDate.ToString("dd MMM") → @Fmt.Date(d.ResolvedDate)</div>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <div class="info-callout">
+            <i class="bi bi-info-circle me-1"></i>
+            Vaccinations are generated automatically from a <a asp-controller="VaccineSchedule" asp-action="Index">vaccine programme</a>
+            when a flock is placed. Compliance = doses given ÷ doses whose due date has passed.
+        </div>
+    </div>
+</div>

@@ -1,0 +1,76 @@
+@model BreedStandardFormVm
+@{
+    var isEdit = ViewBag.IsEdit is bool e && e;
+}
+<div class="row justify-content-center"><div class="col-lg-8">
+<div class="form-card">
+    <a asp-action="Index" asp-route-breed="@Model.Breed" class="text-xs text-decoration-none"><i class="bi bi-arrow-left me-1"></i>Breed standards</a>
+    <h6 class="fw-semibold mb-1 mt-2"><i class="bi bi-rulers text-primary me-2"></i>@(isEdit ? $"Edit {Model.Breed} — day {Model.AgeDay}" : "Add breed standard point")</h6>
+    <p class="text-muted small mb-4">Enter values from the official breed management guide. Analytics interpolate linearly between points.</p>
+    <form asp-action="@(isEdit ? "Edit" : "Create")" method="post" novalidate>
+        <input type="hidden" asp-for="Id" />
+        <div asp-validation-summary="ModelOnly" class="alert alert-danger py-2 small"></div>
+        <div class="row g-3">
+            <div class="col-md-8">
+                <label asp-for="Breed" class="form-label">Breed *</label>
+                <input asp-for="Breed" class="form-control" list="breedList" maxlength="100" placeholder="e.g. Cobb 500" required />
+                <datalist id="breedList">
+                    @foreach (var b in Model.KnownBreeds) { <option value="@b"></option> }
+                </datalist>
+                <span asp-validation-for="Breed" class="text-danger small"></span>
+                <div class="form-text">Must match the breed name used on batches exactly.</div>
+            </div>
+            <div class="col-md-4">
+                <label asp-for="AgeDay" class="form-label"></label>
+                <input asp-for="AgeDay" class="form-control" min="0" max="600" />
+                <span asp-validation-for="AgeDay" class="text-danger small"></span>
+            </div>
+            <div class="col-md-4">
+                <label asp-for="TargetWeightGm" class="form-label"></label>
+                <input asp-for="TargetWeightGm" class="form-control" step="1" min="1" id="w" />
+                <span asp-validation-for="TargetWeightGm" class="text-danger small"></span>
+            </div>
+            <div class="col-md-4">
+                <label asp-for="DailyFeedGm" class="form-label"></label>
+                <input asp-for="DailyFeedGm" class="form-control" step="0.1" min="0" />
+                <span asp-validation-for="DailyFeedGm" class="text-danger small"></span>
+            </div>
+            <div class="col-md-4">
+                <label asp-for="CumFeedGm" class="form-label"></label>
+                <input asp-for="CumFeedGm" class="form-control" step="1" min="0" id="cf" />
+                <span asp-validation-for="CumFeedGm" class="text-danger small"></span>
+                <div class="form-text">Leave 0 to derive from weight × FCR.</div>
+            </div>
+            <div class="col-md-6">
+                <label asp-for="TargetFCR" class="form-label"></label>
+                <input asp-for="TargetFCR" class="form-control" step="0.001" min="0" id="fcr" />
+                <span asp-validation-for="TargetFCR" class="text-danger small"></span>
+                <div class="form-text" id="fcrHint"></div>
+            </div>
+            <div class="col-md-6">
+                <label asp-for="TargetCumMortPct" class="form-label"></label>
+                <input asp-for="TargetCumMortPct" class="form-control" step="0.01" min="0" max="100" />
+                <span asp-validation-for="TargetCumMortPct" class="text-danger small"></span>
+            </div>
+        </div>
+        <div class="formula mt-3 small">FCR = cumulative feed (g) ÷ body weight (g)</div>
+        <div class="d-flex gap-2 mt-4">
+            <button class="btn btn-primary"><i class="bi bi-check2 me-1"></i>@(isEdit ? "Save changes" : "Add point")</button>
+            <a asp-action="Index" asp-route-breed="@Model.Breed" class="btn btn-outline-secondary">Cancel</a>
+        </div>
+    </form>
+</div>
+</div></div>
+
+@section Scripts {
+<script>
+(function () {
+    const w = document.getElementById('w'), cf = document.getElementById('cf'), hint = document.getElementById('fcrHint');
+    function upd() {
+        const wv = parseFloat(w.value), cv = parseFloat(cf.value);
+        hint.textContent = wv > 0 && cv > 0 ? 'Implied by cumulative feed ÷ weight: ' + (cv / wv).toFixed(3) : '';
+    }
+    w.addEventListener('input', upd); cf.addEventListener('input', upd); upd();
+})();
+</script>
+}

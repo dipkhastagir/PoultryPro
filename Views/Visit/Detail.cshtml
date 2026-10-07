@@ -1,0 +1,594 @@
+@model VisitDetailVm
+@{
+    ViewData["Title"]    = $"Visit — {Model.Visit.FarmName}";
+    ViewData["Subtitle"] = $"{Model.Visit.FieldOfficerName} · {Model.Visit.VisitDate:dd MMM yyyy}";
+    var v = Model.Visit;
+    var canWrite = User.IsAny(Roles.Operations);
+    var inv = System.Globalization.CultureInfo.InvariantCulture;
+    var trust = v.Trust ?? VisitTrust.Evaluate(v, VisitTrust.DefaultRadiusM);
+    var trustColor = trust.Score >= 80 ? "#0d9e75" : trust.Score >= 50 ? "#f59e0b" : "#ef4444";
+}
+
+<!-- Top Actions -->
+<div class="d-flex gap-2 mb-4 flex-wrap">
+    <a asp-action="Index" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-arrow-left me-1"></i>Back
+    </a>
+    @if (canWrite)
+    {
+    <a asp-action="Edit" asp-route-id="@v.Id" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-pencil me-1"></i>Edit Visit
+    </a>
+    @if (v.VisitStatus != "Completed")
+    {
+        <form asp-action="UpdateStatus" method="post" style="display:inline">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="id" value="@v.Id" />
+            <input type="hidden" name="status" value="@(v.VisitStatus == "Pending" ? "In Progress" : "Completed")" />
+            <button class="btn btn-sm @(v.VisitStatus == "Pending" ? "btn-outline-info" : "btn-success")">
+                <i class="bi bi-@(v.VisitStatus == "Pending" ? "play-circle" : "check-circle") me-1"></i>
+                @(v.VisitStatus == "Pending" ? "Start Visit" : "Complete Visit")
+            </button>
+        </form>
+    }
+    @if (v.SyncStatus != "Synced")
+    {
+        <form asp-action="MarkSynced" method="post" style="display:inline">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="id" value="@v.Id" />
+            <button class="btn btn-sm btn-outline-warning">
+                <i class="bi bi-arrow-repeat me-1"></i>Mark Synced
+            </button>
+        </form>
+    }
+    <a asp-controller="DailyRecord" asp-action="Create" asp-route-visitId="@v.Id"
+       class="btn btn-sm btn-primary">
+        <i class="bi bi-plus-lg me-1"></i>Add Daily Record
+    </a>
+    }
+</div>
+
+<!-- Visit Info Cards -->
+<div class="row g-3 mb-4">
+    <!-- Visit Details -->
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <h6><i class="bi bi-info-circle text-primary me-2"></i>Visit Details</h6>
+                <span class="badge @(v.VisitStatus=="Completed"?"badge-healthy":v.VisitStatus=="In Progress"?"badge-info-soft":"badge-gray")">
+                    @v.VisitStatus
+                </span>
+            </div>
+            <div class="card-body p-0">
+                @{
+                    var infoRows = new List<(string Icon, string Label, string Value)>
+                    {
+                        ("bi-geo-alt-fill",   "Farm",     v.FarmName),
+                        ("bi-feather2",       "Batch",    string.IsNullOrEmpty(v.BatchCode) ? "—" : $"{v.BatchCode} ({v.Breed}, Day {v.AgeInDays})"),
+                        ("bi-person-badge",   "Officer",  v.FieldOfficerName),
+                        ("bi-calendar3",      "Date",     v.VisitDate.ToString("dd MMM yyyy")),
+                        ("bi-clock",          "Check-In", v.CheckInTime.HasValue ? v.CheckInTime.Value.ToString("HH:mm") : "—"),
+                        ("bi-clock-history",  "Check-Out",v.CheckOutTime.HasValue ? v.CheckOutTime.Value.ToString("HH:mm") : "—"),
+                        ("bi-tag",            "Purpose",  v.VisitPurpose),
+                        ("bi-arrow-repeat",   "Sync",     v.SyncStatus),
+                    };
+                }
+                @foreach (var (icon, label, val) in infoRows)
+                {
+                    <div class="d-flex align-items-center gap-2 px-3 py-2 border-bottom">
+                        <i class="bi @icon text-muted" style="width:16px;font-size:14px"></i>
+                        <div class="flex-grow-1">
+                            <div style="font-size:11px;color:var(--text-muted)">@label</div>
+                            <div style="font-size:13px;font-weight:500">@val</div>
+                        </div>
+                    </div>
+                }
+                @if (!string.IsNullOrEmpty(v.OverallRemark))
+                {
+                    <div class="px-3 py-2">
+                        <div style="font-size:11px;color:var(--text-muted)">Overall Remark</div>
+                        <div style="font-size:13px">@v.OverallRemark</div>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+
+    <!-- GPS check-in -->
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <h6><i class="bi bi-geo-alt-fill text-success me-2"></i>GPS Check-In</h6>
+            </div>
+            <div class="card-body">
+                @if (v.CheckInLatitude.HasValue && v.CheckInLongitude.HasValue)
+                {
+                    <div class="text-center mb-3">
+                        <div class="badge @trust.GpsBadge px-3 py-2 mb-2">
+                            <i class="bi @trust.GpsIcon me-1"></i>@(trust.GpsVerified ? "GPS Verified" : trust.GpsStatus == VisitTrustResult.OffSite ? "Off-site check-in" : "GPS fix recorded")
+                        </div>
+                        <div class="mt-2" style="font-size:13px">
+                            <div><strong>Lat:</strong> @v.CheckInLatitude.Value.ToString("F6")</div>
+                            <div><strong>Lng:</strong> @v.CheckInLongitude.Value.ToString("F6")</div>
+                            @if (v.GpsAccuracyMeters.HasValue)
+                            {
+                                <div class="text-muted mt-1">Accuracy: ±@v.GpsAccuracyMeters.Value.ToString("F0") m</div>
+                            }
+                        </div>
+                        <a href="https://www.openstreetmap.org/?mlat=@v.CheckInLatitude.Value.ToString(inv)&mlon=@v.CheckInLongitude.Value.ToString(inv)#map=17/@v.CheckInLatitude.Value.ToString(inv)/@v.CheckInLongitude.Value.ToString(inv)" rel="noopener"
+                           target="_blank" class="btn btn-sm btn-outline-success mt-3">
+                            <i class="bi bi-map me-1"></i>Open in OpenStreetMap
+                        </a>
+                    </div>
+                    <!-- Mini Leaflet map at the check-in point -->
+                    <div id="visitMiniMap" class="rounded overflow-hidden border" style="height:180px"
+                         data-lat="@v.CheckInLatitude.Value.ToString(inv)" data-lng="@v.CheckInLongitude.Value.ToString(inv)"
+                         data-acc="@(v.GpsAccuracyMeters?.ToString(inv) ?? "")" data-label="@v.FarmName"></div>
+                }
+                else
+                {
+                    <div class="text-center py-4">
+                        <i class="bi bi-geo-alt text-muted" style="font-size:36px"></i>
+                        <p class="text-muted mt-2 mb-0" style="font-size:13px">No GPS data available</p>
+                        <small class="text-muted">Check-in via mobile app records GPS</small>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-header"><h6><i class="bi bi-bar-chart text-info me-2"></i>Visit Summary</h6></div>
+            <div class="card-body">
+                <div class="row g-3 text-center">
+                    <div class="col-6">
+                        <div class="p-3 rounded" style="background:var(--bg)">
+                            <div style="font-size:24px;font-weight:700;color:var(--primary)">@Model.DailyRecords.Count</div>
+                            <div style="font-size:12px;color:var(--text-muted)">Daily Records</div>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="p-3 rounded" style="background:var(--bg)">
+                            <div style="font-size:24px;font-weight:700;color:#3b82f6">@Model.Photos.Count</div>
+                            <div style="font-size:12px;color:var(--text-muted)">Photos</div>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="p-3 rounded" style="background:var(--bg)">
+                            <div style="font-size:24px;font-weight:700;color:@(Model.Signature != null ? "#10b981" : "#94a3b8")">
+                                @(Model.Signature != null ? "✓" : "✗")
+                            </div>
+                            <div style="font-size:12px;color:var(--text-muted)">Signature</div>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="p-3 rounded" style="background:var(--bg)">
+                            <div style="font-size:24px;font-weight:700;color:var(--text-primary)">
+                                @Model.DailyRecords.Sum(r => r.MortalityCount)
+                            </div>
+                            <div style="font-size:12px;color:var(--text-muted)">Total Mortality</div>
+                        </div>
+                    </div>
+                </div>
+                @if (Model.Batch != null)
+                {
+                    <div class="mt-3 p-3 rounded" style="background:var(--primary-light)">
+                        <div style="font-size:12px;font-weight:600;color:var(--primary-dark);margin-bottom:6px">
+                            <i class="bi bi-feather2 me-1"></i>@Model.Batch.BatchCode — @Model.Batch.Breed
+                        </div>
+                        <div class="d-flex justify-content-between" style="font-size:12px">
+                            <span>Birds: <strong>@Model.Batch.CurrentCount.ToString("N0")</strong></span>
+                            <span>Age: <strong>@Model.Batch.AgeInDays d</strong></span>
+                            <span>Wt: <strong>@Model.Batch.AverageWeightKg kg</strong></span>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- DATA TRUST -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h6><i class="bi bi-shield-check text-success me-2"></i>Data trust</h6>
+        <span class="badge @trust.ScoreBadge">@trust.ScoreBand trust</span>
+    </div>
+    <div class="card-body">
+        <div class="row g-4 align-items-center">
+            <div class="col-md-3 text-center">
+                <div class="score-ring mx-auto mb-2" style="width:120px;height:120px;font-size:30px;color:@trustColor;background:conic-gradient(@trustColor @((trust.Score * 3.6).ToString("0.#", inv))deg, #e5e7eb 0deg);box-shadow:inset 0 0 0 14px #fff">
+                    @trust.Score
+                </div>
+                <div class="text-xs text-muted">Visit Trust Score / 100</div>
+            </div>
+            <div class="col-md-4">
+                <dl class="kv mb-0">
+                    <dt>GPS status</dt>
+                    <dd><span class="badge @trust.GpsBadge"><i class="bi @trust.GpsIcon me-1"></i>@trust.GpsStatus</span></dd>
+                    <dt>Distance to farm</dt>
+                    <dd>
+                        @if (trust.DistanceM.HasValue) { <span class="fw-600">@trust.DistanceM.Value.ToString("N0", inv) m</span> }
+                        else { <span class="text-muted">— @(trust.GpsNote is null ? "" : "(" + trust.GpsNote.ToLowerInvariant() + ")")</span> }
+                    </dd>
+                    <dt>Geofence radius</dt>
+                    <dd>@trust.RadiusM.ToString("0", inv) m</dd>
+                    <dt>GPS accuracy</dt>
+                    <dd>@(v.GpsAccuracyMeters.HasValue ? "±" + v.GpsAccuracyMeters.Value.ToString("0", inv) + " m" : "not reported")</dd>
+                    <dt>Allowed distance</dt>
+                    <dd>@trust.ToleranceM.ToString("0", inv) m <span class="text-xs text-muted">(radius + accuracy)</span></dd>
+                    <dt>Farm coordinates</dt>
+                    <dd class="mono">@(v.FarmLatitude.HasValue && v.FarmLongitude.HasValue ? v.FarmLatitude.Value.ToString("0.00000", inv) + ", " + v.FarmLongitude.Value.ToString("0.00000", inv) : "not on file")</dd>
+                </dl>
+            </div>
+            <div class="col-md-5">
+                <ul class="list-unstyled mb-3" style="font-size:13px">
+                    @foreach (var c in trust.Components)
+                    {
+                        <li class="d-flex align-items-center gap-2 mb-2">
+                            <i class="bi @(c.Earned ? "bi-check-circle-fill text-success" : "bi-x-circle text-muted")"></i>
+                            <span class="flex-grow-1 @(c.Earned ? "" : "text-muted")">@c.Label</span>
+                            <span class="badge @(c.Earned ? "badge-healthy" : "badge-gray")">@(c.Earned ? "+" : "0/")@c.Points</span>
+                        </li>
+                    }
+                </ul>
+                <div class="prog-bar-wrap mb-1"><div class="prog-bar-fill @(trust.Score < 50 ? "danger" : trust.Score < 80 ? "warning" : "")" style="width:@trust.Score%"></div></div>
+            </div>
+        </div>
+        <div class="formula mt-3">@VisitTrust.Formula</div>
+    </div>
+</div>
+
+<!-- DAILY RECORDS TABLE -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h6><i class="bi bi-clipboard2-data text-info me-2"></i>Daily Farm Records</h6>
+        @if (canWrite)
+        {
+        <a asp-controller="DailyRecord" asp-action="Create" asp-route-visitId="@v.Id"
+           class="btn btn-sm btn-primary"><i class="bi bi-plus-lg me-1"></i>Add Record</a>
+        }
+    </div>
+    @if (Model.DailyRecords.Any())
+    {
+        <div class="table-responsive">
+            <table class="table table-hover mb-0" style="font-size:12.5px">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Batch</th>
+                        <th title="Bird Count">🐓 Birds</th>
+                        <th title="Mortality" class="text-danger">💀 Mort.</th>
+                        <th title="Culling">✂️ Cull</th>
+                        <th title="Feed kg">🌾 Feed (kg)</th>
+                        <th title="Water L">💧 Water (L)</th>
+                        <th title="Temperature">🌡️ Temp</th>
+                        <th title="Humidity">💦 Humid</th>
+                        <th title="Average Weight">⚖️ Avg Wt</th>
+                        <th title="Light Hours">💡 Light</th>
+                        <th>Medicine</th>
+                        <th>Vaccine</th>
+                        <th>Sync</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var r in Model.DailyRecords)
+                    {
+                        <tr>
+                            <td><strong>@r.RecordDate.ToString("dd MMM")</strong></td>
+                            <td><span class="badge badge-gray">@r.BatchCode</span></td>
+                            <td class="fw-semibold">@r.BirdCount.ToString("N0")</td>
+                            <td class="@(r.MortalityCount > 0 ? "text-danger fw-bold" : "text-muted")">@r.MortalityCount</td>
+                            <td class="text-muted">@r.CullingCount</td>
+                            <td>@r.FeedConsumptionKg</td>
+                            <td>@r.WaterConsumptionLtr</td>
+                            <td>@(r.TemperatureC.HasValue ? $"{r.TemperatureC:F1}°C" : "—")</td>
+                            <td>@(r.HumidityPercent.HasValue ? $"{r.HumidityPercent:F0}%" : "—")</td>
+                            <td>@(r.AverageWeightGm.HasValue ? $"{r.AverageWeightGm:F0}g" : "—")</td>
+                            <td>@(r.LightHours.HasValue ? $"{r.LightHours:F1}h" : "—")</td>
+                            <td>
+                                @if (!string.IsNullOrEmpty(r.MedicineUsed))
+                                {
+                                    <span title="@r.MedicineDosage" style="cursor:help;text-decoration:underline dotted">
+                                        @r.MedicineUsed
+                                    </span>
+                                }
+                                else { <span class="text-muted">—</span> }
+                            </td>
+                            <td><small class="text-muted">@(r.VaccineUsed ?? "—")</small></td>
+                            <td>
+                                <span class="badge @(r.SyncStatus=="Synced"?"badge-healthy":"badge-warning-soft")">
+                                    @r.SyncStatus
+                                </span>
+                            </td>
+                            <td>
+                                <div class="d-flex gap-1">
+                                    @if (canWrite)
+                                    {
+                                    <a asp-controller="DailyRecord" asp-action="Edit" asp-route-id="@r.Id"
+                                       class="btn btn-xs btn-outline-secondary"><i class="bi bi-pencil"></i></a>
+                                    <form asp-controller="DailyRecord" asp-action="Delete" method="post"
+                                          style="display:inline" onsubmit="return confirm('Delete this record?')">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="id" value="@r.Id" />
+                                        <input type="hidden" name="visitId" value="@v.Id" />
+                                        <button class="btn btn-xs btn-outline-danger"><i class="bi bi-trash"></i></button>
+                                    </form>
+                                    }
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+                <tfoot class="table-light fw-semibold" style="font-size:12px">
+                    <tr>
+                        <td colspan="2">Totals</td>
+                        <td>—</td>
+                        <td class="text-danger">@Model.DailyRecords.Sum(r => r.MortalityCount)</td>
+                        <td>@Model.DailyRecords.Sum(r => r.CullingCount)</td>
+                        <td>@Model.DailyRecords.Sum(r => r.FeedConsumptionKg).ToString("F2") kg</td>
+                        <td>@Model.DailyRecords.Sum(r => r.WaterConsumptionLtr).ToString("F2") L</td>
+                        <td colspan="8"></td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    }
+    else
+    {
+        <div class="card-body text-center py-4 text-muted">
+            <i class="bi bi-clipboard2 fs-2"></i>
+            <p class="mt-2 mb-0">No daily records yet.</p>
+            @if (canWrite)
+            {
+            <a asp-controller="DailyRecord" asp-action="Create" asp-route-visitId="@v.Id"
+               class="btn btn-sm btn-primary mt-2">Add First Record</a>
+            }
+        </div>
+    }
+</div>
+
+<!-- PHOTOS SECTION -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h6><i class="bi bi-camera-fill text-primary me-2"></i>Visit Photos (@Model.Photos.Count)</h6>
+        @if (canWrite)
+        {
+        <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#photoModal">
+            <i class="bi bi-cloud-upload me-1"></i>Upload Photo
+        </button>
+        }
+    </div>
+    <div class="card-body">
+        @if (Model.Photos.Any())
+        {
+            <div class="row g-3">
+                @foreach (var p in Model.Photos)
+                {
+                    <div class="col-6 col-md-3 col-lg-2">
+                        <div class="position-relative" style="border-radius:10px;overflow:hidden;border:1px solid var(--border)">
+                            <img src="@p.FilePath" alt="@p.PhotoType"
+                                 style="width:100%;height:110px;object-fit:cover;display:block"
+                                 onerror="this.src='/img/no-photo.png'" />
+                            <div style="padding:6px 8px;background:var(--card-bg)">
+                                <div style="font-size:11px;font-weight:500">@p.PhotoType</div>
+                                @if (!string.IsNullOrEmpty(p.Caption))
+                                {
+                                    <div style="font-size:10px;color:var(--text-muted)">@p.Caption</div>
+                                }
+                                <div class="d-flex justify-content-between align-items-center mt-1">
+                                    <small class="text-muted" style="font-size:10px">@(p.FileSizeKb.HasValue ? $"{p.FileSizeKb}kb" : "")</small>
+                                    @if (canWrite)
+                                    {
+                                    <form asp-action="DeletePhoto" method="post" style="display:inline"
+                                          onsubmit="return confirm('Delete photo?')">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="photoId" value="@p.Id" />
+                                        <input type="hidden" name="visitId" value="@v.Id" />
+                                        <button class="btn btn-xs btn-outline-danger" style="padding:1px 6px">
+                                            <i class="bi bi-trash" style="font-size:10px"></i>
+                                        </button>
+                                    </form>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="text-center py-3 text-muted">
+                <i class="bi bi-camera fs-2"></i>
+                <p class="mt-2 mb-0" style="font-size:13px">No photos uploaded yet.</p>
+            </div>
+        }
+    </div>
+</div>
+
+<!-- FARMER SIGNATURE SECTION -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h6><i class="bi bi-pen text-warning me-2"></i>Farmer Signature</h6>
+        @if (Model.Signature == null && canWrite)
+        {
+            <button type="button" class="btn btn-sm btn-outline-warning"
+                    data-bs-toggle="modal" data-bs-target="#sigModal">
+                <i class="bi bi-plus-lg me-1"></i>Add Signature
+            </button>
+        }
+    </div>
+    <div class="card-body">
+        @if (Model.Signature != null)
+        {
+            <div class="row align-items-center g-4">
+                <div class="col-md-4">
+                    <img src="@Model.Signature.SignatureFilePath" alt="Farmer Signature"
+                         style="max-width:100%;max-height:120px;border:1px solid var(--border);border-radius:8px;padding:8px;background:#fff"
+                         onerror="this.src='/img/sig-placeholder.png'" />
+                </div>
+                <div class="col-md-8">
+                    <div class="d-flex flex-column gap-2">
+                        <div><strong>Farmer Name:</strong> @Model.Signature.FarmerName</div>
+                        @if (!string.IsNullOrEmpty(Model.Signature.FarmerPhone))
+                        {
+                            <div><strong>Phone:</strong> @Model.Signature.FarmerPhone</div>
+                        }
+                        <div><strong>Signed At:</strong> @Model.Signature.SignedAt.ToString("dd MMM yyyy, HH:mm")</div>
+                        <div>
+                            <span class="badge @(Model.Signature.IsVerifiedByFarmer ? "badge-healthy" : "badge-warning-soft")">
+                                @(Model.Signature.IsVerifiedByFarmer ? "✓ Verified by Farmer" : "Pending Verification")
+                            </span>
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-secondary mt-3"
+                            data-bs-toggle="modal" data-bs-target="#sigModal">
+                        <i class="bi bi-arrow-repeat me-1"></i>Update Signature
+                    </button>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="text-center py-3 text-muted">
+                <i class="bi bi-pen fs-2"></i>
+                <p class="mt-2 mb-0" style="font-size:13px">No signature collected yet.</p>
+            </div>
+        }
+    </div>
+</div>
+
+<!-- Remarks -->
+@if (!string.IsNullOrEmpty(v.OverallRemark))
+{
+    <div class="card">
+        <div class="card-header"><h6><i class="bi bi-chat-text me-2"></i>Overall Remarks</h6></div>
+        <div class="card-body"><p class="mb-0" style="font-size:13.5px">@v.OverallRemark</p></div>
+    </div>
+}
+
+<!-- PHOTO UPLOAD MODAL -->
+<div class="modal fade" id="photoModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h6 class="modal-title"><i class="bi bi-camera-fill me-2"></i>Upload Visit Photo</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form asp-action="UploadPhoto" method="post" enctype="multipart/form-data">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="visitId" value="@v.Id" />
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Photo Type *</label>
+                        <select name="photoType" class="form-select">
+                            <option>General</option>
+                            <option>Birds</option>
+                            <option>Feed</option>
+                            <option>Equipment</option>
+                            <option>Farm</option>
+                            <option>Mortality</option>
+                            <option>Medicine</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Photo *</label>
+                        <input type="file" name="photo" class="form-control" accept="image/*" required
+                               onchange="previewPhoto(this)" />
+                        <img id="photoPreview" style="display:none;max-width:100%;margin-top:10px;border-radius:8px" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Caption</label>
+                        <input type="text" name="caption" class="form-control" placeholder="Brief description..." />
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-cloud-upload me-1"></i>Upload
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- SIGNATURE MODAL -->
+<div class="modal fade" id="sigModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h6 class="modal-title"><i class="bi bi-pen me-2"></i>Farmer Signature</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form asp-action="SaveSignature" method="post" enctype="multipart/form-data">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="visitId" value="@v.Id" />
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Farmer Name *</label>
+                        <input type="text" name="farmerName" class="form-control"
+                               value="@Model.Signature?.FarmerName" required />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Farmer Phone</label>
+                        <input type="text" name="farmerPhone" class="form-control"
+                               value="@Model.Signature?.FarmerPhone" placeholder="017XXXXXXXX" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Signature Image *</label>
+                        <input type="file" name="signatureFile" class="form-control"
+                               accept="image/png,image/jpeg" required
+                               onchange="previewSig(this)" />
+                        <div class="form-text">Upload a photo of the farmer's handwritten signature (PNG/JPG).</div>
+                        <img id="sigPreview" style="display:none;max-width:100%;margin-top:10px;border-radius:8px;border:1px solid var(--border);padding:8px;background:#fff" />
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-warning">
+                        <i class="bi bi-check-lg me-1"></i>Save Signature
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+@section Head {
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+}
+
+@section Scripts {
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+(function () {
+    const el = document.getElementById('visitMiniMap');
+    if (!el || typeof L === 'undefined') return;
+    const lat = parseFloat(el.dataset.lat), lng = parseFloat(el.dataset.lng), acc = parseFloat(el.dataset.acc);
+    const map = L.map(el, { scrollWheelZoom: false }).setView([lat, lng], 16);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' }).addTo(map);
+    const lbl = document.createElement('div'); lbl.textContent = el.dataset.label || '';
+    L.marker([lat, lng]).addTo(map).bindPopup(lbl.innerHTML + '<br>check-in point');
+    if (!isNaN(acc) && acc > 0) L.circle([lat, lng], { radius: acc, color: '#0d9e75', fillOpacity: .12, weight: 1 }).addTo(map);
+})();
+function previewPhoto(input) {
+    const img = document.getElementById('photoPreview');
+    if (input.files && input.files[0]) {
+        img.src = URL.createObjectURL(input.files[0]);
+        img.style.display = 'block';
+    }
+}
+function previewSig(input) {
+    const img = document.getElementById('sigPreview');
+    if (input.files && input.files[0]) {
+        img.src = URL.createObjectURL(input.files[0]);
+        img.style.display = 'block';
+    }
+}
+</script>
+}

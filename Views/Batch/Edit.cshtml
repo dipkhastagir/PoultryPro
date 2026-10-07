@@ -1,0 +1,115 @@
+@using PoultryPro.Controllers
+@model Batch
+@{
+    var statuses = BatchController.HealthStatuses.ToList();
+    if (!statuses.Contains(Model.HealthStatus)) statuses.Insert(0, Model.HealthStatus);
+}
+
+<div class="row justify-content-center">
+    <div class="col-xl-9">
+        <form asp-action="Edit" asp-route-id="@Model.Id" method="post" class="form-card">
+            @Html.AntiForgeryToken()
+            <div asp-validation-summary="All" class="text-danger small mb-2"></div>
+
+            <div class="d-flex justify-content-between align-items-start mb-3">
+                <div>
+                    <div class="fw-600">@Model.FarmName</div>
+                    <div class="text-xs text-muted">Placed @Fmt.Date(Model.PlacementDate) · @Fmt.Num(Model.InitialCount) chicks · age @Model.AgeInDays d</div>
+                </div>
+                <span class="badge @Fmt.Badge(Model.IsActive ? "Active" : "Closed")">@(Model.IsActive ? "Active" : "Closed")</span>
+            </div>
+
+            <div class="section-header"><h5 class="section-title">Identity</h5></div>
+            <div class="row g-3 mb-4">
+                <div class="col-md-3">
+                    <label asp-for="BatchCode" class="form-label">Batch code *</label>
+                    <input asp-for="BatchCode" class="form-control mono" maxlength="20" required />
+                </div>
+                <div class="col-md-3">
+                    <label asp-for="BatchType" class="form-label">Production type</label>
+                    <select asp-for="BatchType" class="form-select">
+                        @foreach (var t in BatchController.BatchTypes)
+                        {
+                            <option value="@t">@t</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label asp-for="Breed" class="form-label">Breed</label>
+                    <input asp-for="Breed" class="form-control" list="breedList" maxlength="100" />
+                    <datalist id="breedList">
+                        @foreach (var br in BatchController.Breeds.Where(x => x != "Other"))
+                        {
+                            <option value="@br"></option>
+                        }
+                    </datalist>
+                </div>
+                <div class="col-md-3">
+                    <label asp-for="ShedNo" class="form-label">Shed no.</label>
+                    <input asp-for="ShedNo" class="form-control" maxlength="20" />
+                </div>
+                <div class="col-md-5">
+                    <label asp-for="HatcheryName" class="form-label">Hatchery</label>
+                    <input asp-for="HatcheryName" class="form-control" maxlength="150" />
+                </div>
+                <div class="col-md-3">
+                    <label asp-for="ChickCostPerBird" class="form-label">Chick cost / bird (৳)</label>
+                    <input asp-for="ChickCostPerBird" type="number" step="0.01" min="0" class="form-control" />
+                </div>
+                <div class="col-md-4">
+                    <label asp-for="ExpectedHarvestDate" class="form-label">Expected harvest</label>
+                    <input asp-for="ExpectedHarvestDate" type="date" class="form-control" />
+                </div>
+            </div>
+
+            <div class="section-header"><h5 class="section-title">Counts &amp; performance</h5></div>
+            <div class="info-callout mb-3">
+                Daily records and mortality logs update these figures automatically. Edit them only to correct a stock count.
+            </div>
+            <div class="row g-3 mb-4">
+                <div class="col-md-4">
+                    <label asp-for="CurrentCount" class="form-label">Live birds</label>
+                    <input asp-for="CurrentCount" type="number" min="0" max="@Model.InitialCount" class="form-control" />
+                </div>
+                <div class="col-md-4">
+                    <label asp-for="MortalityCount" class="form-label">Cumulative mortality</label>
+                    <input asp-for="MortalityCount" type="number" min="0" class="form-control" />
+                </div>
+                <div class="col-md-4">
+                    <label asp-for="CullingCount" class="form-label">Cumulative culls</label>
+                    <input asp-for="CullingCount" type="number" min="0" class="form-control" />
+                </div>
+                <div class="col-md-4">
+                    <label asp-for="AverageWeightKg" class="form-label">Average weight (kg)</label>
+                    <input asp-for="AverageWeightKg" type="number" step="0.001" min="0" class="form-control" />
+                </div>
+                <div class="col-md-4">
+                    <label asp-for="TotalFeedKg" class="form-label">Total feed used (kg)</label>
+                    <input asp-for="TotalFeedKg" type="number" step="0.01" min="0" class="form-control" />
+                </div>
+                <div class="col-md-4">
+                    <label asp-for="HealthStatus" class="form-label">Health status</label>
+                    <select asp-for="HealthStatus" class="form-select">
+                        @foreach (var s in statuses)
+                        {
+                            <option value="@s">@s</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-12">
+                    <label asp-for="Notes" class="form-label">Notes</label>
+                    <textarea asp-for="Notes" class="form-control" rows="3" maxlength="500"></textarea>
+                </div>
+            </div>
+
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Save changes</button>
+                <a asp-action="Detail" asp-route-id="@Model.Id" class="btn btn-outline-secondary">Cancel</a>
+                @if (Model.IsActive)
+                {
+                    <a asp-action="Close" asp-route-id="@Model.Id" class="btn btn-outline-warning ms-auto"><i class="bi bi-box-arrow-right me-1"></i>Close / harvest</a>
+                }
+            </div>
+        </form>
+    </div>
+</div>

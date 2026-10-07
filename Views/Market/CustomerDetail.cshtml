@@ -1,0 +1,228 @@
+@model CustomerDetailVm
+@{
+    var c = Model.Customer;
+    var canEdit = User.IsAny(Roles.Finance);
+    var inv = System.Globalization.CultureInfo.InvariantCulture;
+    var live = Model.Orders.Where(o => o.Status != "Cancelled").ToList();
+    var avgOrder = live.Count > 0 ? live.Average(o => o.TotalAmount) : 0;
+    var openOrders = live.Where(o => o.BalanceDue > 0).OrderBy(o => o.DeliveryDate).ToList();
+    var oldestDue = openOrders.FirstOrDefault();
+    var paidOrders = live.Where(o => o.BalanceDue <= 0 && o.TotalAmount > 0).ToList();
+    var payByCode = Model.Payments.GroupBy(p => p.Reference ?? "").ToDictionary(g => g.Key, g => g.Max(p => p.TxnDate));
+    var avgDaysToPay = paidOrders.Where(o => payByCode.ContainsKey(o.OrderCode))
+        .Select(o => (payByCode[o.OrderCode].Date - o.DeliveryDate.Date).TotalDays).DefaultIfEmpty(double.NaN).Average();
+    var usage = c.CreditUsedPct;
+
+    // Statement: debit = invoiced order value, credit = payments; running balance
+    var stmt = live.Select(o => (Date: o.OrderDate.Date, Kind: 0, Ref: o.OrderCode, Desc: $"{o.Product} — {Fmt.Num(o.Quantity, 2)} {o.Unit}", Debit: o.TotalAmount, Credit: 0m, OrderId: (int?)o.Id))
+        .Concat(Model.Payments.Select(p => (Date: p.TxnDate.Date, Kind: 1, Ref: p.Reference ?? "", Desc: "Payment" + (string.IsNullOrEmpty(p.PaymentMethod) ? "" : " · " + p.PaymentMethod), Debit: 0m, Credit: p.Amount, OrderId: live.FirstOrDefault(o => o.OrderCode == p.Reference)?.Id)))
+        .OrderBy(x => x.Date).ThenBy(x => x.Kind).ToList();
+    var running = new List<decimal>();
+    decimal bal = 0;
+    foreach (var s in stmt) { bal += s.Debit - s.Credit; running.Add(bal); }
+    var productMix = live.GroupBy(o => o.Product).Select(g => new { P = g.Key, V = g.Sum(o => o.TotalAmount) }).OrderByDescending(x => x.V).ToList();
+}
+
+<div class="page-head">
+    <div>
+        <h4>
+            <span class="avatar me-2">@(string.IsNullOrEmpty(c.Name) ? "?" : c.Name.Substring(0, 1).ToUpper())</span>@c.Name
+            <span class="badge badge-info-soft align-middle ms-1">@c.CustomerType</span>
+            @if (!c.IsActive) { <span class="badge badge-danger-soft align-middle">Inactive</span> }
+            @if (c.OverLimit) { <span class="badge badge-danger-soft align-middle">Over credit limit</span> }
+        </h4>
+        <p>
+            @if (!string.IsNullOrEmpty(c.Phone)) { <span><i class="bi bi-telephone me-1"></i>@c.Phone</span> }
+            @if (!string.IsNullOrEmpty(c.Email)) { <span class="ms-2"><i class="bi bi-envelope me-1"></i>@c.Email</span> }
+            @if (!string.IsNullOrEmpty(c.Address)) { <span class="ms-2"><i class="bi bi-geo-alt me-1"></i>@c.Address</span> }
+            <span class="ms-2 text-muted">customer since @Fmt.Date(c.CreatedAt)</span>
+        </p>
+    </div>
+    <div class="d-flex flex-wrap gap-2 no-print">
+        <a asp-action="Customers" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Customers</a>
+        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.print()"><i class="bi bi-printer me-1"></i>Print statement</button>
+        @if (canEdit)
+        {
+            <a asp-action="EditCustomer" asp-route-id="@c.Id" class="btn btn-sm btn-outline-secondary"><i class="bi bi-pencil me-1"></i>Edit</a>
+            if (c.IsActive)
+            {
+                <a asp-action="Create" asp-route-customerId="@c.Id" class="btn btn-sm btn-primary"><i class="bi bi-plus-lg me-1"></i>New order</a>
+            }
+        }
+    </div>
+</div>
+
+<div class="stat-grid mb-4">
+    <div class="stat-tile tone-blue">
+        <div class="st-label">Total billed</div>
+        <div class="st-value">@Fmt.MoneyShort(c.TotalBilled)</div>
+        <div class="st-sub">@c.OrderCount orders · avg @Fmt.Money(avgOrder)</div>
+        <div class="st-icon"><i class="bi bi-receipt"></i></div>
+    </div>
+    <div class="stat-tile tone-green">
+        <div class="st-label">Total paid</div>
+        <div class="st-value">@Fmt.MoneyShort(c.TotalPaid)</div>
+        <div class="st-sub">@(double.IsNaN(avgDaysToPay) ? "no settled orders yet" : $"settles ~{Math.Round(avgDaysToPay):0} days after delivery")</div>
+        <div class="st-icon"><i class="bi bi-cash-coin"></i></div>
+    </div>
+    <div class="stat-tile @(c.Outstanding > 0 ? (c.OverLimit ? "tone-red" : "tone-amber") : "tone-slate")">
+        <div class="st-label">Outstanding</div>
+        <div class="st-value">@Fmt.MoneyShort(c.Outstanding)</div>
+        <div class="st-sub">@(oldestDue != null ? $"oldest: {oldestDue.OrderCode} ({Fmt.Date(oldestDue.DeliveryDate)})" : "nothing due")</div>
+        <div class="st-icon"><i class="bi bi-hourglass-split"></i></div>
+    </div>
+    <div class="stat-tile tone-violet">
+        <div class="st-label">Last order</div>
+        <div class="st-value fs-5">@Fmt.Date(c.LastOrderDate)</div>
+        <div class="st-sub">@(c.LastOrderDate.HasValue ? Fmt.Ago(c.LastOrderDate) : "no orders yet") · @c.OpenOrders open</div>
+        <div class="st-icon"><i class="bi bi-calendar-check"></i></div>
+    </div>
+</div>
+
+<div class="row g-4 mb-4">
+    <div class="col-lg-4">
+        <div class="card h-100">
+            <div class="card-header"><h6><i class="bi bi-speedometer2 text-primary me-2"></i>Credit limit usage</h6></div>
+            <div class="card-body">
+                @if (c.CreditLimit <= 0)
+                {
+                    <div class="info-callout small mb-3"><i class="bi bi-cash me-1"></i>Cash customer — no credit limit set.
+                        @if (c.Outstanding > 0) { <span>Outstanding balance of <strong>@Fmt.Money(c.Outstanding)</strong> should be collected.</span> }
+                    </div>
+                }
+                else
+                {
+                    <div class="d-flex justify-content-between align-items-end mb-1">
+                        <div class="fs-4 fw-bold @(usage > 100 ? "text-danger" : usage > 80 ? "text-warning" : "text-success")">@Fmt.Pct(usage)</div>
+                        <div class="small text-muted text-end">@Fmt.Money(c.Outstanding)<br />of @Fmt.Money(c.CreditLimit)</div>
+                    </div>
+                    <div class="prog-bar-wrap mb-2" style="height:12px">
+                        <div class="prog-bar-fill @(usage > 100 ? "danger" : usage > 80 ? "warning" : "")" style="width:@Math.Min(100m, usage).ToString(inv)%"></div>
+                    </div>
+                    <div class="d-flex justify-content-between text-xs text-muted mb-3"><span>0</span><span>80% caution</span><span>limit</span></div>
+                    <dl class="kv mb-0">
+                        <dt>Available credit</dt><dd class="@(c.OverLimit ? "text-danger fw-600" : "")">@Fmt.Money(c.CreditLimit - c.Outstanding)</dd>
+                    </dl>
+                }
+                @if (productMix.Count > 0)
+                {
+                    <div class="fw-600 small mt-3 mb-2">Product mix</div>
+                    @foreach (var p in productMix)
+                    {
+                        var liveTotal = live.Sum(o => o.TotalAmount);
+                        var share = liveTotal > 0 ? p.V * 100m / liveTotal : 0;
+                        <div class="d-flex justify-content-between text-xs"><span>@p.P</span><span>@Fmt.Money(p.V) · @Fmt.Pct(share, 0)</span></div>
+                        <div class="prog-bar-wrap mb-2"><div class="prog-bar-fill" style="width:@share.ToString("0.#", inv)%"></div></div>
+                    }
+                }
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-8">
+        <div class="card h-100">
+            <div class="card-header"><h6><i class="bi bi-bar-chart text-primary me-2"></i>Monthly purchases — last 12 months</h6></div>
+            <div class="card-body">
+                @if (Model.MonthlySales.All(m => m.Amount == 0))
+                {
+                    <div class="empty-state"><i class="bi bi-bar-chart"></i><p class="text-muted small mb-0">No orders in the last 12 months.</p></div>
+                }
+                else
+                {
+                    <div style="height:260px"><canvas id="custChart"></canvas></div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h6><i class="bi bi-journal-text text-primary me-2"></i>Account statement</h6>
+        <span class="small fw-600">Closing balance @Fmt.Money(bal)</span>
+    </div>
+    @if (stmt.Count == 0)
+    {
+        <div class="card-body"><div class="empty-state"><i class="bi bi-journal"></i><p class="text-muted small mb-0">No invoices or payments yet.</p></div></div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead><tr><th>Date</th><th>Reference</th><th>Description</th><th class="text-end">Invoiced</th><th class="text-end">Paid</th><th class="text-end">Balance</th></tr></thead>
+                <tbody>
+                    @for (var i = 0; i < stmt.Count; i++)
+                    {
+                        var s = stmt[i];
+                        <tr>
+                            <td class="small text-nowrap">@Fmt.Date(s.Date)</td>
+                            <td class="mono small">
+                                @if (s.OrderId.HasValue) { <a asp-action="Detail" asp-route-id="@s.OrderId">@s.Ref</a> } else { @s.Ref }
+                            </td>
+                            <td class="small">@s.Desc</td>
+                            <td class="text-end">@(s.Debit > 0 ? Fmt.Money(s.Debit) : "")</td>
+                            <td class="text-end text-success">@(s.Credit > 0 ? Fmt.Money(s.Credit) : "")</td>
+                            <td class="text-end fw-600">@Fmt.Money(running[i])</td>
+                        </tr>
+                    }
+                </tbody>
+                <tfoot>
+                    <tr class="fw-600"><td colspan="3">Totals</td><td class="text-end">@Fmt.Money(stmt.Sum(s => s.Debit))</td><td class="text-end text-success">@Fmt.Money(stmt.Sum(s => s.Credit))</td><td class="text-end">@Fmt.Money(bal)</td></tr>
+                </tfoot>
+            </table>
+        </div>
+    }
+</div>
+
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h6><i class="bi bi-bag text-primary me-2"></i>Orders <span class="text-muted fw-normal small">(@Model.Orders.Count)</span></h6>
+        <input data-table-filter="#tblCustOrders" class="form-control form-control-sm no-print" style="width:180px" placeholder="Quick search…" />
+    </div>
+    @if (Model.Orders.Count == 0)
+    {
+        <div class="card-body"><div class="empty-state"><i class="bi bi-bag"></i><p class="text-muted small mb-0">This customer has not placed any orders yet.</p></div></div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0" id="tblCustOrders">
+                <thead><tr><th>Order</th><th>Date</th><th>Product</th><th class="text-end">Qty</th><th class="text-end">Total</th><th class="text-end">Paid</th><th class="text-end">Due</th><th>Status</th><th>Payment</th><th class="no-print"></th></tr></thead>
+                <tbody>
+                    @foreach (var o in Model.Orders)
+                    {
+                        <tr class="@(o.Status == "Cancelled" ? "text-muted" : "")">
+                            <td><a asp-action="Detail" asp-route-id="@o.Id" class="mono fw-600">@o.OrderCode</a></td>
+                            <td class="small">@Fmt.Date(o.OrderDate)</td>
+                            <td>@o.Product @if (!string.IsNullOrEmpty(o.BatchCode)) { <div class="text-xs text-muted">flock @o.BatchCode</div> }</td>
+                            <td class="text-end small">@Fmt.Num(o.Quantity, 1) @o.Unit</td>
+                            <td class="text-end">@Fmt.Money(o.TotalAmount)</td>
+                            <td class="text-end text-success">@Fmt.Money(o.PaidAmount)</td>
+                            <td class="text-end fw-600 @(o.BalanceDue > 0 && o.Status != "Cancelled" ? "text-danger" : "")">@(o.Status == "Cancelled" ? "—" : Fmt.Money(o.BalanceDue))</td>
+                            <td><span class="badge @Fmt.Badge(o.Status)">@o.Status</span></td>
+                            <td><span class="badge @Fmt.Badge(o.PaymentStatus)">@o.PaymentStatus</span></td>
+                            <td class="text-end no-print"><a asp-action="Invoice" asp-route-id="@o.Id" class="btn btn-xs btn-outline-secondary" title="Invoice"><i class="bi bi-file-earmark-text"></i></a></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@section Scripts {
+<script>
+(function () {
+    const el = document.getElementById('custChart');
+    if (!el) return;
+    new Chart(el, {
+        type: 'bar',
+        data: {
+            labels: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.MonthlySales.Select(m => m.Label))),
+            datasets: [{ label: 'Order value', data: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.MonthlySales.Select(m => (double)m.Amount))), backgroundColor: ppColors.blue, borderRadius: 4 }]
+        },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => ppMoney(c.raw) } } },
+                   scales: { y: { ticks: { callback: v => ppMoney(v) } } } }
+    });
+})();
+</script>
+}

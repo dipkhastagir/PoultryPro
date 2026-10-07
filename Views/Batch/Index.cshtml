@@ -1,0 +1,166 @@
+@model FlockRegisterVm
+@{
+    var canWrite = User.IsInRole(Roles.Admin) || User.IsInRole(Roles.Manager) || User.IsInRole(Roles.Veterinarian);
+    var list = Model.Batches;
+    var active = list.Where(b => b.IsActive).ToList();
+    var liveBirds = active.Sum(b => b.CurrentCount);
+    var withFcr = list.Where(b => b.FCR > 0).ToList();
+    var withEpef = list.Where(b => b.EPEF > 0).ToList();
+    var avgLiv = list.Any() ? list.Average(b => b.LivabilityPct) : 0m;
+    var farmName = Model.FarmId.HasValue ? Model.Farms.FirstOrDefault(f => f.Id == Model.FarmId)?.Name : null;
+    string Tab(string s) => Model.Status == s ? "nav-link active" : "nav-link";
+}
+
+<div class="page-head">
+    <div>
+        <h4>@(farmName ?? "All farms") — flock register</h4>
+        <p>Every placement with its production KPIs. EPEF = livability% × live weight(kg) × 100 ÷ (age × FCR).</p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+        <a asp-action="Export" asp-route-farmId="@Model.FarmId" asp-route-status="@Model.Status" class="btn btn-sm btn-outline-secondary"><i class="bi bi-download me-1"></i>CSV</a>
+        @if (canWrite)
+        {
+            <a asp-action="Create" asp-route-farmId="@Model.FarmId" class="btn btn-sm btn-primary"><i class="bi bi-plus-lg me-1"></i>Place new flock</a>
+        }
+    </div>
+</div>
+
+<form method="get" class="filter-bar">
+    <input type="hidden" name="status" value="@Model.Status" />
+    <div>
+        <label class="form-label">Farm</label>
+        <select name="farmId" class="form-select" onchange="this.form.submit()">
+            <option value="">All farms</option>
+            @foreach (var f in Model.Farms)
+            {
+                <option value="@f.Id" selected="@(Model.FarmId == f.Id)">@f.Name</option>
+            }
+        </select>
+    </div>
+    <div class="flex-grow-1" style="min-width:200px">
+        <label class="form-label">Quick search</label>
+        <input class="form-control" placeholder="Batch code, breed, shed, hatchery…" data-table-filter="#tblFlocks" />
+    </div>
+</form>
+
+<div class="stat-grid">
+    <div class="stat-tile tone-green">
+        <div class="st-label">Flocks shown</div>
+        <div class="st-value">@list.Count</div>
+        <div class="st-sub">@Model.ActiveCount active · @Model.ClosedCount closed</div>
+        <div class="st-icon"><i class="bi bi-collection"></i></div>
+    </div>
+    <div class="stat-tile tone-blue">
+        <div class="st-label">Live birds</div>
+        <div class="st-value">@Fmt.Num(liveBirds)</div>
+        <div class="st-sub">in @active.Count active flocks</div>
+        <div class="st-icon"><i class="bi bi-feather"></i></div>
+    </div>
+    <div class="stat-tile tone-amber">
+        <div class="st-label">Avg livability</div>
+        <div class="st-value">@Fmt.Pct(avgLiv)</div>
+        <div class="st-sub">target ≥ 95%</div>
+        <div class="st-icon"><i class="bi bi-heart-pulse"></i></div>
+    </div>
+    <div class="stat-tile tone-violet">
+        <div class="st-label">Avg FCR</div>
+        <div class="st-value">@(withFcr.Any() ? withFcr.Average(b => b.FCR).ToString("0.00") : "—")</div>
+        <div class="st-sub">kg feed / kg live weight</div>
+        <div class="st-icon"><i class="bi bi-basket"></i></div>
+    </div>
+    <div class="stat-tile tone-slate">
+        <div class="st-label">Avg EPEF</div>
+        <div class="st-value">@(withEpef.Any() ? withEpef.Average(b => b.EPEF).ToString("0") : "—")</div>
+        <div class="st-sub">&gt; 350 is excellent</div>
+        <div class="st-icon"><i class="bi bi-speedometer2"></i></div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <ul class="nav nav-tabs card-header-tabs border-0">
+            <li class="nav-item"><a class="@Tab("active")" asp-action="Index" asp-route-farmId="@Model.FarmId" asp-route-status="active">Active <span class="badge badge-healthy ms-1">@Model.ActiveCount</span></a></li>
+            <li class="nav-item"><a class="@Tab("closed")" asp-action="Index" asp-route-farmId="@Model.FarmId" asp-route-status="closed">Closed <span class="badge badge-info-soft ms-1">@Model.ClosedCount</span></a></li>
+            <li class="nav-item"><a class="@Tab("all")" asp-action="Index" asp-route-farmId="@Model.FarmId" asp-route-status="all">All <span class="badge badge-gray ms-1">@Model.AllCount</span></a></li>
+        </ul>
+    </div>
+    @if (!list.Any())
+    {
+        <div class="empty-state">
+            <i class="bi bi-collection"></i>
+            No @(Model.Status == "all" ? "" : Model.Status) flocks @(farmName != null ? "at " + farmName : "") yet.
+            @if (canWrite)
+            {
+                <div class="mt-2"><a asp-action="Create" asp-route-farmId="@Model.FarmId" class="btn btn-sm btn-primary">Place a flock</a></div>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-hover mb-0" id="tblFlocks">
+                <thead>
+                    <tr>
+                        <th>Flock</th><th>Farm / shed</th><th>Breed</th>
+                        <th class="text-end">Age</th><th class="text-end">Birds</th><th class="text-end">Livability</th>
+                        <th class="text-end">Avg wt</th><th class="text-end">FCR</th><th class="text-end">EPEF</th>
+                        <th>Health</th><th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var b in list)
+                    {
+                        Model.Health.TryGetValue(b.Id, out var h);
+                        <tr class="@(b.IsActive ? "" : "text-muted")">
+                            <td>
+                                <a asp-action="Detail" asp-route-id="@b.Id" class="fw-600 text-decoration-none">@b.BatchCode</a>
+                                <div class="text-xs text-muted">placed @Fmt.Date(b.PlacementDate)</div>
+                            </td>
+                            <td>
+                                <div>@b.FarmName</div>
+                                <div class="text-xs text-muted">@(string.IsNullOrEmpty(b.ShedNo) ? "—" : "Shed " + b.ShedNo)</div>
+                            </td>
+                            <td>
+                                <div>@b.Breed</div>
+                                <span class="chip">@b.BatchType</span>
+                            </td>
+                            <td class="text-end">@b.AgeInDays d</td>
+                            <td class="text-end">
+                                <div class="fw-600">@Fmt.Num(b.IsActive ? b.CurrentCount : b.HarvestedCount)</div>
+                                <div class="text-xs text-muted">@(b.IsActive ? "of " + Fmt.Num(b.InitialCount) : "harvested")</div>
+                            </td>
+                            <td class="text-end @(b.LivabilityPct < 93 ? "text-danger fw-600" : b.LivabilityPct < 95 ? "text-warning fw-600" : "")">@Fmt.Pct(b.LivabilityPct)</td>
+                            <td class="text-end">@(b.AverageWeightKg > 0 ? b.AverageWeightKg.ToString("0.000") + " kg" : "—")</td>
+                            <td class="text-end @(b.FCR > 1.9m ? "text-warning fw-600" : "")">@(b.FCR > 0 ? b.FCR.ToString("0.00") : "—")</td>
+                            <td class="text-end">@(b.EPEF > 0 ? b.EPEF.ToString("0") : "—")</td>
+                            <td>
+                                <span class="badge @Fmt.Badge(b.HealthStatus)">@b.HealthStatus</span>
+                                @if (h != null && h.OverdueVaccines > 0)
+                                {
+                                    <div><span class="badge badge-danger-soft mt-1" title="Overdue vaccinations"><i class="bi bi-eyedropper"></i> @h.OverdueVaccines overdue</span></div>
+                                }
+                                @if (h != null && h.ActiveDiseases > 0)
+                                {
+                                    <div><span class="badge badge-warning-soft mt-1" title="Open disease cases"><i class="bi bi-virus"></i> @h.ActiveDiseases case@(h.ActiveDiseases > 1 ? "s" : "")</span></div>
+                                }
+                                @if (h != null && h.DueSoonVaccines > 0 && b.IsActive)
+                                {
+                                    <div><span class="badge badge-info-soft mt-1" title="Vaccinations due in the next 3 days"><i class="bi bi-calendar-event"></i> @h.DueSoonVaccines due soon</span></div>
+                                }
+                            </td>
+                            <td class="text-nowrap">
+                                <a asp-action="Detail" asp-route-id="@b.Id" class="btn btn-xs btn-outline-primary" title="Lifecycle cockpit"><i class="bi bi-speedometer2"></i></a>
+                                <a href="/Analytics/GrowthCurve?batchId=@b.Id" class="btn btn-xs btn-outline-secondary" title="Growth vs standard"><i class="bi bi-activity"></i></a>
+                                @if (b.IsActive && canWrite)
+                                {
+                                    <a asp-controller="Visit" asp-action="Create" asp-route-farmId="@b.FarmId" asp-route-batchId="@b.Id" class="btn btn-xs btn-outline-success" title="New visit / daily record"><i class="bi bi-clipboard-plus"></i></a>
+                                    <a asp-action="Close" asp-route-id="@b.Id" class="btn btn-xs btn-outline-warning" title="Close / harvest"><i class="bi bi-box-arrow-right"></i></a>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>

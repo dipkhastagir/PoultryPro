@@ -1,0 +1,147 @@
+@model OrderDetailVm
+@{
+    var o = Model.Order;
+    var invNo = "INV-" + o.OrderCode;
+    var dueDate = o.DeliveryDate.Date.AddDays(7);
+    var paid = o.PaidAmount;
+    var stamp = o.Status == "Cancelled" ? "CANCELLED" : o.BalanceDue <= 0 && o.TotalAmount > 0 ? "PAID" : o.PaidAmount > 0 ? "PARTIALLY PAID" : "UNPAID";
+    var stampColor = stamp switch { "PAID" => "#0d9e75", "CANCELLED" => "#64748b", "UNPAID" => "#ef4444", _ => "#f59e0b" };
+
+    static string Words(long n)
+    {
+        if (n == 0) return "zero";
+        string[] ones = { "", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen" };
+        string[] tens = { "", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety" };
+        string Below100(long x) => x < 20 ? ones[x] : tens[x / 10] + (x % 10 > 0 ? "-" + ones[x % 10] : "");
+        string Below1000(long x) => x >= 100 ? ones[x / 100] + " hundred" + (x % 100 > 0 ? " " + Below100(x % 100) : "") : Below100(x);
+        var parts = new List<string>();
+        // South-Asian grouping: crore (10^7), lakh (10^5), thousand (10^3)
+        if (n >= 10000000) { parts.Add(Words(n / 10000000) + " crore"); n %= 10000000; }
+        if (n >= 100000) { parts.Add(Below100(n / 100000) + " lakh"); n %= 100000; }
+        if (n >= 1000) { parts.Add(Below100(n / 1000) + " thousand"); n %= 1000; }
+        if (n > 0) parts.Add(Below1000(n));
+        return string.Join(" ", parts);
+    }
+    var taka = (long)Math.Floor(o.TotalAmount);
+    var poisha = (int)Math.Round((o.TotalAmount - taka) * 100);
+    var amountWords = "Taka " + Words(taka) + (poisha > 0 ? " and " + Words(poisha) + " poisha" : "") + " only";
+}
+
+@section Head {
+<style>
+    .inv-stamp { position: absolute; top: 120px; right: 40px; transform: rotate(-12deg); border: 3px solid; border-radius: 8px; padding: 4px 14px; font-weight: 800; font-size: 20px; letter-spacing: .1em; opacity: .55; }
+    @@media print { .doc-sheet { border: none !important; padding: 0 !important; max-width: none !important; } }
+</style>
+}
+
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3 no-print">
+    <a asp-action="Detail" asp-route-id="@o.Id" class="text-decoration-none small"><i class="bi bi-arrow-left me-1"></i>Back to order @o.OrderCode</a>
+    <div class="d-flex gap-2">
+        <a asp-action="CustomerDetail" asp-route-id="@o.CustomerId" class="btn btn-sm btn-outline-secondary"><i class="bi bi-person me-1"></i>Customer statement</a>
+        <button type="button" class="btn btn-sm btn-primary" onclick="window.print()"><i class="bi bi-printer me-1"></i>Print</button>
+    </div>
+</div>
+
+<div class="doc-sheet position-relative">
+    <div class="inv-stamp" style="color:@stampColor;border-color:@stampColor">@stamp</div>
+
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 pb-3 mb-3" style="border-bottom:2px solid #0f172a">
+        <div>
+            <div class="d-flex align-items-center gap-2 mb-1">
+                <i class="bi bi-egg-fried fs-3 text-success"></i>
+                <div class="fw-bold fs-5">@Model.CompanyName</div>
+            </div>
+            @if (!string.IsNullOrEmpty(Model.CompanyAddress)) { <div class="text-xs text-muted">@Model.CompanyAddress</div> }
+            @if (!string.IsNullOrEmpty(Model.CompanyPhone)) { <div class="text-xs text-muted">Tel: @Model.CompanyPhone</div> }
+        </div>
+        <div class="text-end">
+            <div class="doc-title">INVOICE</div>
+            <div class="mono fs-6">@invNo</div>
+            <div class="text-xs text-muted">Sales order @o.OrderCode</div>
+        </div>
+    </div>
+
+    <div class="row g-4 mb-4">
+        <div class="col-6">
+            <div class="text-xs text-muted text-uppercase fw-600 mb-1">Bill to</div>
+            <div class="fw-600">@o.CustomerName</div>
+            @if (!string.IsNullOrEmpty(o.CustomerType)) { <div class="small text-muted">@o.CustomerType</div> }
+            @if (!string.IsNullOrEmpty(o.CustomerAddress)) { <div class="small">@o.CustomerAddress</div> }
+            <div class="small">@o.CustomerPhone @(string.IsNullOrEmpty(o.CustomerEmail) ? "" : " · " + o.CustomerEmail)</div>
+        </div>
+        <div class="col-6">
+            <div class="text-xs text-muted text-uppercase fw-600 mb-1">Dispatched from</div>
+            <div class="fw-600">@o.FarmName</div>
+            @if (!string.IsNullOrEmpty(o.FarmLocation)) { <div class="small">@o.FarmLocation</div> }
+            @if (o.BatchId.HasValue) { <div class="small">Flock <span class="mono">@(Model.Batch?.BatchCode ?? o.BatchCode)</span></div> }
+        </div>
+        <div class="col-12">
+            <table class="table table-sm table-bordered mb-0 small">
+                <tr class="table-light"><th>Invoice date</th><th>Order date</th><th>Delivery date</th><th>Payment due</th><th>Order status</th></tr>
+                <tr><td>@Fmt.Date(o.OrderDate)</td><td>@Fmt.Date(o.OrderDate)</td><td>@Fmt.Date(o.DeliveryDate)</td><td>@Fmt.Date(dueDate)</td><td>@o.Status</td></tr>
+            </table>
+        </div>
+    </div>
+
+    <table class="table table-sm align-middle">
+        <thead class="table-light"><tr><th style="width:40px">#</th><th>Description</th><th>Grade</th><th class="text-end">Birds</th><th class="text-end">Qty</th><th>Unit</th><th class="text-end">Unit price</th><th class="text-end">Amount</th></tr></thead>
+        <tbody>
+            <tr>
+                <td>1</td>
+                <td>
+                    <div class="fw-600">@o.Product</div>
+                    @if (o.AvgKgPerBird.HasValue) { <div class="text-xs text-muted">Average @Fmt.Num(o.AvgKgPerBird.Value, 2) kg live weight per bird</div> }
+                    @if (!string.IsNullOrWhiteSpace(o.Notes)) { <div class="text-xs text-muted">@o.Notes</div> }
+                </td>
+                <td>@o.Grade</td>
+                <td class="text-end">@(o.BirdCount is > 0 ? Fmt.Num(o.BirdCount.Value) : "—")</td>
+                <td class="text-end">@Fmt.Num(o.Quantity, 2)</td>
+                <td>@o.Unit</td>
+                <td class="text-end">@Fmt.Money(o.UnitPrice, 2)</td>
+                <td class="text-end fw-600">@Fmt.Money(o.TotalAmount, 2)</td>
+            </tr>
+        </tbody>
+        <tfoot>
+            <tr><td colspan="7" class="text-end">Sub-total</td><td class="text-end">@Fmt.Money(o.TotalAmount, 2)</td></tr>
+            <tr><td colspan="7" class="text-end text-muted small">VAT (live birds &amp; eggs — exempt)</td><td class="text-end text-muted small">@Fmt.Money(0m, 2)</td></tr>
+            <tr class="fw-bold"><td colspan="7" class="text-end fs-6">Invoice total (BDT)</td><td class="text-end fs-6">@Fmt.Money(o.TotalAmount, 2)</td></tr>
+            <tr><td colspan="7" class="text-end">Less: amount received</td><td class="text-end text-success">(@Fmt.Money(paid, 2))</td></tr>
+            <tr class="fw-bold"><td colspan="7" class="text-end fs-6">Balance due</td><td class="text-end fs-6 @(o.BalanceDue > 0 ? "text-danger" : "")">@Fmt.Money(o.BalanceDue, 2)</td></tr>
+        </tfoot>
+    </table>
+
+    <div class="small mb-4"><span class="text-muted">Amount in words:</span> <span class="fw-600 text-capitalize">@amountWords</span></div>
+
+    @if (Model.Payments.Count > 0)
+    {
+        <div class="text-xs text-muted text-uppercase fw-600 mb-1">Payments received</div>
+        <table class="table table-sm table-bordered small mb-4">
+            <thead class="table-light"><tr><th>Date</th><th>Method</th><th>Reference</th><th class="text-end">Amount</th></tr></thead>
+            <tbody>
+                @foreach (var p in Model.Payments)
+                {
+                    <tr><td>@Fmt.Date(p.TxnDate)</td><td>@(p.PaymentMethod ?? "—")</td><td>@p.Description</td><td class="text-end">@Fmt.Money(p.Amount, 2)</td></tr>
+                }
+            </tbody>
+        </table>
+    }
+
+    <div class="row g-3 small mb-5">
+        <div class="col-md-7">
+            <div class="text-xs text-muted text-uppercase fw-600 mb-1">Payment instructions</div>
+            <div>Pay by cash, bKash / Nagad or bank transfer. Please quote <span class="mono">@invNo</span> as the payment reference.
+                Payment is due within 7 days of delivery.</div>
+        </div>
+        <div class="col-md-5">
+            <div class="text-xs text-muted text-uppercase fw-600 mb-1">Terms</div>
+            <div>Live birds are weighed at loading in the buyer's presence; weight claims after dispatch cannot be accepted.</div>
+        </div>
+    </div>
+
+    <div class="row text-center small mt-5 pt-4">
+        <div class="col-4"><div style="border-top:1px solid #94a3b8" class="pt-1 mx-3">Prepared by</div></div>
+        <div class="col-4"><div style="border-top:1px solid #94a3b8" class="pt-1 mx-3">Authorised signature</div></div>
+        <div class="col-4"><div style="border-top:1px solid #94a3b8" class="pt-1 mx-3">Received by (customer)</div></div>
+    </div>
+    <div class="text-center text-xs text-muted mt-4">Thank you for your business — @Model.CompanyName</div>
+</div>

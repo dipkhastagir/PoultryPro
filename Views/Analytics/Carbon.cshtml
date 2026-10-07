@@ -1,0 +1,179 @@
+@model CarbonVm
+@using System.Text.Json
+@using System.Globalization
+@{
+    var ci = CultureInfo.InvariantCulture;
+    var rows = Model.Rows;
+    var labels = rows.Select(r => r.BatchCode).ToList();
+    var feed = rows.Select(r => Math.Round(r.FeedCo2, 1)).ToList();
+    var chick = rows.Select(r => Math.Round(r.ChickCo2, 1)).ToList();
+    var elec = rows.Select(r => Math.Round(r.ElectricityCo2, 1)).ToList();
+    var manure = rows.Select(r => Math.Round(r.ManureCo2, 1)).ToList();
+    var intensity = rows.Select(r => r.Intensity.HasValue ? Math.Round(r.Intensity.Value, 3) : (double?)null).ToList();
+    var closed = rows.Where(r => !r.IsActive && r.Intensity.HasValue).ToList();
+    var bestClosed = closed.OrderBy(r => r.Intensity).FirstOrDefault();
+    var canSettings = User.IsInRole(Roles.Admin) || User.IsInRole(Roles.Manager);
+    string T(double v) => v >= 1000 ? (v / 1000).ToString("0.00", ci) + " t" : v.ToString("0", ci) + " kg";
+    string F(decimal v) => v.ToString("0.###", ci);
+}
+
+<partial name="_AnalyticsNav" />
+
+<div class="page-head">
+    <div>
+        <h4>Indicative carbon footprint per flock</h4>
+        <p>Cradle-to-farm-gate estimate in kg CO₂-equivalent for broiler and Sonali flocks, using configurable emission factors.</p>
+    </div>
+    <div class="d-flex gap-2">
+        @if (canSettings)
+        {
+            <a asp-controller="Settings" asp-action="Index" class="btn btn-sm btn-outline-secondary"><i class="bi bi-sliders me-1"></i>Edit factors</a>
+        }
+    </div>
+</div>
+
+<div class="stat-grid">
+    <div class="stat-tile tone-slate">
+        <div class="st-label">Total emissions</div>
+        <div class="st-value">@T(Model.TotalCo2)</div>
+        <div class="st-sub">CO₂e across @rows.Count flock(s)</div>
+        <div class="st-icon"><i class="bi bi-cloud-haze2"></i></div>
+    </div>
+    <div class="stat-tile tone-violet">
+        <div class="st-label">Carbon intensity</div>
+        <div class="st-value">@(Model.AvgIntensity.HasValue ? Model.AvgIntensity.Value.ToString("0.00", ci) : "—")</div>
+        <div class="st-sub">kg CO₂e per kg live weight (weighted)</div>
+        <div class="st-icon"><i class="bi bi-speedometer2"></i></div>
+    </div>
+    <div class="stat-tile tone-amber">
+        <div class="st-label">Feed share</div>
+        <div class="st-value">@Model.FeedShare.ToString("0", ci)%</div>
+        <div class="st-sub">of total emissions come from feed</div>
+        <div class="st-icon"><i class="bi bi-basket"></i></div>
+    </div>
+    <div class="stat-tile tone-green">
+        <div class="st-label">Lowest-intensity closed flock</div>
+        <div class="st-value" style="font-size:18px">@(bestClosed?.BatchCode ?? "—")</div>
+        <div class="st-sub">@(bestClosed != null ? bestClosed.Intensity!.Value.ToString("0.00", ci) + " kg CO₂e/kg · " + bestClosed.FarmName : "no closed flocks yet")</div>
+        <div class="st-icon"><i class="bi bi-tree"></i></div>
+    </div>
+</div>
+
+@if (rows.Count == 0)
+{
+    <div class="card"><div class="empty-state"><i class="bi bi-cloud-haze2"></i>No broiler or Sonali flocks yet — the carbon footprint is estimated per meat flock.</div></div>
+}
+else
+{
+    <div class="row g-3 mb-3">
+        <div class="col-xl-8">
+            <div class="card h-100">
+                <div class="card-header"><h6 class="mb-0"><i class="bi bi-bar-chart me-1"></i>Emissions by source (stacked, kg CO₂e) and intensity (line)</h6></div>
+                <div class="card-body"><div style="height:340px"><canvas id="chCo2"></canvas></div></div>
+            </div>
+        </div>
+        <div class="col-xl-4">
+            <div class="card h-100">
+                <div class="card-header"><h6 class="mb-0"><i class="bi bi-calculator me-1"></i>Method &amp; factors</h6></div>
+                <div class="card-body">
+                    <div class="formula mb-2">Feed     = feed kg × @F(Model.FeedFactor)</div>
+                    <div class="formula mb-2">Chicks   = chicks placed × @F(Model.ChickFactor)</div>
+                    <div class="formula mb-2">Energy   = chicks × @F(Model.KwhPerBird) kWh × @F(Model.GridFactor) × s</div>
+                    <div class="formula mb-2">Manure   = chicks × @F(Model.ManureFactor) × s</div>
+                    <div class="formula mb-3">Intensity = Σ CO₂e ÷ live weight kg</div>
+                    <dl class="kv text-xs mb-0" style="grid-template-columns:130px 1fr">
+                        <dt>Carbon.FeedFactor</dt><dd>@F(Model.FeedFactor) kg CO₂e / kg feed</dd>
+                        <dt>Carbon.ChickFactor</dt><dd>@F(Model.ChickFactor) kg CO₂e / day-old chick</dd>
+                        <dt>Carbon.ElectricityKwhPerBird</dt><dd>@F(Model.KwhPerBird) kWh / bird / cycle</dd>
+                        <dt>Carbon.GridFactor</dt><dd>@F(Model.GridFactor) kg CO₂e / kWh (Bangladesh grid)</dd>
+                        <dt>Carbon.ManureFactor</dt><dd>@F(Model.ManureFactor) kg CO₂e / bird / cycle</dd>
+                    </dl>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-3">
+        <div class="col-12">
+            <div class="warn-callout text-xs">
+                <i class="bi bi-exclamation-triangle me-1"></i><b>Indicative factors.</b> The default factors are order-of-magnitude values drawn from published
+                life-cycle assessments of broiler production (feed production dominates, typically 60–80% of farm-gate emissions). They are not a certified
+                carbon audit. For a publication, replace them in Settings with factors from your feed supplier's LCA, the national grid emission factor of the
+                study year and IPCC Tier 1/2 manure-management values, and report the factor set used.
+            </div>
+        </div>
+        <div class="col-12">
+            <div class="info-callout text-xs">
+                <b>How to read this.</b> Stacked bars show where each flock's emissions come from; the line (right axis) is the carbon intensity in kg CO₂e per kg of
+                live weight, which is the fair comparison between flocks of different size. Feed is measured, so its share grows with FCR — improving FCR is the main
+                lever for lowering intensity. For <b>active</b> flocks electricity and manure are pro-rated by the share of the cycle completed (s = age ÷ expected
+                cycle length) and intensity uses the current live mass, so it will change until the flock is closed.
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h6 class="mb-0"><i class="bi bi-table me-1"></i>Per-flock footprint</h6>
+            <input type="search" class="form-control form-control-sm" placeholder="Filter…" data-table-filter="#tblCo2" style="width:180px" />
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover mb-0" id="tblCo2">
+                <thead><tr><th>Flock</th><th>Status</th><th class="text-end">Chicks</th><th class="text-end">Feed kg</th><th class="text-end">Live kg</th>
+                    <th class="text-end">Feed</th><th class="text-end">Chicks</th><th class="text-end">Energy</th><th class="text-end">Manure</th><th class="text-end">Total kg CO₂e</th><th class="text-end">kg CO₂e / kg</th></tr></thead>
+                <tbody>
+                @foreach (var r in rows.OrderByDescending(r => r.IsActive).ThenBy(r => r.Intensity ?? double.MaxValue))
+                {
+                    <tr>
+                        <td><a asp-controller="Batch" asp-action="Detail" asp-route-id="@r.BatchId" class="fw-600 text-decoration-none">@r.BatchCode</a>
+                            <div class="text-xs text-muted">@r.FarmName · @r.Breed</div></td>
+                        <td>@if (r.IsActive) { <span class="badge badge-info-soft">Active · @((r.CycleShare * 100).ToString("0", ci))%</span> } else { <span class="badge badge-gray">Closed</span> }</td>
+                        <td class="text-end">@Fmt.Num(r.ChicksPlaced)</td>
+                        <td class="text-end">@r.FeedKg.ToString("N0", ci)</td>
+                        <td class="text-end">@r.LiveKg.ToString("N0", ci)</td>
+                        <td class="text-end">@r.FeedCo2.ToString("N0", ci)</td>
+                        <td class="text-end">@r.ChickCo2.ToString("N0", ci)</td>
+                        <td class="text-end">@r.ElectricityCo2.ToString("N0", ci)</td>
+                        <td class="text-end">@r.ManureCo2.ToString("N0", ci)</td>
+                        <td class="text-end fw-600">@r.TotalCo2.ToString("N0", ci)</td>
+                        <td class="text-end fw-600">@(r.Intensity.HasValue ? r.Intensity.Value.ToString("0.00", ci) : "—")</td>
+                    </tr>
+                }
+                </tbody>
+                <tfoot>
+                    <tr class="fw-600"><td colspan="3">Total</td><td class="text-end">@rows.Sum(r => r.FeedKg).ToString("N0", ci)</td><td class="text-end">@Model.TotalLiveKg.ToString("N0", ci)</td>
+                        <td class="text-end">@rows.Sum(r => r.FeedCo2).ToString("N0", ci)</td><td class="text-end">@rows.Sum(r => r.ChickCo2).ToString("N0", ci)</td>
+                        <td class="text-end">@rows.Sum(r => r.ElectricityCo2).ToString("N0", ci)</td><td class="text-end">@rows.Sum(r => r.ManureCo2).ToString("N0", ci)</td>
+                        <td class="text-end">@Model.TotalCo2.ToString("N0", ci)</td><td class="text-end">@(Model.AvgIntensity.HasValue ? Model.AvgIntensity.Value.ToString("0.00", ci) : "—")</td></tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+}
+
+@section Scripts {
+<script>
+(function () {
+    const el = document.getElementById('chCo2');
+    if (!el) return;
+    const labels = @Html.Raw(JsonSerializer.Serialize(labels));
+    new Chart(el, {
+        data: { labels, datasets: [
+            { type: 'line', label: 'Intensity (kg CO₂e/kg)', data: @Html.Raw(JsonSerializer.Serialize(intensity)), yAxisID: 'y2', borderColor: ppColors.red, backgroundColor: ppColors.red, pointRadius: 3, borderWidth: 2, tension: .2, spanGaps: true, order: 0 },
+            { type: 'bar', label: 'Feed', data: @Html.Raw(JsonSerializer.Serialize(feed)), backgroundColor: ppColors.amber, stack: 's', order: 1 },
+            { type: 'bar', label: 'Chicks', data: @Html.Raw(JsonSerializer.Serialize(chick)), backgroundColor: ppColors.violet, stack: 's', order: 1 },
+            { type: 'bar', label: 'Electricity', data: @Html.Raw(JsonSerializer.Serialize(elec)), backgroundColor: ppColors.blue, stack: 's', order: 1 },
+            { type: 'bar', label: 'Manure', data: @Html.Raw(JsonSerializer.Serialize(manure)), backgroundColor: ppColors.slate, stack: 's', order: 1 }
+        ] },
+        options: {
+            interaction: { mode: 'index', intersect: false },
+            scales: {
+                x: { stacked: true, grid: { display: false } },
+                y: { stacked: true, beginAtZero: true, title: { display: true, text: 'kg CO₂e' } },
+                y2: { position: 'right', beginAtZero: true, grid: { drawOnChartArea: false }, title: { display: true, text: 'kg CO₂e / kg live' } }
+            }
+        }
+    });
+})();
+</script>
+}

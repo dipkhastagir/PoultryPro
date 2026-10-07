@@ -1,0 +1,53 @@
+@model VaccinationRecord
+@{
+    ViewData["Title"] = "Schedule Vaccination";
+    var batches = ViewBag.Batches as IEnumerable<Batch> ?? new List<Batch>();
+}
+<div class="row justify-content-center"><div class="col-lg-6">
+<div class="form-card">
+    <h6 class="fw-semibold mb-4"><i class="bi bi-syringe text-success me-2"></i>Schedule Vaccination</h6>
+    <form asp-action="AddVaccination" method="post">
+        @Html.AntiForgeryToken()
+        <div class="row g-3">
+            <div class="col-12">
+                <label class="form-label">Batch *</label>
+                <select asp-for="BatchId" class="form-select" required>
+                    <option value="">-- Select Batch --</option>
+                    @foreach (var b in batches)
+                    { <option value="@b.Id">@b.BatchCode — @b.Breed (@b.FarmName)</option> }
+                </select>
+            </div>
+            <div class="col-12">
+                <label class="form-label">Vaccine Name *</label>
+                <select asp-for="VaccineName" class="form-select">
+                    <option>Newcastle Disease (ND)</option>
+                    <option>Gumboro (IBD)</option>
+                    <option>Avian Influenza H5N1</option>
+                    <option>Marek's Disease</option>
+                    <option>Infectious Bronchitis (IB)</option>
+                    <option>Fowl Pox</option>
+                    <option>Fowl Cholera</option>
+                </select>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Due Date *</label>
+                <input asp-for="DueDate" type="date" class="form-control" required />
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Status</label>
+                <select asp-for="Status" class="form-select">
+                    <option>Planned</option><option>Overdue</option>
+                </select>
+            </div>
+            <div class="col-12">
+                <label class="form-label">Notes</label>
+                <textarea asp-for="Notes" class="form-control" rows="2"></textarea>
+            </div>
+        </div>
+        <div class="d-flex gap-2 mt-4">
+            <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Schedule</button>
+            <a asp-action="Index" class="btn btn-outline-secondary">Cancel</a>
+        </div>
+    </form>
+</div>
+</div></div>

@@ -1,0 +1,146 @@
+@model ResearchIndexVm
+@{
+    var totalRows = Model.Datasets.Sum(d => d.Rows);
+    var spanDays = Model.FirstRecord.HasValue && Model.LastRecord.HasValue ? (Model.LastRecord.Value - Model.FirstRecord.Value).Days + 1 : 0;
+    var year = DateTime.Today.Year;
+}
+
+<div class="page-head">
+    <div>
+        <h4><i class="bi bi-database-down me-2"></i>Research Data Hub</h4>
+        <p>Tidy, analysis-ready CSV exports (one observation per row, one variable per column) for R, Python, SPSS or Excel.</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a asp-action="DataDictionary" class="btn btn-outline-secondary btn-sm"><i class="bi bi-book me-1"></i>Data dictionary</a>
+        <a asp-action="Correlations" class="btn btn-outline-primary btn-sm"><i class="bi bi-grid-3x3 me-1"></i>Correlations</a>
+    </div>
+</div>
+
+<div class="stat-grid">
+    <div class="stat-tile tone-green">
+        <div class="st-label">Datasets</div>
+        <div class="st-value">@Model.Datasets.Count</div>
+        <div class="st-sub">@Fmt.Num(totalRows) rows in total</div>
+        <div class="st-icon"><i class="bi bi-table"></i></div>
+    </div>
+    <div class="stat-tile tone-blue">
+        <div class="st-label">Flocks (batches)</div>
+        <div class="st-value">@Model.Batches</div>
+        <div class="st-sub">across @Model.FarmCount active farm(s)</div>
+        <div class="st-icon"><i class="bi bi-collection"></i></div>
+    </div>
+    <div class="stat-tile tone-violet">
+        <div class="st-label">Observation window</div>
+        <div class="st-value">@(spanDays > 0 ? spanDays + " d" : "—")</div>
+        <div class="st-sub">@Fmt.Date(Model.FirstRecord) → @Fmt.Date(Model.LastRecord)</div>
+        <div class="st-icon"><i class="bi bi-calendar-range"></i></div>
+    </div>
+    <div class="stat-tile tone-amber">
+        <div class="st-label">Daily records</div>
+        <div class="st-value">@Fmt.Num(Model.Datasets.FirstOrDefault(d => d.Key == "daily")?.Rows ?? 0)</div>
+        <div class="st-sub">core longitudinal panel</div>
+        <div class="st-icon"><i class="bi bi-journal-text"></i></div>
+    </div>
+</div>
+
+<form asp-action="Export" method="get" id="exportForm">
+    <div class="filter-bar">
+        <span class="small fw-600 me-1"><i class="bi bi-funnel me-1"></i>Export filters</span>
+        <select name="farmId" class="form-select form-select-sm" style="max-width:220px">
+            <option value="">All farms</option>
+            @foreach (var f in Model.Farms) { <option value="@f.Id">@f.Name</option> }
+        </select>
+        <label class="small text-muted">From</label>
+        <input type="date" name="from" class="form-control form-control-sm" style="max-width:160px" />
+        <label class="small text-muted">To</label>
+        <input type="date" name="to" class="form-control form-control-sm" style="max-width:160px" />
+        <span class="text-xs text-muted ms-auto">Filters apply to the dataset you download; row counts below are unfiltered.</span>
+    </div>
+
+    @if (Model.Datasets.Count == 0)
+    {
+        <div class="card"><div class="card-body"><div class="empty-state"><i class="bi bi-database"></i><p class="mb-0">No datasets are configured.</p></div></div></div>
+    }
+    else
+    {
+        <div class="row g-3 mb-3">
+            @foreach (var d in Model.Datasets)
+            {
+                <div class="col-md-6 col-xl-4">
+                    <div class="card h-100">
+                        <div class="card-body d-flex flex-column">
+                            <div class="d-flex align-items-start gap-2 mb-2">
+                                <div class="avatar"><i class="bi @d.Icon"></i></div>
+                                <div class="flex-grow-1">
+                                    <div class="fw-600">@d.Name</div>
+                                    <div class="text-xs text-muted">Unit of observation: @d.Unit</div>
+                                </div>
+                                <span class="badge @(d.Rows > 0 ? "badge-healthy" : "badge-gray")">@Fmt.Num(d.Rows) rows</span>
+                            </div>
+                            <p class="small mb-2">@d.Description</p>
+                            <div class="text-xs text-muted mb-3"><i class="bi bi-diagram-3 me-1"></i><span class="mono">@d.Source</span></div>
+                            <div class="mt-auto d-flex align-items-center gap-2">
+                                <button type="submit" name="dataset" value="@d.Key" class="btn btn-sm btn-outline-primary" @(d.Rows == 0 ? "disabled" : "")>
+                                    <i class="bi bi-download me-1"></i>Download CSV
+                                </button>
+                                @if (!d.FarmFilter) { <span class="chip text-xs" title="Farm filter is ignored for this dataset">all farms</span> }
+                                @if (!d.DateFilter) { <span class="chip text-xs" title="Date filter is ignored for this dataset">all dates</span> }
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</form>
+
+<div class="row g-3">
+    <div class="col-lg-7">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h6 class="mb-0">Suggested methods paragraph</h6>
+                <button type="button" class="btn btn-xs btn-outline-secondary" data-copy="#methodsText"><i class="bi bi-clipboard me-1"></i>Copy</button>
+            </div>
+            <div class="card-body">
+                <p class="small mb-0" id="methodsText">
+                    Flock-level data were collected using PoultryPro, a precision poultry farm management platform, from @Model.FarmCount commercial
+                    farm(s) in Bangladesh covering @Model.Batches flock(s) between @Fmt.Date(Model.FirstRecord) and @Fmt.Date(Model.LastRecord).
+                    Daily records comprised bird count, mortality, culling, feed and water intake, shed temperature and relative humidity, and sampled
+                    body weight. The Temperature–Humidity Index was calculated as THI = (1.8·T + 32) − (0.55 − 0.0055·RH)·(1.8·T − 26).
+                    Feed conversion ratio (FCR) was computed as cumulative feed divided by live-mass produced, and production efficiency as
+                    EPEF = (livability % × mean live weight kg × 100) / (age in days × FCR). Flock performance was compared with breed-specific
+                    reference curves by linear interpolation. Between-flock differences were assessed with Welch's unequal-variance t-test on
+                    age-aligned daily observations, and associations between variables with Pearson's correlation coefficient (α = 0.05).
+                </p>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-5">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h6 class="mb-0">Suggested data citation</h6>
+                <button type="button" class="btn btn-xs btn-outline-secondary" data-copy="#citeText"><i class="bi bi-clipboard me-1"></i>Copy</button>
+            </div>
+            <div class="card-body">
+                <div class="formula small" id="citeText">PoultryPro Research Data (@year). Precision poultry flock performance, environment and health records, @Model.FarmCount farm(s), @Fmt.Date(Model.FirstRecord)–@Fmt.Date(Model.LastRecord). Exported @Fmt.Date(DateTime.Today).</div>
+                <div class="info-callout text-xs mt-3 mb-2">
+                    <strong>Good practice:</strong> report the export date and filters, de-identify farmer names before sharing, and archive the raw CSV
+                    with your analysis scripts. Column definitions are in the <a asp-action="DataDictionary">data dictionary</a>.
+                </div>
+                <div class="warn-callout text-xs mb-0">Data are observational field records; correlations and between-flock comparisons do not establish causality without a controlled design (see <a asp-controller="Trials" asp-action="Index">Field Trials</a>).</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+document.querySelectorAll('[data-copy]').forEach(btn => btn.addEventListener('click', () => {
+    const el = document.querySelector(btn.dataset.copy);
+    const txt = el.innerText.replace(/\s+/g, ' ').trim();
+    (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => {
+        const old = btn.innerHTML; btn.innerHTML = '<i class="bi bi-check2 me-1"></i>Copied'; setTimeout(() => btn.innerHTML = old, 1500);
+    }).catch(() => { const r = document.createRange(); r.selectNodeContents(el); const s = getSelection(); s.removeAllRanges(); s.addRange(r); });
+}));
+</script>
+}

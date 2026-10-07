@@ -1,0 +1,63 @@
+@model Customer
+@{
+    var isNew = Model.Id == 0;
+    var types = (ViewBag.Types as IEnumerable<string> ?? Array.Empty<string>()).Union(new[] { Model.CustomerType }).Where(t => !string.IsNullOrWhiteSpace(t)).Distinct();
+}
+<form asp-action="@(isNew ? "AddCustomer" : "EditCustomer")" method="post" novalidate>
+    @Html.AntiForgeryToken()
+    <input type="hidden" asp-for="Id" />
+    <div asp-validation-summary="ModelOnly" class="alert alert-danger py-2 small"></div>
+    <div class="row g-3">
+        <div class="col-md-8">
+            <label class="form-label">Customer / business name *</label>
+            <input asp-for="Name" class="form-control" maxlength="150" required placeholder="e.g. Karwan Bazar Poultry Traders" />
+            <span asp-validation-for="Name" class="text-danger small"></span>
+        </div>
+        <div class="col-md-4">
+            <label class="form-label">Type</label>
+            <select asp-for="CustomerType" class="form-select">
+                @foreach (var t in types) { <option value="@t">@t</option> }
+            </select>
+        </div>
+        <div class="col-md-6">
+            <label class="form-label">Phone</label>
+            <input asp-for="Phone" class="form-control" placeholder="01XXXXXXXXX" maxlength="30" />
+        </div>
+        <div class="col-md-6">
+            <label class="form-label">Email</label>
+            <input asp-for="Email" type="email" class="form-control" maxlength="150" />
+            <span asp-validation-for="Email" class="text-danger small"></span>
+        </div>
+        <div class="col-12">
+            <label class="form-label">Address</label>
+            <input asp-for="Address" class="form-control" placeholder="Area, Upazila, District" maxlength="300" />
+        </div>
+        <div class="col-md-6">
+            <label class="form-label">Credit limit (৳)</label>
+            <input asp-for="CreditLimit" type="number" step="100" min="0" class="form-control" />
+            <span asp-validation-for="CreditLimit" class="text-danger small"></span>
+            <div class="form-text">0 = cash customer (no credit). New orders warn when outstanding exceeds this limit.</div>
+        </div>
+        @if (!isNew)
+        {
+            <div class="col-md-6 d-flex align-items-center">
+                <div class="form-check form-switch mt-3">
+                    <input asp-for="IsActive" class="form-check-input" type="checkbox" role="switch" />
+                    <label asp-for="IsActive" class="form-check-label">Active account</label>
+                    <div class="form-text">Inactive customers are hidden from new-order lists; history is kept.</div>
+                </div>
+            </div>
+        }
+    </div>
+    <div class="d-flex gap-2 mt-4">
+        <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>@(isNew ? "Add customer" : "Save changes")</button>
+        @if (isNew)
+        {
+            <a asp-action="Customers" class="btn btn-outline-secondary">Cancel</a>
+        }
+        else
+        {
+            <a asp-action="CustomerDetail" asp-route-id="@Model.Id" class="btn btn-outline-secondary">Cancel</a>
+        }
+    </div>
+</form>

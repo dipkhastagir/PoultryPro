@@ -1,0 +1,206 @@
+@model List<DailyFarmRecord>
+@{
+    var farms = ViewBag.Farms as IEnumerable<Farm> ?? new List<Farm>();
+    var batches = ((ViewBag.Batches as IEnumerable<Batch>)?.ToList() ?? new List<Batch>());
+    int? selFarm = ViewBag.SelectedFarm; int? selBatch = ViewBag.SelectedBatch;
+    string? selBatchCode = ViewBag.SelectedBatchCode;
+    DateTime from = ViewBag.From;
+    DateTime to   = ViewBag.To;
+    decimal thiWarn = ViewBag.ThiWarning ?? 80m;
+    decimal thiCrit = ViewBag.ThiCritical ?? 85m;
+    var canWrite = User.IsAny(Roles.Operations);
+    var datesGiven = !string.IsNullOrEmpty(Context.Request.Query["from"]) || !string.IsNullOrEmpty(Context.Request.Query["to"]);
+
+    decimal? Thi(DailyFarmRecord r) => r.TemperatureC.HasValue && r.HumidityPercent.HasValue
+        ? PoultryMath.THI(r.TemperatureC.Value, r.HumidityPercent.Value) : null;
+    var thiValues = Model.Select(Thi).Where(t => t.HasValue).Select(t => t!.Value).ToList();
+    var heatDays = thiValues.Count(t => t >= thiWarn);
+    var birdDays = Model.Sum(r => (decimal)r.BirdCount);
+    var mortPct = birdDays > 0 ? Model.Sum(r => r.MortalityCount) / birdDays * 100 : 0;
+    var medDays = Model.Count(r => !string.IsNullOrEmpty(r.MedicineUsed));
+    string BandBadge(string band) => band switch
+    {
+        "Normal" => "badge-healthy", "Alert" => "badge-warning-soft", _ => "badge-danger-soft"
+    };
+}
+
+<div class="page-head">
+    <div>
+        <h4>Daily farm records</h4>
+        <p>
+            @Model.Count record(s)
+            @if (selBatch.HasValue) { <span>for batch <b>@selBatchCode</b></span> }
+            · @Fmt.Date(from) – @Fmt.Date(to)
+        </p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+        <a asp-action="Export" asp-route-farmId="@selFarm" asp-route-batchId="@selBatch"
+           asp-route-from="@(datesGiven || !selBatch.HasValue ? from.ToString("yyyy-MM-dd") : null)"
+           asp-route-to="@(datesGiven || !selBatch.HasValue ? to.ToString("yyyy-MM-dd") : null)"
+           class="btn btn-sm btn-outline-secondary @(Model.Count == 0 ? "disabled" : "")"><i class="bi bi-filetype-csv me-1"></i>Export CSV</a>
+        @if (canWrite)
+        {
+            <a asp-controller="Visit" asp-action="Create" asp-route-farmId="@selFarm" class="btn btn-sm btn-primary"><i class="bi bi-plus-lg me-1"></i>New visit &amp; record</a>
+        }
+    </div>
+</div>
+
+<form method="get" class="filter-bar">
+    <div>
+        <label class="form-label">Farm</label>
+        <select name="farmId" class="form-select" onchange="this.form.batchId.value='';this.form.submit()">
+            <option value="">All farms</option>
+            @foreach (var f in farms) { <option value="@f.Id" selected="@(selFarm == f.Id)">@f.Name</option> }
+        </select>
+    </div>
+    <div>
+        <label class="form-label">Batch</label>
+        <select name="batchId" class="form-select" onchange="this.form.submit()">
+            <option value="">All batches</option>
+            @foreach (var b in batches)
+            {
+                <option value="@b.Id" selected="@(selBatch == b.Id)">@b.BatchCode · @b.Breed@(b.IsActive ? "" : " (closed)")</option>
+            }
+        </select>
+    </div>
+    <div>
+        <label class="form-label">From</label>
+        <input type="date" name="from" class="form-control" value="@from.ToString("yyyy-MM-dd")" />
+    </div>
+    <div>
+        <label class="form-label">To</label>
+        <input type="date" name="to" class="form-control" value="@to.ToString("yyyy-MM-dd")" />
+    </div>
+    <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-funnel me-1"></i>Filter</button>
+    @if (selFarm.HasValue || selBatch.HasValue || datesGiven)
+    {
+        <a asp-action="Index" class="btn btn-sm btn-outline-secondary">Clear</a>
+    }
+</form>
+
+<div class="stat-grid">
+    <div class="stat-tile tone-blue">
+        <div class="st-label">Records</div>
+        <div class="st-value">@Model.Count</div>
+        <div class="st-sub">@Model.Count(r => r.SyncStatus == "Pending") pending sync</div>
+        <div class="st-icon"><i class="bi bi-clipboard2-data"></i></div>
+    </div>
+    <div class="stat-tile @(mortPct > 0.3m ? "tone-red" : "tone-slate")">
+        <div class="st-label">Mortality</div>
+        <div class="st-value">@Fmt.Num((int)ViewBag.TotalMortality)</div>
+        <div class="st-sub">@mortPct.ToString("0.00")% of bird-days · @Model.Sum(r => r.CullingCount) culled</div>
+        <div class="st-icon"><i class="bi bi-heartbreak"></i></div>
+    </div>
+    <div class="stat-tile tone-green">
+        <div class="st-label">Feed</div>
+        <div class="st-value">@Fmt.Num((decimal)ViewBag.TotalFeed) <span class="text-xs text-muted">kg</span></div>
+        <div class="st-sub">water @Fmt.Num(Model.Sum(r => r.WaterConsumptionLtr)) L</div>
+        <div class="st-icon"><i class="bi bi-basket"></i></div>
+    </div>
+    <div class="stat-tile @(heatDays > 0 ? "tone-amber" : "tone-violet")">
+        <div class="st-label">Heat-stress days</div>
+        <div class="st-value">@heatDays</div>
+        <div class="st-sub">@(thiValues.Count > 0 ? $"avg THI {thiValues.Average():0.0} · max {thiValues.Max():0.0}" : "no temp/RH recorded")</div>
+        <div class="st-icon"><i class="bi bi-thermometer-sun"></i></div>
+    </div>
+    <div class="stat-tile tone-slate">
+        <div class="st-label">Medication days</div>
+        <div class="st-value">@medDays</div>
+        <div class="st-sub">@Model.Count(r => !string.IsNullOrEmpty(r.VaccineUsed)) vaccination entries</div>
+        <div class="st-icon"><i class="bi bi-capsule"></i></div>
+    </div>
+</div>
+
+<div class="card">
+    @if (!Model.Any())
+    {
+        <div class="empty-state">
+            <i class="bi bi-journal-x"></i>
+            No daily records for the selected filters.
+            <div class="text-xs mt-1">Daily records are captured during farm visits (web or mobile app).</div>
+        </div>
+    }
+    else
+    {
+        <div class="card-header">
+            <h6><i class="bi bi-clipboard2-data text-info me-2"></i>Records (@Model.Count)</h6>
+            <input data-table-filter="#tblDaily" class="form-control form-control-sm" style="max-width:220px" placeholder="Quick filter…" />
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover table-sm mb-0" id="tblDaily" style="font-size:12.5px">
+                <thead>
+                    <tr>
+                        <th>Date</th><th>Farm</th><th>Batch</th><th>Officer</th>
+                        <th class="text-end">Birds</th><th class="text-end">Mort.</th>
+                        <th class="text-end">Feed kg</th><th class="text-end">g/bird</th><th class="text-end">Water L</th>
+                        <th class="text-end">Temp</th><th class="text-end">RH</th><th class="text-end" title="Temperature-Humidity Index">THI</th><th class="text-end">Avg wt</th>
+                        <th>Medicine</th><th>Vaccine</th><th>Sync</th><th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var r in Model)
+                    {
+                        var thi = Thi(r);
+                        var band = thi.HasValue ? PoultryMath.HeatBand(thi.Value, thiWarn, thiCrit) : "";
+                        <tr>
+                            <td class="text-nowrap"><a asp-controller="Visit" asp-action="Detail" asp-route-id="@r.VisitId" class="fw-600">@r.RecordDate.ToString("dd MMM yyyy")</a></td>
+                            <td>@r.FarmName</td>
+                            <td><a asp-action="Index" asp-route-batchId="@r.BatchId" class="badge badge-info-soft text-decoration-none" title="Show this batch only">@r.BatchCode</a></td>
+                            <td class="text-muted">@r.FieldOfficerName</td>
+                            <td class="text-end fw-600">@r.BirdCount.ToString("N0")</td>
+                            <td class="text-end @(r.MortalityCount > 0 ? "text-danger fw-bold" : "text-muted")">@r.MortalityCount@(r.CullingCount > 0 ? $" +{r.CullingCount}c" : "")</td>
+                            <td class="text-end">@r.FeedConsumptionKg.ToString("N1")</td>
+                            <td class="text-end text-muted">@(r.FeedPerBird > 0 ? r.FeedPerBird.ToString("0") : "—")</td>
+                            <td class="text-end">@r.WaterConsumptionLtr.ToString("N0")</td>
+                            <td class="text-end">@(r.TemperatureC.HasValue ? $"{r.TemperatureC:0.0}°" : "—")</td>
+                            <td class="text-end">@(r.HumidityPercent.HasValue ? $"{r.HumidityPercent:0}%" : "—")</td>
+                            <td class="text-end">
+                                @if (thi.HasValue) { <span class="badge @BandBadge(band)" title="@band">@thi.Value.ToString("0.0")</span> }
+                                else { <span class="text-muted">—</span> }
+                            </td>
+                            <td class="text-end">@(r.AverageWeightGm.HasValue ? $"{r.AverageWeightGm:0} g" : "—")</td>
+                            <td>
+                                @if (!string.IsNullOrEmpty(r.MedicineUsed))
+                                { <span class="badge badge-warning-soft" title="@r.MedicineDosage" style="cursor:help">@r.MedicineUsed</span> }
+                                else { <span class="text-muted">—</span> }
+                            </td>
+                            <td>
+                                @if (!string.IsNullOrEmpty(r.VaccineUsed)) { <span class="badge badge-info-soft">@r.VaccineUsed</span> }
+                                else { <span class="text-muted">—</span> }
+                            </td>
+                            <td><span class="badge @(r.SyncStatus == "Synced" ? "badge-healthy" : "badge-warning-soft")">@r.SyncStatus</span></td>
+                            <td>
+                                @if (canWrite)
+                                {
+                                    <div class="d-flex gap-1">
+                                        <a asp-action="Edit" asp-route-id="@r.Id" class="btn btn-xs btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></a>
+                                        <form asp-action="Delete" method="post" class="d-inline" data-confirm="Delete the @r.RecordDate.ToString("dd MMM") record for @(r.BatchCode)?">
+                                            <input type="hidden" name="id" value="@r.Id" />
+                                            <input type="hidden" name="visitId" value="@r.VisitId" />
+                                            <input type="hidden" name="returnUrl" value="@(Context.Request.Path + Context.Request.QueryString)" />
+                                            <button class="btn btn-xs btn-outline-danger" title="Delete"><i class="bi bi-trash"></i></button>
+                                        </form>
+                                    </div>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+                <tfoot class="table-light fw-semibold">
+                    <tr>
+                        <td colspan="4">Totals / averages</td>
+                        <td class="text-end">—</td>
+                        <td class="text-end text-danger">@Model.Sum(r => r.MortalityCount)</td>
+                        <td class="text-end">@Model.Sum(r => r.FeedConsumptionKg).ToString("N1")</td>
+                        <td></td>
+                        <td class="text-end">@Model.Sum(r => r.WaterConsumptionLtr).ToString("N0")</td>
+                        <td class="text-end">@(Model.Any(r => r.TemperatureC.HasValue) ? Model.Where(r => r.TemperatureC.HasValue).Average(r => r.TemperatureC!.Value).ToString("0.0") + "°" : "—")</td>
+                        <td class="text-end">@(Model.Any(r => r.HumidityPercent.HasValue) ? Model.Where(r => r.HumidityPercent.HasValue).Average(r => r.HumidityPercent!.Value).ToString("0") + "%" : "—")</td>
+                        <td class="text-end">@(thiValues.Count > 0 ? thiValues.Average().ToString("0.0") : "—")</td>
+                        <td colspan="5"></td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    }
+</div>

@@ -1,0 +1,304 @@
+@model HealthReportVm
+@{
+    int months = ViewBag.Months ?? 12;
+    var comp = Model.FarmCompliance;
+    var causes = Model.MortalityCauses;
+    var causeTotal = Math.Max(1, causes.Sum(c => c.Birds));
+    var monthly = Model.MonthlyMortality;
+    var totalBirdDays = monthly.Sum(m => m.BirdDays);
+    var periodDeaths = monthly.Sum(m => m.Deaths);
+    var periodRate = totalBirdDays > 0 ? Math.Round(periodDeaths * 1000m / totalBirdDays, 3) : 0;
+    var worstMonth = monthly.Where(m => m.BirdDays > 0).OrderByDescending(m => m.RatePer1000).FirstOrDefault();
+    var farms = Model.DiseaseByFarm.Select(r => r.FarmName).Distinct().OrderBy(f => f).ToList();
+    var diseases = Model.DiseaseByFarm.GroupBy(r => r.DiseaseName).OrderByDescending(g => g.Sum(x => x.Cases)).Select(g => g.Key).ToList();
+    var matrixMax = Model.DiseaseByFarm.Any() ? Model.DiseaseByFarm.Max(r => r.Cases) : 1;
+    string CompTone(decimal p) => p >= 90 ? "" : p >= 75 ? "warning" : "danger";
+    var overdueTotal = comp.Sum(c => c.Overdue);
+}
+
+<div class="page-head">
+    <div>
+        <h4>Health report</h4>
+        <p>Vaccination compliance, disease burden and mortality causes · generated @Fmt.Date(DateTime.Today)</p>
+    </div>
+    <div class="d-flex gap-2 align-items-center flex-wrap no-print">
+        <div class="btn-group btn-group-sm" title="Mortality trend window">
+            @foreach (var m in new[] { 6, 12, 24 })
+            {
+                <a asp-action="Health" asp-route-months="@m" class="btn @(months == m ? "btn-primary" : "btn-outline-secondary")">@m mo</a>
+            }
+        </div>
+        <a asp-controller="DiseaseLibrary" asp-action="Index" class="btn btn-sm btn-outline-secondary"><i class="bi bi-book me-1"></i>Disease library</a>
+        <a asp-action="Index" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Reports</a>
+        <button onclick="window.print()" class="btn btn-sm btn-outline-secondary"><i class="bi bi-printer"></i></button>
+    </div>
+</div>
+
+<div class="stat-grid">
+    <div class="stat-tile @(Model.OverallCompliance >= 90 ? "tone-green" : Model.OverallCompliance >= 75 ? "tone-amber" : "tone-red")">
+        <div class="st-label">Vaccination compliance</div>
+        <div class="st-value">@Fmt.Pct(Model.OverallCompliance)</div>
+        <div class="st-sub">@Fmt.Num(comp.Sum(c => c.Done)) of @Fmt.Num(comp.Sum(c => c.DueToDate)) due doses given · @overdueTotal overdue</div>
+        <div class="st-icon"><i class="bi bi-eyedropper"></i></div>
+    </div>
+    <div class="stat-tile tone-amber">
+        <div class="st-label">Disease cases</div>
+        <div class="st-value">@Fmt.Num(Model.TotalCases)</div>
+        <div class="st-sub">@Model.ActiveCases open · @Model.DiseaseByName.Count disease(s)</div>
+        <div class="st-icon"><i class="bi bi-clipboard2-pulse"></i></div>
+    </div>
+    <div class="stat-tile tone-red">
+        <div class="st-label">Deaths logged</div>
+        <div class="st-value">@Fmt.Num(Model.TotalDeathsLogged)</div>
+        <div class="st-sub">@causes.Count cause(s) in mortality logs</div>
+        <div class="st-icon"><i class="bi bi-activity"></i></div>
+    </div>
+    <div class="stat-tile tone-blue">
+        <div class="st-label">Mortality rate</div>
+        <div class="st-value">@Fmt.Num(periodRate, 3)</div>
+        <div class="st-sub">deaths / 1,000 bird-days · last @months mo@(worstMonth != null ? " · peak " + worstMonth.Label : "")</div>
+        <div class="st-icon"><i class="bi bi-graph-down"></i></div>
+    </div>
+</div>
+
+@* ───── Vaccination compliance by farm ───── *@
+<div class="section-header"><div class="section-title">Vaccination compliance by farm</div></div>
+<div class="row g-3 mb-3">
+    <div class="col-xl-5">
+        <div class="card h-100">
+            <div class="card-header"><h6>Doses due to date: given vs overdue</h6></div>
+            <div class="card-body">
+                @if (comp.Any())
+                {
+                    <canvas id="compChart" height="@(80 + comp.Count * 34)"></canvas>
+                }
+                else
+                {
+                    <div class="empty-state"><i class="bi bi-eyedropper"></i><p class="text-muted small mb-0">No vaccination records yet.</p></div>
+                }
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-7">
+        <div class="card h-100">
+            <div class="card-header"><h6>Compliance table</h6></div>
+            @if (!comp.Any())
+            {
+                <div class="card-body"><div class="empty-state"><i class="bi bi-table"></i><p class="text-muted small mb-0">Apply a vaccine programme to a flock to start tracking compliance.</p></div></div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead>
+                            <tr><th>Farm</th><th>Flocks</th><th class="text-end">Due</th><th class="text-end">Given</th><th class="text-end">Overdue</th><th class="text-end">Upcoming</th><th style="width:26%">Compliance</th><th class="text-end">On time</th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var r in comp)
+                            {
+                                <tr>
+                                    <td class="fw-600"><a asp-controller="Farm" asp-action="Detail" asp-route-id="@r.FarmId" class="text-decoration-none">@r.FarmName</a></td>
+                                    <td class="text-xs text-muted">@r.BatchCode</td>
+                                    <td class="text-end">@r.DueToDate</td>
+                                    <td class="text-end">@r.Done</td>
+                                    <td class="text-end">@if (r.Overdue > 0) { <span class="badge badge-danger-soft">@r.Overdue</span> } else { <span class="text-muted">0</span> }</td>
+                                    <td class="text-end">@r.Upcoming</td>
+                                    <td>
+                                        <div class="d-flex align-items-center gap-2">
+                                            <div class="prog-bar-wrap flex-grow-1"><div class="prog-bar-fill @CompTone(r.CompliancePct)" style="width:@r.CompliancePct.ToString(System.Globalization.CultureInfo.InvariantCulture)%"></div></div>
+                                            <span class="text-xs fw-600" style="min-width:44px">@Fmt.Pct(r.CompliancePct, 0)</span>
+                                        </div>
+                                    </td>
+                                    <td class="text-end text-xs">@(r.Done > 0 ? Fmt.Pct(r.OnTimePct, 0) : "—")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div class="card-body pt-2 text-xs text-muted">Compliance = doses given ÷ doses due up to today. On time = given within one day of the due date.</div>
+            }
+        </div>
+    </div>
+</div>
+
+@* ───── Disease cases ───── *@
+<div class="section-header"><div class="section-title">Disease cases</div></div>
+<div class="row g-3 mb-3">
+    <div class="col-xl-6">
+        <div class="card h-100">
+            <div class="card-header"><h6>By disease</h6></div>
+            @if (!Model.DiseaseByName.Any())
+            {
+                <div class="card-body"><div class="empty-state"><i class="bi bi-emoji-smile"></i><p class="text-muted small mb-0">No disease cases recorded.</p></div></div>
+            }
+            else
+            {
+                <div class="card-body pb-0"><canvas id="diseaseChart" height="@(70 + Model.DiseaseByName.Count * 30)"></canvas></div>
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead><tr><th>Disease</th><th class="text-end">Cases</th><th class="text-end">Open</th><th class="text-end">Affected</th><th class="text-end">Deaths</th><th class="text-end">CFR</th></tr></thead>
+                        <tbody>
+                            @foreach (var d in Model.DiseaseByName)
+                            {
+                                <tr>
+                                    <td class="fw-600">@d.DiseaseName</td>
+                                    <td class="text-end">@d.Cases</td>
+                                    <td class="text-end">@if (d.Active > 0) { <span class="badge badge-danger-soft">@d.Active</span> } else { <span class="text-muted">0</span> }</td>
+                                    <td class="text-end">@Fmt.Num(d.Affected)</td>
+                                    <td class="text-end">@Fmt.Num(d.Deaths)</td>
+                                    <td class="text-end">@Fmt.Pct(d.FatalityPct)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+    <div class="col-xl-6">
+        <div class="card h-100">
+            <div class="card-header"><h6>Farm × disease matrix (cases)</h6></div>
+            @if (!farms.Any())
+            {
+                <div class="card-body"><div class="empty-state"><i class="bi bi-grid-3x3"></i><p class="text-muted small mb-0">No cases to cross-tabulate.</p></div></div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table align-middle mb-0 text-center">
+                        <thead>
+                            <tr>
+                                <th class="text-start">Farm</th>
+                                @foreach (var d in diseases) { <th class="text-xs" style="min-width:70px">@d</th> }
+                                <th>Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var f in farms)
+                            {
+                                var rowCells = Model.DiseaseByFarm.Where(r => r.FarmName == f).ToList();
+                                <tr>
+                                    <td class="text-start fw-600 text-nowrap">@f</td>
+                                    @foreach (var d in diseases)
+                                    {
+                                        var cell = rowCells.FirstOrDefault(r => r.DiseaseName == d);
+                                        if (cell == null)
+                                        {
+                                            <td class="text-muted">·</td>
+                                        }
+                                        else
+                                        {
+                                            var alpha = (0.15 + 0.7 * cell.Cases / (double)Math.Max(1, matrixMax)).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
+                                            <td title="@cell.Affected affected · @cell.Deaths deaths" style="background:rgba(239,68,68,@alpha);font-weight:600">@cell.Cases</td>
+                                        }
+                                    }
+                                    <td class="fw-600">@rowCells.Sum(r => r.Cases)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div class="card-body pt-2 text-xs text-muted">Hover a cell for birds affected and deaths. Darker = more cases.</div>
+            }
+        </div>
+    </div>
+</div>
+
+@* ───── Mortality ───── *@
+<div class="section-header"><div class="section-title">Mortality</div></div>
+<div class="row g-3">
+    <div class="col-xl-5">
+        <div class="card h-100">
+            <div class="card-header"><h6>Causes of death (mortality logs)</h6></div>
+            @if (!causes.Any())
+            {
+                <div class="card-body"><div class="empty-state"><i class="bi bi-pie-chart"></i><p class="text-muted small mb-0">No mortality logs recorded.</p></div></div>
+            }
+            else
+            {
+                <div class="card-body"><div style="max-width:300px;margin:0 auto"><canvas id="causeChart"></canvas></div></div>
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead><tr><th>Cause</th><th class="text-end">Events</th><th class="text-end">Birds</th><th class="text-end">Share</th></tr></thead>
+                        <tbody>
+                            @foreach (var c in causes)
+                            {
+                                <tr>
+                                    <td>@c.Cause</td>
+                                    <td class="text-end">@c.Events</td>
+                                    <td class="text-end fw-600">@Fmt.Num(c.Birds)</td>
+                                    <td class="text-end">@Fmt.Pct((decimal)c.Birds / causeTotal * 100)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+    <div class="col-xl-7">
+        <div class="card h-100">
+            <div class="card-header"><h6>Monthly mortality trend (daily farm records)</h6></div>
+            <div class="card-body">
+                @if (monthly.All(m => m.Deaths == 0 && m.Culls == 0))
+                {
+                    <div class="empty-state"><i class="bi bi-graph-down"></i><p class="text-muted small mb-0">No daily records with mortality in the last @months months.</p></div>
+                }
+                else
+                {
+                    <canvas id="trendChart" height="150"></canvas>
+                    <div class="formula mt-3">rate = Σ deaths ÷ Σ bird-days × 1,000   (bird-days = Σ daily bird count)</div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+(function () {
+    const comp = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(comp.Select(c => new { c.FarmName, c.Done, c.Overdue, Late = Math.Max(0, c.DueToDate - c.Done - c.Overdue) })));
+    const dis = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.DiseaseByName.Select(d => new { d.DiseaseName, d.Cases, d.Active })));
+    const causes = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(causes.Select(c => new { c.Cause, c.Birds })));
+    const monthly = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(monthly.Select(m => new { m.Label, m.Deaths, m.Culls, m.RatePer1000 })));
+
+    const el = id => document.getElementById(id);
+    if (el('compChart')) new Chart(el('compChart'), {
+        type: 'bar',
+        data: { labels: comp.map(c => c.FarmName), datasets: [
+            { label: 'Given', data: comp.map(c => c.Done), backgroundColor: ppColors.green, borderRadius: 3 },
+            { label: 'Overdue', data: comp.map(c => c.Overdue), backgroundColor: ppColors.red, borderRadius: 3 },
+            { label: 'Due today', data: comp.map(c => c.Late), backgroundColor: ppColors.amber, borderRadius: 3 }
+        ]},
+        options: { indexAxis: 'y', responsive: true, scales: { x: { stacked: true, beginAtZero: true, ticks: { precision: 0 } }, y: { stacked: true } },
+                   plugins: { legend: { position: 'bottom' } } }
+    });
+    if (el('diseaseChart')) new Chart(el('diseaseChart'), {
+        type: 'bar',
+        data: { labels: dis.map(d => d.DiseaseName), datasets: [
+            { label: 'Resolved', data: dis.map(d => d.Cases - d.Active), backgroundColor: ppColors.blue, borderRadius: 3 },
+            { label: 'Open', data: dis.map(d => d.Active), backgroundColor: ppColors.red, borderRadius: 3 }
+        ]},
+        options: { indexAxis: 'y', responsive: true, scales: { x: { stacked: true, beginAtZero: true, ticks: { precision: 0 } }, y: { stacked: true } },
+                   plugins: { legend: { position: 'bottom' } } }
+    });
+    if (el('causeChart')) new Chart(el('causeChart'), {
+        type: 'doughnut',
+        data: { labels: causes.map(c => c.Cause), datasets: [{ data: causes.map(c => c.Birds),
+                backgroundColor: causes.map((_, i) => ppColors.series[i % ppColors.series.length]), borderWidth: 1 }] },
+        options: { responsive: true, cutout: '62%', plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } } } }
+    });
+    if (el('trendChart')) new Chart(el('trendChart'), {
+        data: { labels: monthly.map(m => m.Label), datasets: [
+            { type: 'bar', label: 'Deaths', data: monthly.map(m => m.Deaths), backgroundColor: ppColors.redSoft || ppColors.red, borderColor: ppColors.red, borderWidth: 1, stack: 's', yAxisID: 'y' },
+            { type: 'bar', label: 'Culls', data: monthly.map(m => m.Culls), backgroundColor: ppColors.slateSoft || ppColors.slate, borderColor: ppColors.slate, borderWidth: 1, stack: 's', yAxisID: 'y' },
+            { type: 'line', label: 'Deaths / 1,000 bird-days', data: monthly.map(m => m.RatePer1000), borderColor: ppColors.violet, backgroundColor: ppColors.violet, tension: .3, yAxisID: 'y1', pointRadius: 3 }
+        ]},
+        options: { responsive: true, interaction: { mode: 'index', intersect: false },
+            scales: { y: { stacked: true, beginAtZero: true, title: { display: true, text: 'Birds' } },
+                      y1: { position: 'right', beginAtZero: true, grid: { drawOnChartArea: false }, title: { display: true, text: 'Rate' } } },
+            plugins: { legend: { position: 'bottom' } } }
+    });
+})();
+</script>
+}

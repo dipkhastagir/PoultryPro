@@ -1,0 +1,66 @@
+@model LoginVm
+@{
+    Layout = "_AuthLayout";
+    ViewData["Title"] = "Sign in";
+}
+<div class="auth-wrap">
+    <div class="auth-hero">
+        <div class="d-flex align-items-center gap-2">
+            <div class="brand-icon"><i class="bi bi-egg-fried"></i></div>
+            <div><div class="fw-bold text-white">PoultryPro</div><div class="text-xs" style="color:#94a3b8">Precision Poultry Platform</div></div>
+        </div>
+        <div>
+            <h1>Data-driven poultry farming,<br />from shed to research paper.</h1>
+            <p style="color:#94a3b8;max-width:520px" class="mb-4">An integrated platform for flock management, field operations, IoT climate monitoring, early-warning analytics and field-trial research.</p>
+            <div class="feat"><i class="bi bi-activity"></i><div><b class="text-white">Growth vs. breed standard</b><br /><span style="color:#94a3b8">Daily curves, FCR, EPEF and harvest forecasting per flock.</span></div></div>
+            <div class="feat"><i class="bi bi-radar"></i><div><b class="text-white">Early-warning engine</b><br /><span style="color:#94a3b8">EWMA mortality anomaly detection, THI heat stress, composite risk score.</span></div></div>
+            <div class="feat"><i class="bi bi-cpu"></i><div><b class="text-white">IoT &amp; mobile field sync</b><br /><span style="color:#94a3b8">ESP32 climate nodes and field-officer GPS visits through REST APIs.</span></div></div>
+            <div class="feat"><i class="bi bi-clipboard2-data"></i><div><b class="text-white">Field-trial research module</b><br /><span style="color:#94a3b8">Treatment vs. control flocks with Welch t-tests and dataset export.</span></div></div>
+        </div>
+        <div class="text-xs" style="color:#64748b">© @DateTime.Now.Year PoultryPro · ASP.NET Core 8 · SQL Server</div>
+    </div>
+
+    <div class="auth-form">
+        <div class="auth-card">
+            <h3 class="fw-bold mb-1">Welcome back</h3>
+            <p class="text-muted mb-4" style="font-size:14px">Sign in to manage your farms.</p>
+
+            <form asp-action="Login" method="post">
+                @Html.AntiForgeryToken()
+                <input type="hidden" asp-for="ReturnUrl" />
+                <div asp-validation-summary="ModelOnly" class="alert alert-danger py-2 small"></div>
+                <div class="mb-3">
+                    <label class="form-label" asp-for="Username">Username</label>
+                    <div class="input-group">
+                        <span class="input-group-text bg-white"><i class="bi bi-person"></i></span>
+                        <input asp-for="Username" class="form-control" autofocus autocomplete="username" />
+                    </div>
+                    <span asp-validation-for="Username" class="text-danger small"></span>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" asp-for="Password">Password</label>
+                    <div class="input-group">
+                        <span class="input-group-text bg-white"><i class="bi bi-lock"></i></span>
+                        <input asp-for="Password" class="form-control" autocomplete="current-password" />
+                    </div>
+                    <span asp-validation-for="Password" class="text-danger small"></span>
+                </div>
+                <div class="form-check mb-3">
+                    <input asp-for="RememberMe" class="form-check-input" />
+                    <label class="form-check-label small" asp-for="RememberMe">Keep me signed in</label>
+                </div>
+                <button class="btn btn-primary w-100 py-2"><i class="bi bi-box-arrow-in-right me-1"></i>Sign in</button>
+            </form>
+
+            <div class="demo-accounts mt-4">
+                <div class="fw-semibold mb-1"><i class="bi bi-key me-1"></i>Demo accounts</div>
+                <div><code>admin</code> / <code>Admin@123</code> — Administrator</div>
+                <div><code>manager</code> / <code>Manager@123</code> — Farm manager</div>
+                <div><code>vet</code> / <code>Vet@123</code> — Veterinarian</div>
+                <div><code>accountant</code> / <code>Account@123</code> — Accountant</div>
+                <div><code>rakib</code> / <code>Officer@123</code> — Field officer</div>
+                <div><code>researcher</code> / <code>Research@123</code> — Read-only</div>
+            </div>
+        </div>
+    </div>
+</div>

@@ -1,0 +1,258 @@
+@model Order
+@{
+    var isNew = Model.Id == 0;
+    var customers = ((ViewBag.Customers as IEnumerable<CustomerAccount>)?.ToList() ?? new List<CustomerAccount>());
+    var farms = ((ViewBag.Farms as IEnumerable<Farm>)?.ToList() ?? new List<Farm>());
+    var batches = ((ViewBag.Batches as IEnumerable<SalesBatchOption>)?.ToList() ?? new List<SalesBatchOption>());
+    var products = (ViewBag.Products as string[] ?? Array.Empty<string>()).Union(new[] { Model.Product }).Where(p => !string.IsNullOrEmpty(p)).Distinct();
+    var statuses = ViewBag.Statuses as string[] ?? Array.Empty<string>();
+    var methods = ViewBag.PaymentMethods as string[] ?? Array.Empty<string>();
+    var inv = System.Globalization.CultureInfo.InvariantCulture;
+    var batchJson = batches.Select(b => new { id = b.Id, code = b.BatchCode, farm = b.FarmId, breed = b.Breed, type = b.BatchType, count = b.CurrentCount, age = b.AgeInDays, wt = b.AverageWeightKg });
+    var custJson = customers.Select(c => new { id = c.Id, limit = c.CreditLimit, outstanding = c.Outstanding, type = c.CustomerType });
+    var prices = new Dictionary<string, decimal> { ["Live Broiler"] = (decimal)ViewBag.PriceBroiler, ["Live Sonali"] = (decimal)ViewBag.PriceSonali, ["Brown Eggs"] = (decimal)ViewBag.PriceEgg, ["White Eggs"] = (decimal)ViewBag.PriceEgg, ["Table Eggs"] = (decimal)ViewBag.PriceEgg };
+    decimal advance = ViewBag.Advance ?? 0m;
+}
+<form asp-action="@(isNew ? "Create" : "Edit")" method="post" id="orderForm" novalidate>
+<input type="hidden" asp-for="Id" />
+<div class="row g-4">
+    <div class="col-xl-8">
+        <div class="form-card">
+            <div asp-validation-summary="All" class="alert alert-danger py-2 small"></div>
+            <div class="section-title mb-2 text-xs text-uppercase text-muted fw-600">Customer &amp; source</div>
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label">Customer *</label>
+                    <select asp-for="CustomerId" class="form-select" id="custSel" required>
+                        <option value="0">-- Select customer --</option>
+                        @foreach (var c in customers)
+                        {
+                            <option value="@c.Id">@c.Name (@c.CustomerType)</option>
+                        }
+                    </select>
+                    <div class="d-flex justify-content-between mt-1">
+                        <div class="text-xs" id="custCredit"></div>
+                        @if (isNew) { <a asp-action="AddCustomer" class="text-xs">+ New customer</a> }
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Source farm *</label>
+                    <select asp-for="FarmId" class="form-select" id="farmSel" required>
+                        <option value="0">-- Select farm --</option>
+                        @foreach (var f in farms)
+                        {
+                            <option value="@f.Id">@f.Name</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Source batch / flock</label>
+                    <select name="BatchId" class="form-select" id="batchSel" data-selected="@Model.BatchId"></select>
+                    <div class="text-xs text-muted mt-1" id="batchInfo"></div>
+                    <span asp-validation-for="BatchId" class="text-danger small"></span>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Bird count</label>
+                    <input asp-for="BirdCount" type="number" min="0" step="1" class="form-control" id="birdCount" placeholder="for live-bird sales" />
+                    <div class="text-xs text-muted mt-1" id="avgWt"></div>
+                    <span asp-validation-for="BirdCount" class="text-danger small"></span>
+                </div>
+            </div>
+
+            <div class="section-title mt-4 mb-2 text-xs text-uppercase text-muted fw-600">Product &amp; pricing</div>
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label">Product *</label>
+                    <select asp-for="Product" class="form-select" id="productSel">
+                        @foreach (var p in products)
+                        {
+                            <option value="@p">@p</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Grade</label>
+                    <select asp-for="Grade" class="form-select">
+                        @foreach (var g in new[] { "A", "B", "C", "Premium" }.Union(new[] { Model.Grade }).Distinct())
+                        {
+                            <option value="@g">@g</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Unit</label>
+                    <select asp-for="Unit" class="form-select" id="unitSel">
+                        @foreach (var u in new[] { "kg", "pcs", "crate", "dozen", "ton" }.Union(new[] { Model.Unit }).Distinct())
+                        {
+                            <option value="@u">@u</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Quantity *</label>
+                    <input asp-for="Quantity" type="number" step="0.01" min="0.01" class="form-control" id="qty" required />
+                    <span asp-validation-for="Quantity" class="text-danger small"></span>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Unit price (৳) *</label>
+                    <input asp-for="UnitPrice" type="number" step="0.01" min="0" class="form-control" id="price" required />
+                    <div class="text-xs text-muted mt-1" id="refPrice"></div>
+                    <span asp-validation-for="UnitPrice" class="text-danger small"></span>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Order total</label>
+                    <div class="form-control bg-light fw-bold" id="totalOut">৳0</div>
+                </div>
+            </div>
+
+            <div class="section-title mt-4 mb-2 text-xs text-uppercase text-muted fw-600">Schedule</div>
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label">Order date *</label>
+                    <input asp-for="OrderDate" type="date" class="form-control" asp-format="{0:yyyy-MM-dd}" required />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Delivery date *</label>
+                    <input asp-for="DeliveryDate" type="date" class="form-control" asp-format="{0:yyyy-MM-dd}" required />
+                    <span asp-validation-for="DeliveryDate" class="text-danger small"></span>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Status</label>
+                    <select asp-for="Status" class="form-select">
+                        @foreach (var s in isNew ? new[] { "Pending", "Confirmed" } : statuses)
+                        {
+                            <option value="@s">@s</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-12">
+                    <label class="form-label">Notes</label>
+                    <textarea asp-for="Notes" class="form-control" rows="2" maxlength="500" placeholder="Delivery point, vehicle, special terms…"></textarea>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-4">
+        <div class="card" style="position:sticky;top:80px">
+            <div class="card-header"><h6><i class="bi bi-receipt text-primary me-2"></i>@(isNew ? "Order summary" : Model.OrderCode)</h6></div>
+            <div class="card-body">
+                <dl class="kv mb-3">
+                    <dt>Order total</dt><dd class="fs-5 fw-bold text-primary" id="sumTotal">৳0</dd>
+                    @if (!isNew)
+                    {
+                        <dt>Already received</dt><dd>@Fmt.Money(Model.PaidAmount, 2)</dd>
+                        <dt>Balance after edit</dt><dd id="sumBalance" data-paid="@Model.PaidAmount.ToString(inv)">—</dd>
+                    }
+                </dl>
+                @if (isNew)
+                {
+                    <div class="mb-3">
+                        <label class="form-label">Advance received (৳)</label>
+                        <input type="number" name="advance" id="advance" class="form-control" min="0" step="0.01" value="@advance.ToString(inv)" />
+                        <span class="text-danger small">@Html.ValidationMessage("advance")</span>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Payment method</label>
+                        <select name="paymentMethod" class="form-select">
+                            @foreach (var m in methods) { <option value="@m">@m</option> }
+                        </select>
+                    </div>
+                    <div class="info-callout small mb-3">An order code (<span class="mono">SO-yyMMdd-HHmmss</span>) is generated on save. An advance is posted to finance as a <em>Customer Payment</em>.</div>
+                }
+                <div id="creditWarn" class="warn-callout small mb-3 d-none"></div>
+                <div class="d-grid gap-2">
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>@(isNew ? "Create order" : "Save changes")</button>
+                    @if (isNew)
+                    {
+                        <a asp-action="Index" class="btn btn-link text-muted">Cancel</a>
+                    }
+                    else
+                    {
+                        <a asp-action="Detail" asp-route-id="@Model.Id" class="btn btn-link text-muted">Cancel</a>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+</form>
+
+<script>
+(function () {
+    const batches = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(batchJson));
+    const customers = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(custJson));
+    const refPrices = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(prices));
+    const isNew = @(isNew ? "true" : "false");
+    const $ = id => document.getElementById(id);
+    const money = v => '৳' + Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+    const farmSel = $('farmSel'), batchSel = $('batchSel'), custSel = $('custSel');
+
+    function fillBatches() {
+        const sel = batchSel.value || batchSel.dataset.selected || '';
+        const list = batches.filter(b => String(b.farm) === farmSel.value);
+        batchSel.innerHTML = '<option value="">' + (list.length ? '-- Not linked to a batch --' : '-- No active batches on this farm --') + '</option>' +
+            list.map(b => `<option value="${b.id}">${b.code} · ${b.breed} · ${b.count.toLocaleString()} birds · day ${b.age}</option>`).join('');
+        if (list.some(b => String(b.id) === String(sel))) batchSel.value = sel;
+        else if (sel && batchSel.dataset.selected) {
+            // closed batch on an existing order: keep it selectable
+            batchSel.insertAdjacentHTML('beforeend', `<option value="${sel}">Batch #${sel} (closed)</option>`);
+            batchSel.value = sel;
+        }
+        batchSel.dataset.selected = '';
+        showBatch();
+    }
+    function showBatch() {
+        const b = batches.find(x => String(x.id) === batchSel.value);
+        $('batchInfo').textContent = b ? `${b.type} · ${b.count.toLocaleString()} birds in house · avg ${Number(b.wt).toFixed(2)} kg` : '';
+        $('birdCount').max = b ? b.count : '';
+        calc();
+    }
+    function showCredit() {
+        const c = customers.find(x => String(x.id) === custSel.value);
+        const el = $('custCredit');
+        if (!c) { el.textContent = ''; return; }
+        el.innerHTML = c.limit > 0 ? `Outstanding ${money(c.outstanding)} of ${money(c.limit)} credit limit` : `Outstanding ${money(c.outstanding)} · no credit limit set`;
+        el.className = 'text-xs ' + (c.limit > 0 && c.outstanding > c.limit ? 'text-danger fw-600' : 'text-muted');
+        calc();
+    }
+    function calc() {
+        const q = parseFloat($('qty').value) || 0, p = parseFloat($('price').value) || 0, total = Math.round(q * p * 100) / 100;
+        $('totalOut').textContent = money(total); $('sumTotal').textContent = money(total);
+        const bal = $('sumBalance');
+        if (bal) bal.textContent = money(Math.max(0, total - parseFloat(bal.dataset.paid)));
+        const birds = parseInt($('birdCount').value) || 0;
+        $('avgWt').textContent = birds > 0 && $('unitSel').value === 'kg' && q > 0 ? `≈ ${(q / birds).toFixed(2)} kg per bird` : '';
+        const c = customers.find(x => String(x.id) === custSel.value);
+        const adv = isNew ? (parseFloat(($('advance') || {}).value) || 0) : 0;
+        const warn = $('creditWarn');
+        if (c && c.limit > 0 && isNew && c.outstanding + total - adv > c.limit) {
+            warn.classList.remove('d-none');
+            warn.innerHTML = `<i class="bi bi-exclamation-triangle me-1"></i>This order takes ${c.type.toLowerCase()} exposure to ${money(c.outstanding + total - adv)}, above the ${money(c.limit)} credit limit.`;
+        } else warn.classList.add('d-none');
+    }
+    function showRef() {
+        const r = refPrices[$('productSel').value];
+        $('refPrice').innerHTML = r ? `Reference price ${money(r)} <a href="#" id="useRef">use</a>` : '';
+        const a = $('useRef');
+        if (a) a.addEventListener('click', e => { e.preventDefault(); $('price').value = r; calc(); });
+        if (r && isNew && !(parseFloat($('price').value) > 0)) $('price').value = r;
+        if (/Egg/.test($('productSel').value) && isNew) $('unitSel').value = 'pcs';
+        if (/^Live|Spent/.test($('productSel').value) && isNew) $('unitSel').value = 'kg';
+        calc();
+    }
+    farmSel.addEventListener('change', fillBatches);
+    batchSel.addEventListener('change', () => {
+        const b = batches.find(x => String(x.id) === batchSel.value);
+        if (b && isNew && !$('birdCount').value) $('birdCount').value = b.count;
+        if (b && isNew) { $('productSel').value = b.type === 'Sonali' ? 'Live Sonali' : b.type === 'Layer' ? 'Brown Eggs' : 'Live Broiler'; showRef(); }
+        showBatch();
+    });
+    custSel.addEventListener('change', showCredit);
+    $('productSel').addEventListener('change', showRef);
+    ['qty', 'price', 'birdCount', 'unitSel', 'advance'].forEach(id => { const el = $(id); if (el) el.addEventListener('input', calc); });
+    $('orderForm').addEventListener('submit', e => {
+        if (custSel.value === '0' || farmSel.value === '0') { e.preventDefault(); alert('Choose a customer and a source farm.'); }
+    });
+    fillBatches(); showCredit(); showRef();
+})();
+</script>

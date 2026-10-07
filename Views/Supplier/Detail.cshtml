@@ -1,0 +1,185 @@
+@model SupplierDetailVm
+@{
+    var s = Model.Supplier;
+    var p = Model.Perf;
+    var canEdit = User.IsAny(Roles.Finance);
+}
+
+<div class="page-head no-print">
+    <div>
+        <a asp-action="Index" class="text-xs text-decoration-none"><i class="bi bi-arrow-left me-1"></i>All suppliers</a>
+        <h4 class="mt-1">@s.Name
+            <span class="chip ms-1">@s.Category</span>
+            @if (!s.IsActive) { <span class="badge badge-danger-soft ms-1">Inactive</span> }
+        </h4>
+        <p>
+            @for (var i = 1; i <= 5; i++)
+            {
+                var icon = s.Rating >= i ? "bi-star-fill" : s.Rating >= i - 0.5m ? "bi-star-half" : "bi-star";
+                <i class="bi @icon text-warning"></i>
+            }
+            <span class="ms-1">@s.Rating.ToString("0.0") / 5</span>
+        </p>
+    </div>
+    @if (canEdit)
+    {
+        <div class="d-flex gap-2">
+            @if (s.IsActive)
+            {
+                <a asp-controller="Purchase" asp-action="Create" asp-route-supplierId="@s.Id" class="btn btn-primary btn-sm"><i class="bi bi-cart-plus me-1"></i>New purchase order</a>
+                <a asp-action="Edit" asp-route-id="@s.Id" class="btn btn-outline-secondary btn-sm"><i class="bi bi-pencil me-1"></i>Edit</a>
+                <form asp-action="Delete" method="post" data-confirm="Deactivate @s.Name? Purchase history is kept.">
+                    <input type="hidden" name="id" value="@s.Id" />
+                    <button class="btn btn-outline-danger btn-sm"><i class="bi bi-slash-circle me-1"></i>Deactivate</button>
+                </form>
+            }
+            else
+            {
+                <form asp-action="Reactivate" method="post">
+                    <input type="hidden" name="id" value="@s.Id" />
+                    <button class="btn btn-success btn-sm"><i class="bi bi-arrow-counterclockwise me-1"></i>Reactivate</button>
+                </form>
+            }
+        </div>
+    }
+</div>
+
+<div class="stat-grid">
+    <div class="stat-tile tone-blue">
+        <div class="st-label">Total spend</div>
+        <div class="st-value">@Fmt.MoneyShort(p.TotalSpend)</div>
+        <div class="st-sub">@p.TotalOrders purchase order(s)</div>
+        <div class="st-icon"><i class="bi bi-cash-stack"></i></div>
+    </div>
+    <div class="stat-tile tone-green">
+        <div class="st-label">On-time delivery</div>
+        <div class="st-value">@(p.OnTimePct.HasValue ? Fmt.Pct(p.OnTimePct.Value, 0) : "—")</div>
+        <div class="st-sub">@p.OnTimeOrders of @p.ReceivedOrders received on time</div>
+        <div class="st-icon"><i class="bi bi-clock-history"></i></div>
+    </div>
+    <div class="stat-tile tone-violet">
+        <div class="st-label">Avg lead time</div>
+        <div class="st-value">@(Model.AvgLeadTimeDays.HasValue ? Model.AvgLeadTimeDays.Value.ToString("0.0") + " d" : "—")</div>
+        <div class="st-sub">Order → receipt</div>
+        <div class="st-icon"><i class="bi bi-hourglass-split"></i></div>
+    </div>
+    <div class="stat-tile tone-amber">
+        <div class="st-label">Open / unpaid</div>
+        <div class="st-value">@Fmt.MoneyShort(Model.OpenOrderValue)</div>
+        <div class="st-sub">Payable on received: @Fmt.Money(Model.UnpaidValue)</div>
+        <div class="st-icon"><i class="bi bi-hourglass"></i></div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-4">
+        <div class="card mb-4">
+            <div class="card-header"><h6><i class="bi bi-person-lines-fill text-primary me-2"></i>Contact</h6></div>
+            <div class="card-body">
+                <dl class="kv">
+                    <dt>Contact person</dt><dd>@(s.ContactPerson ?? "—")</dd>
+                    <dt>Phone</dt><dd>@if (!string.IsNullOrEmpty(s.Phone)) { <a href="tel:@s.Phone">@s.Phone</a> } else { <span>—</span> }</dd>
+                    <dt>Email</dt><dd>@if (!string.IsNullOrEmpty(s.Email)) { <a href="mailto:@s.Email">@s.Email</a> } else { <span>—</span> }</dd>
+                    <dt>Address</dt><dd>@(s.Address ?? "—")</dd>
+                    <dt>Payment terms</dt><dd>@(s.PaymentTerms ?? "—")</dd>
+                    <dt>Supplier since</dt><dd>@Fmt.Date(s.CreatedAt == default ? null : s.CreatedAt)</dd>
+                </dl>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-header"><h6><i class="bi bi-bar-chart text-primary me-2"></i>Monthly spend (12 months)</h6></div>
+            <div class="card-body"><div style="height:200px"><canvas id="spendChart"></canvas></div></div>
+        </div>
+    </div>
+    <div class="col-lg-8">
+        <div class="card mb-4">
+            <div class="card-header">
+                <h6><i class="bi bi-truck text-primary me-2"></i>Purchase-order history</h6>
+                <span class="text-xs text-muted">@Model.Orders.Count order(s)</span>
+            </div>
+            @if (Model.Orders.Count == 0)
+            {
+                <div class="empty-state"><i class="bi bi-inbox"></i>No purchase orders with this supplier yet.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover table-sm mb-0">
+                        <thead><tr><th>PO #</th><th>Order date</th><th>Expected</th><th>Received</th><th class="text-end">Amount</th><th>Status</th><th>Payment</th><th>Delivery</th></tr></thead>
+                        <tbody>
+                        @foreach (var o in Model.Orders)
+                        {
+                            <tr>
+                                <td><a asp-controller="Purchase" asp-action="Detail" asp-route-id="@o.Id" class="fw-600">@o.PoNumber</a></td>
+                                <td>@Fmt.Date(o.OrderDate)</td>
+                                <td class="@(o.IsOverdue ? "text-danger fw-600" : "")">@Fmt.Date(o.ExpectedDate)</td>
+                                <td>@Fmt.Date(o.ReceivedDate)</td>
+                                <td class="text-end">@Fmt.Money(o.TotalAmount)</td>
+                                <td><span class="badge @Fmt.Badge(o.Status)">@o.Status</span></td>
+                                <td><span class="badge @Fmt.Badge(o.PaymentStatus)">@o.PaymentStatus</span></td>
+                                <td>
+                                    @if (o.OnTime == true) { <span class="badge badge-healthy">On time</span> }
+                                    else if (o.OnTime == false) { <span class="badge badge-warning-soft">Late</span> }
+                                    else if (o.IsOverdue) { <span class="badge badge-danger-soft">Overdue</span> }
+                                    else { <span class="text-muted">—</span> }
+                                </td>
+                            </tr>
+                        }
+                        </tbody>
+                        <tfoot><tr><td colspan="4">Total (excl. cancelled)</td><td class="text-end">@Fmt.Money(Model.Orders.Where(o => o.Status != "Cancelled").Sum(o => o.TotalAmount))</td><td colspan="3"></td></tr></tfoot>
+                    </table>
+                </div>
+            }
+        </div>
+
+        <div class="card">
+            <div class="card-header"><h6><i class="bi bi-box-seam text-primary me-2"></i>Items supplied</h6></div>
+            @if (Model.Items.Count == 0)
+            {
+                <div class="empty-state"><i class="bi bi-box"></i>No inventory items are linked to this supplier.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover table-sm mb-0">
+                        <thead><tr><th>Item</th><th>SKU</th><th>Category</th><th class="text-end">On hand</th><th class="text-end">Unit cost</th><th>Status</th><th></th></tr></thead>
+                        <tbody>
+                        @foreach (var i in Model.Items)
+                        {
+                            <tr>
+                                <td class="fw-600">@i.Name</td>
+                                <td class="mono">@(i.SKU ?? "—")</td>
+                                <td>@i.Category</td>
+                                <td class="text-end">@Fmt.Num(i.Quantity, 2) @i.Unit</td>
+                                <td class="text-end">@Fmt.Money(i.UnitCost, 2)</td>
+                                <td><span class="badge @Fmt.Badge(i.StockStatus)">@i.StockStatus</span></td>
+                                <td class="text-end">
+                                    <a asp-controller="Inventory" asp-action="Ledger" asp-route-itemId="@i.Id" class="btn btn-xs btn-outline-secondary" title="Stock ledger"><i class="bi bi-journal-text"></i></a>
+                                    @if (canEdit && s.IsActive && i.StockStatus != "In Stock")
+                                    {
+                                        <a asp-controller="Purchase" asp-action="Create" asp-route-itemId="@i.Id" asp-route-supplierId="@s.Id" class="btn btn-xs btn-outline-success" title="Re-order"><i class="bi bi-cart-plus"></i></a>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+new Chart(document.getElementById('spendChart'), {
+    type: 'bar',
+    data: {
+        labels: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.MonthlySpend.Select(m => m.Label))),
+        datasets: [{ label: 'Spend', data: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.MonthlySpend.Select(m => m.Amount))), backgroundColor: ppColors.blue, borderRadius: 4 }]
+    },
+    options: { plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => ppMoney(c.raw) } } },
+               scales: { y: { beginAtZero: true, ticks: { callback: v => ppMoney(v) } }, x: { grid: { display: false } } } }
+});
+</script>
+}

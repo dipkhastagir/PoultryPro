@@ -1,0 +1,178 @@
+@model PurchaseDetailVm
+@{
+    var o = Model.Order;
+    var canEdit = User.IsAny(Roles.Finance);
+    var steps = new[] { "Draft", "Ordered", "Received", "Paid" };
+    var reached = o.Status == "Cancelled" ? -1 : o.PaymentStatus == "Paid" && o.Status == "Received" ? 3 : Array.IndexOf(steps, o.Status);
+}
+
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3 no-print">
+    <a asp-action="Index" class="text-decoration-none small"><i class="bi bi-arrow-left me-1"></i>All purchase orders</a>
+    <div class="d-flex flex-wrap gap-2">
+        @if (canEdit && o.Status == "Draft")
+        {
+            <form asp-action="MarkOrdered" method="post">
+                <input type="hidden" name="id" value="@o.Id" />
+                <button class="btn btn-sm btn-primary"><i class="bi bi-send me-1"></i>Mark ordered</button>
+            </form>
+        }
+        @if (canEdit && (o.Status == "Draft" || o.Status == "Ordered"))
+        {
+            <button type="button" class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#receiveModal"><i class="bi bi-box-arrow-in-down me-1"></i>Receive goods</button>
+            <form asp-action="Cancel" method="post" data-confirm="Cancel @o.PoNumber?">
+                <input type="hidden" name="id" value="@o.Id" />
+                <button class="btn btn-sm btn-outline-danger"><i class="bi bi-x-circle me-1"></i>Cancel PO</button>
+            </form>
+        }
+        @if (canEdit && o.Status != "Cancelled" && o.PaymentStatus != "Paid")
+        {
+            <form asp-action="MarkPaid" method="post" data-confirm="Record full payment of @Fmt.Money(o.TotalAmount, 2) to @o.SupplierName?">
+                <input type="hidden" name="id" value="@o.Id" />
+                <button class="btn btn-sm btn-outline-success"><i class="bi bi-cash-coin me-1"></i>Mark paid</button>
+            </form>
+        }
+        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.print()"><i class="bi bi-printer me-1"></i>Print</button>
+    </div>
+</div>
+
+@if (o.Status != "Cancelled")
+{
+    <div class="card mb-3 no-print">
+        <div class="card-body py-3">
+            <div class="d-flex justify-content-between align-items-center" style="max-width:900px;margin:0 auto">
+                @for (var i = 0; i < steps.Length; i++)
+                {
+                    var done = i <= reached;
+                    <div class="text-center flex-fill">
+                        <div class="mx-auto rounded-circle d-flex align-items-center justify-content-center"
+                             style="width:30px;height:30px;background:@(done ? "var(--primary)" : "#e2e8f0");color:@(done ? "#fff" : "#64748b")">
+                            <i class="bi @(done ? "bi-check-lg" : "bi-circle")"></i>
+                        </div>
+                        <div class="text-xs mt-1 @(done ? "fw-600" : "text-muted")">@steps[i]</div>
+                    </div>
+                    @if (i < steps.Length - 1)
+                    {
+                        <div class="flex-fill" style="height:2px;background:@(i < reached ? "var(--primary)" : "#e2e8f0");margin-bottom:18px"></div>
+                    }
+                }
+            </div>
+        </div>
+    </div>
+}
+else
+{
+    <div class="warn-callout mb-3 no-print"><i class="bi bi-x-circle me-1"></i>This purchase order was cancelled. It is kept for audit purposes and excluded from supplier spend.</div>
+}
+
+<div class="doc-sheet">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 pb-3 mb-3" style="border-bottom:2px solid #0f172a">
+        <div>
+            <div class="d-flex align-items-center gap-2 mb-1">
+                <i class="bi bi-egg-fried fs-3 text-success"></i>
+                <div class="fw-bold fs-5">@Model.CompanyName</div>
+            </div>
+            <div class="text-xs text-muted">@Model.CompanyAddress</div>
+            @if (!string.IsNullOrEmpty(Model.CompanyPhone)) { <div class="text-xs text-muted">Tel: @Model.CompanyPhone</div> }
+        </div>
+        <div class="text-end">
+            <div class="doc-title">PURCHASE ORDER</div>
+            <div class="mono fs-6">@o.PoNumber</div>
+            <span class="badge @Fmt.Badge(o.Status) mt-1">@o.Status</span>
+            <span class="badge @Fmt.Badge(o.PaymentStatus) mt-1">@o.PaymentStatus</span>
+        </div>
+    </div>
+
+    <div class="row g-4 mb-4">
+        <div class="col-6">
+            <div class="text-xs text-muted text-uppercase fw-600 mb-1">Supplier</div>
+            <div class="fw-600">@o.SupplierName</div>
+            @if (!string.IsNullOrEmpty(o.SupplierContact)) { <div class="small">Attn: @o.SupplierContact</div> }
+            @if (!string.IsNullOrEmpty(o.SupplierAddress)) { <div class="small">@o.SupplierAddress</div> }
+            <div class="small">@o.SupplierPhone @(string.IsNullOrEmpty(o.SupplierEmail) ? "" : " · " + o.SupplierEmail)</div>
+        </div>
+        <div class="col-6">
+            <div class="text-xs text-muted text-uppercase fw-600 mb-1">Deliver to</div>
+            <div class="fw-600">@(o.FarmName ?? "Central store")</div>
+            <div class="small">@(o.FarmLocation ?? Model.CompanyAddress)</div>
+        </div>
+        <div class="col-12">
+            <table class="table table-sm table-bordered mb-0 small">
+                <tr class="table-light"><th>Order date</th><th>Expected delivery</th><th>Received</th><th>Payment terms</th><th>Raised by</th></tr>
+                <tr><td>@Fmt.Date(o.OrderDate)</td><td>@Fmt.Date(o.ExpectedDate)</td><td>@Fmt.Date(o.ReceivedDate)</td><td>@(o.SupplierPaymentTerms ?? "—")</td><td>@(o.CreatedBy ?? "—")</td></tr>
+            </table>
+        </div>
+    </div>
+
+    <table class="table table-sm align-middle">
+        <thead class="table-light"><tr><th style="width:40px">#</th><th>Description</th><th>SKU</th><th class="text-end">Qty</th><th>Unit</th><th class="text-end">Unit cost</th><th class="text-end">Amount</th></tr></thead>
+        <tbody>
+        @if (Model.Lines.Count == 0)
+        {
+            <tr><td colspan="7" class="text-center text-muted py-4">No line items.</td></tr>
+        }
+        @for (var i = 0; i < Model.Lines.Count; i++)
+        {
+            var l = Model.Lines[i];
+            <tr>
+                <td>@(i + 1)</td>
+                <td><div class="fw-600">@l.ItemName</div><div class="text-xs text-muted">@l.Category</div></td>
+                <td class="mono">@(l.SKU ?? "—")</td>
+                <td class="text-end">@Fmt.Num(l.Quantity, 2)</td>
+                <td>@l.Unit</td>
+                <td class="text-end">@Fmt.Money(l.UnitCost, 2)</td>
+                <td class="text-end fw-600">@Fmt.Money(l.LineTotal, 2)</td>
+            </tr>
+        }
+        </tbody>
+        <tfoot>
+            <tr><td colspan="6" class="text-end">Sub-total</td><td class="text-end">@Fmt.Money(Model.Lines.Sum(l => l.LineTotal), 2)</td></tr>
+            <tr><td colspan="6" class="text-end fs-6">Total payable (BDT)</td><td class="text-end fs-6">@Fmt.Money(o.TotalAmount, 2)</td></tr>
+        </tfoot>
+    </table>
+
+    @if (!string.IsNullOrEmpty(o.Notes))
+    {
+        <div class="mb-4"><div class="text-xs text-muted text-uppercase fw-600 mb-1">Notes</div><div class="small">@o.Notes</div></div>
+    }
+
+    <div class="small text-muted mb-5">
+        Please quote the PO number on all delivery challans and invoices. Goods are subject to inspection on arrival; items failing
+        quality checks (expired, damaged, under-weight bags) will be returned at the supplier's cost.
+    </div>
+
+    <div class="row text-center small mt-5 pt-4">
+        <div class="col-4"><div style="border-top:1px solid #94a3b8" class="pt-1 mx-3">Prepared by</div></div>
+        <div class="col-4"><div style="border-top:1px solid #94a3b8" class="pt-1 mx-3">Approved by</div></div>
+        <div class="col-4"><div style="border-top:1px solid #94a3b8" class="pt-1 mx-3">Received by (store)</div></div>
+    </div>
+</div>
+
+@if (canEdit && (o.Status == "Draft" || o.Status == "Ordered"))
+{
+    <div class="modal fade no-print" id="receiveModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <form asp-action="Receive" method="post">
+                    <input type="hidden" name="id" value="@o.Id" />
+                    <div class="modal-header"><h6 class="modal-title">Receive @o.PoNumber</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                    <div class="modal-body">
+                        <label class="form-label">Received date</label>
+                        <input type="date" name="receivedDate" class="form-control" value="@DateTime.Today.ToString("yyyy-MM-dd")" max="@DateTime.Today.ToString("yyyy-MM-dd")" required />
+                        <div class="info-callout mt-3 small">
+                            In one transaction this will:
+                            <ul class="mb-0 ps-3 mt-1">
+                                <li>add @Model.Lines.Count line(s) to stock (ledger reference <span class="mono">@o.PoNumber</span>),</li>
+                                <li>update each item's unit cost to the weighted average,</li>
+                                <li>post a <strong>Purchase</strong> entry of @Fmt.Money(o.TotalAmount) to finance (@(o.PaymentStatus == "Paid" ? "Paid" : "Pending payment")).</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+                        <button class="btn btn-sm btn-success"><i class="bi bi-box-arrow-in-down me-1"></i>Confirm receipt</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+}

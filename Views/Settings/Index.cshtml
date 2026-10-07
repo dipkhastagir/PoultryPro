@@ -1,0 +1,127 @@
+@model SettingsVm
+@{
+    var i = 0;
+    string GroupIcon(string g) => g switch
+    {
+        "General" => "bi-building", "Analytics" => "bi-graph-up-arrow", "Sustainability" => "bi-tree",
+        "Integration" => "bi-plug", "Market" => "bi-shop", _ => "bi-sliders"
+    };
+    string GroupBlurb(string g) => g switch
+    {
+        "General" => "Organisation identity used on invoices, payslips and printed reports.",
+        "Analytics" => "Thresholds used by the alert engine and forecasting models.",
+        "Sustainability" => "Emission factors for the carbon-footprint calculator (kg CO₂e).",
+        "Integration" => "Keys and endpoints used by the mobile app and sensors.",
+        "Market" => "Reference prices used for valuation and revenue projections (BDT).",
+        _ => "Other settings."
+    };
+    bool IsNumeric(string v) => decimal.TryParse(v, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out _);
+    bool IsSecret(string k) => k.Contains("Key", StringComparison.OrdinalIgnoreCase) || k.Contains("Secret", StringComparison.OrdinalIgnoreCase) || k.Contains("Password", StringComparison.OrdinalIgnoreCase);
+}
+
+<div class="page-head">
+    <div>
+        <h4>Application settings</h4>
+        <p>@Model.Total settings in @Model.Groups.Count groups · last changed @Fmt.Ago(Model.LastUpdated)</p>
+    </div>
+    <button type="submit" form="settingsForm" class="btn btn-sm btn-primary"><i class="bi bi-save me-1"></i>Save changes</button>
+</div>
+
+@if (Model.Total == 0)
+{
+    <div class="card"><div class="empty-state"><i class="bi bi-sliders"></i>No settings found. They are seeded by SQL/03_ReferenceData.sql on start-up.</div></div>
+}
+else
+{
+    <div class="row g-4">
+        <div class="col-lg-3 d-none d-lg-block">
+            <div class="card" style="position:sticky;top:80px">
+                <div class="card-body p-2">
+                    @foreach (var g in Model.Groups)
+                    {
+                        <a href="#grp-@g.Key" class="d-flex justify-content-between align-items-center px-2 py-2 rounded text-decoration-none text-reset small">
+                            <span><i class="bi @GroupIcon(g.Key) me-2 text-primary"></i>@g.Key</span><span class="badge badge-gray">@g.Count()</span>
+                        </a>
+                    }
+                    <hr class="my-2" />
+                    <div class="px-2 pb-1 text-xs text-muted">Only changed values are saved. Every save is written to the audit log.</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-9">
+            <form asp-action="Save" method="post" id="settingsForm">
+                @Html.AntiForgeryToken()
+                @foreach (var g in Model.Groups)
+                {
+                    <div class="card mb-4" id="grp-@g.Key">
+                        <div class="card-header">
+                            <h6><i class="bi @GroupIcon(g.Key) text-primary me-2"></i>@g.Key</h6>
+                            <span class="text-muted text-xs">@GroupBlurb(g.Key)</span>
+                        </div>
+                        <div class="card-body">
+                            @foreach (var s in g)
+                            {
+                                var numeric = IsNumeric(s.Value);
+                                var secret = IsSecret(s.Key);
+                                <div class="row g-2 align-items-center py-2 border-bottom setting-row">
+                                    <div class="col-md-5">
+                                        <label for="set-@i" class="fw-600 small mono d-block">@s.Key</label>
+                                        <div class="text-xs text-muted">@(s.Description ?? "")</div>
+                                    </div>
+                                    <div class="col-md-5">
+                                        <input type="hidden" name="keys[@i]" value="@s.Key" />
+                                        <div class="input-group input-group-sm">
+                                            <input id="set-@i" name="values[@i]" value="@s.Value" data-orig="@s.Value"
+                                                   type="@(secret ? "password" : "text")" inputmode="@(numeric ? "decimal" : "text")"
+                                                   class="form-control setting-input @(numeric ? "text-end mono" : "")" maxlength="500" />
+                                            @if (secret)
+                                            {
+                                                <button type="button" class="btn btn-outline-secondary reveal" tabindex="-1" title="Show / hide"><i class="bi bi-eye"></i></button>
+                                            }
+                                        </div>
+                                    </div>
+                                    <div class="col-md-2 text-md-end text-xs text-muted">@Fmt.Ago(s.UpdatedAt)</div>
+                                </div>
+                                i++;
+                            }
+                        </div>
+                    </div>
+                }
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <span class="text-muted small" id="dirtyNote">No unsaved changes.</span>
+                    <div class="d-flex gap-2">
+                        <button type="reset" class="btn btn-outline-secondary">Discard</button>
+                        <button type="submit" class="btn btn-primary"><i class="bi bi-save me-1"></i>Save changes</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+}
+
+@section Scripts {
+<script>
+(function () {
+    var inputs = document.querySelectorAll('.setting-input');
+    var note = document.getElementById('dirtyNote');
+    function check() {
+        var n = 0;
+        inputs.forEach(function (x) {
+            var dirty = x.value !== x.dataset.orig;
+            x.classList.toggle('border-warning', dirty);
+            if (dirty) n++;
+        });
+        if (note) note.textContent = n === 0 ? 'No unsaved changes.' : n + ' unsaved change' + (n === 1 ? '' : 's') + '.';
+    }
+    inputs.forEach(function (x) { x.addEventListener('input', check); });
+    var form = document.getElementById('settingsForm');
+    if (form) form.addEventListener('reset', function () { setTimeout(check, 0); });
+    document.querySelectorAll('.reveal').forEach(function (b) {
+        b.addEventListener('click', function () {
+            var inp = b.parentElement.querySelector('input');
+            inp.type = inp.type === 'password' ? 'text' : 'password';
+        });
+    });
+})();
+</script>
+}

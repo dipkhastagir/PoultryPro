@@ -1,0 +1,150 @@
+@model TaskFormVm
+@{
+    var farms = ((ViewBag.Farms as IEnumerable<Farm>)?.ToList() ?? new List<Farm>());
+    var batches = ((ViewBag.Batches as IEnumerable<TaskBatchOption>)?.ToList() ?? new List<TaskBatchOption>());
+    var employees = ((ViewBag.Employees as IEnumerable<Employee>)?.ToList() ?? new List<Employee>());
+    var task = ViewBag.Task as FarmTask;
+    var isNew = Model.Id == 0;
+    var readOnly = User.IsInRole(Roles.Viewer);
+    if (task?.BatchId != null && batches.All(b => b.Id != task.BatchId))
+    {
+        batches.Insert(0, new TaskBatchOption { Id = task.BatchId.Value, BatchCode = (task.BatchCode ?? "Batch") + " (closed)", FarmId = task.FarmId ?? 0 });
+    }
+}
+<div class="row justify-content-center g-4">
+<div class="col-xl-8">
+<form asp-action="@(isNew ? "Create" : "Edit")" method="post" class="form-card">
+    @Html.AntiForgeryToken()
+    <input type="hidden" asp-for="Id" />
+    <div asp-validation-summary="ModelOnly" class="text-danger small mb-2"></div>
+    <fieldset disabled="@readOnly">
+    <h6 class="fw-semibold mb-4"><i class="bi bi-kanban text-primary me-2"></i>@(isNew ? "New task" : "Task details")</h6>
+    <div class="row g-3">
+        <div class="col-12">
+            <label asp-for="Title" class="form-label">Title *</label>
+            <input asp-for="Title" class="form-control" maxlength="200" required placeholder="e.g. Clean drinker lines in Shed 2" />
+            <span asp-validation-for="Title" class="text-danger small"></span>
+        </div>
+        <div class="col-12">
+            <label asp-for="Description" class="form-label">Description</label>
+            <textarea asp-for="Description" class="form-control" rows="3" maxlength="1000" placeholder="Instructions, materials, checklist…"></textarea>
+        </div>
+        <div class="col-md-6">
+            <label asp-for="FarmId" class="form-label">Farm</label>
+            <select asp-for="FarmId" class="form-select" id="farmSel">
+                <option value="">— any / all farms —</option>
+                @foreach (var f in farms) { <option value="@f.Id">@f.Name</option> }
+            </select>
+        </div>
+        <div class="col-md-6">
+            <label asp-for="BatchId" class="form-label">Batch <span class="text-muted">(optional)</span></label>
+            <select asp-for="BatchId" class="form-select" id="batchSel">
+                <option value="">— no specific batch —</option>
+                @foreach (var b in batches) { <option value="@b.Id" data-farm="@b.FarmId">@b.BatchCode@(b.Breed != null ? $" · {b.Breed}" : "")</option> }
+            </select>
+        </div>
+        <div class="col-md-6">
+            <label asp-for="AssignedToEmployeeId" class="form-label">Assign to</label>
+            <select asp-for="AssignedToEmployeeId" class="form-select" id="empSel">
+                <option value="">— unassigned —</option>
+                @foreach (var e in employees) { <option value="@e.Id" data-farm="@e.FarmId">@e.FullName · @e.Role</option> }
+            </select>
+            <div class="form-text">Employees of the selected farm are listed first.</div>
+        </div>
+        <div class="col-md-6">
+            <label asp-for="Category" class="form-label">Category</label>
+            <select asp-for="Category" class="form-select">
+                @foreach (var c in FarmTask.Categories) { <option value="@c">@c</option> }
+            </select>
+        </div>
+        <div class="col-md-4">
+            <label asp-for="Priority" class="form-label">Priority</label>
+            <select asp-for="Priority" class="form-select">
+                @foreach (var p in FarmTask.Priorities) { <option value="@p">@p</option> }
+            </select>
+        </div>
+        <div class="col-md-4">
+            <label asp-for="Status" class="form-label">Status</label>
+            <select asp-for="Status" class="form-select">
+                @foreach (var s in FarmTask.Statuses) { <option value="@s">@s</option> }
+            </select>
+        </div>
+        <div class="col-md-4">
+            <label asp-for="DueDate" class="form-label">Due date</label>
+            <input asp-for="DueDate" type="date" class="form-control" />
+        </div>
+    </div>
+    </fieldset>
+    <div class="d-flex gap-2 mt-4">
+        @if (!readOnly)
+        {
+            <button class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>@(isNew ? "Create task" : "Save changes")</button>
+        }
+        <a asp-action="Index" class="btn btn-outline-secondary">@(readOnly ? "Back to board" : "Cancel")</a>
+    </div>
+</form>
+</div>
+
+@if (task != null)
+{
+    <div class="col-xl-4">
+        <div class="card">
+            <div class="card-header"><h6><i class="bi bi-info-circle text-primary me-2"></i>Task info</h6></div>
+            <div class="card-body">
+                <dl class="kv mb-3" style="grid-template-columns:110px 1fr">
+                    <dt>Status</dt><dd><span class="badge @Fmt.Badge(task.Status)">@task.Status</span></dd>
+                    <dt>Priority</dt><dd><span class="badge @Fmt.Badge(task.Priority)">@task.Priority</span></dd>
+                    <dt>Due</dt><dd class="@(task.IsOverdue ? "text-danger" : "")">@Fmt.Date(task.DueDate)@(task.IsOverdue ? " · overdue" : "")</dd>
+                    <dt>Created</dt><dd>@Fmt.DateTime(task.CreatedAt)<div class="text-xs text-muted">by @(task.CreatedBy ?? "system")</div></dd>
+                    <dt>Completed</dt><dd>@Fmt.DateTime(task.CompletedAt)</dd>
+                </dl>
+                @if (task.BatchId.HasValue)
+                {
+                    <a asp-controller="Batch" asp-action="Detail" asp-route-id="@task.BatchId" class="btn btn-sm btn-outline-secondary w-100 mb-2"><i class="bi bi-feather me-1"></i>Open batch @task.BatchCode</a>
+                }
+                @if (task.AssignedToEmployeeId.HasValue)
+                {
+                    <a asp-controller="Employee" asp-action="Detail" asp-route-id="@task.AssignedToEmployeeId" class="btn btn-sm btn-outline-secondary w-100 mb-2"><i class="bi bi-person me-1"></i>@task.AssigneeName</a>
+                }
+                @if (!readOnly)
+                {
+                    <form asp-action="Delete" method="post" data-confirm="Delete this task permanently?">
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="id" value="@task.Id" />
+                        <button class="btn btn-sm btn-outline-danger w-100"><i class="bi bi-trash me-1"></i>Delete task</button>
+                    </form>
+                }
+            </div>
+        </div>
+    </div>
+}
+</div>
+
+@section Scripts {
+<script>
+(function () {
+    var farm = document.getElementById('farmSel'), batch = document.getElementById('batchSel'), emp = document.getElementById('empSel');
+    function sync() {
+        var f = farm.value;
+        Array.prototype.forEach.call(batch.options, function (o) {
+            if (!o.value) return;
+            o.hidden = !!f && o.dataset.farm !== f;
+        });
+        if (batch.selectedOptions[0] && batch.selectedOptions[0].hidden) batch.value = '';
+        // employees of the farm first
+        var opts = Array.prototype.slice.call(emp.options, 1);
+        opts.sort(function (a, b) {
+            var am = a.dataset.farm === f ? 0 : 1, bm = b.dataset.farm === f ? 0 : 1;
+            return am - bm || a.text.localeCompare(b.text);
+        });
+        opts.forEach(function (o) { emp.appendChild(o); });
+    }
+    batch.addEventListener('change', function () {
+        var o = batch.selectedOptions[0];
+        if (o && o.value && !farm.value) { farm.value = o.dataset.farm; sync(); }
+    });
+    farm.addEventListener('change', sync);
+    sync();
+})();
+</script>
+}

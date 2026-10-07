@@ -1,0 +1,117 @@
+@model PurchaseIndexVm
+@{
+    var canEdit = User.IsAny(Roles.Finance);
+    var tabs = new List<(string? Key, string Label, string Icon)> { (null, "All", "bi-list-ul"), ("Draft", "Draft", "bi-pencil-square"), ("Ordered", "Ordered", "bi-send"), ("Received", "Received", "bi-box-arrow-in-down"), ("Cancelled", "Cancelled", "bi-x-circle") };
+    var allCount = Model.CountByStatus.Values.Sum();
+}
+
+<div class="stat-grid">
+    <div class="stat-tile tone-amber">
+        <div class="st-label">Drafts</div>
+        <div class="st-value">@Model.CountByStatus["Draft"]</div>
+        <div class="st-sub">@Fmt.Money(Model.ValueByStatus["Draft"]) awaiting approval</div>
+        <div class="st-icon"><i class="bi bi-pencil-square"></i></div>
+    </div>
+    <div class="stat-tile tone-blue">
+        <div class="st-label">On order</div>
+        <div class="st-value">@Model.CountByStatus["Ordered"]</div>
+        <div class="st-sub">@Fmt.Money(Model.ValueByStatus["Ordered"]) in transit · @Model.OverdueCount overdue</div>
+        <div class="st-icon"><i class="bi bi-truck"></i></div>
+    </div>
+    <div class="stat-tile tone-green">
+        <div class="st-label">Received</div>
+        <div class="st-value">@Fmt.MoneyShort(Model.ValueByStatus["Received"])</div>
+        <div class="st-sub">@Model.CountByStatus["Received"] order(s) booked into stock</div>
+        <div class="st-icon"><i class="bi bi-box-arrow-in-down"></i></div>
+    </div>
+    <div class="stat-tile tone-red">
+        <div class="st-label">Supplier payables</div>
+        <div class="st-value">@Fmt.MoneyShort(Model.UnpaidReceived)</div>
+        <div class="st-sub">Received but not yet paid</div>
+        <div class="st-icon"><i class="bi bi-wallet2"></i></div>
+    </div>
+</div>
+
+<div class="d-flex flex-wrap justify-content-between align-items-end gap-2 mb-3">
+    <ul class="nav nav-tabs border-0">
+        @foreach (var t in tabs)
+        {
+            var cnt = t.Key == null ? allCount : Model.CountByStatus.GetValueOrDefault(t.Key);
+            <li class="nav-item">
+                <a class="nav-link @(Model.Status == t.Key ? "active" : "")" asp-action="Index" asp-route-status="@t.Key" asp-route-q="@Model.Q">
+                    <i class="bi @t.Icon me-1"></i>@t.Label <span class="badge badge-gray ms-1">@cnt</span>
+                </a>
+            </li>
+        }
+    </ul>
+    <form method="get" class="d-flex gap-2">
+        <input type="hidden" name="status" value="@Model.Status" />
+        <input type="search" name="q" value="@Model.Q" class="form-control form-control-sm" placeholder="PO #, supplier, notes…" style="width:220px" />
+        <button class="btn btn-sm btn-outline-secondary"><i class="bi bi-search"></i></button>
+        @if (canEdit)
+        {
+            <a asp-action="Create" class="btn btn-primary btn-sm text-nowrap"><i class="bi bi-plus-lg me-1"></i>New PO</a>
+        }
+    </form>
+</div>
+
+<div class="card">
+    @if (Model.Orders.Count == 0)
+    {
+        <div class="empty-state"><i class="bi bi-truck"></i>No purchase orders @(Model.Status != null ? "with status " + Model.Status : "found").
+            @if (canEdit) { <div class="mt-2"><a asp-action="Create" class="btn btn-sm btn-primary">Raise a purchase order</a></div> }
+        </div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr><th>PO #</th><th>Supplier</th><th>Deliver to</th><th>Order date</th><th>Expected</th><th class="text-center">Lines</th><th class="text-end">Amount</th><th>Status</th><th>Payment</th><th></th></tr>
+                </thead>
+                <tbody>
+                @foreach (var o in Model.Orders)
+                {
+                    <tr>
+                        <td><a asp-action="Detail" asp-route-id="@o.Id" class="fw-600 text-decoration-none">@o.PoNumber</a>
+                            @if (!string.IsNullOrEmpty(o.Notes)) { <div class="text-xs text-muted text-truncate" style="max-width:220px" title="@o.Notes">@o.Notes</div> }
+                        </td>
+                        <td><a asp-controller="Supplier" asp-action="Detail" asp-route-id="@o.SupplierId" class="text-reset">@o.SupplierName</a></td>
+                        <td class="text-muted small">@(o.FarmName ?? "Central store")</td>
+                        <td>@Fmt.Date(o.OrderDate)</td>
+                        <td>
+                            <span class="@(o.IsOverdue ? "text-danger fw-600" : "")">@Fmt.Date(o.ExpectedDate)</span>
+                            @if (o.IsOverdue) { <span class="badge badge-danger-soft ms-1">Overdue</span> }
+                            @if (o.Status == "Received") { <div class="text-xs text-muted">recv. @Fmt.Date(o.ReceivedDate)</div> }
+                        </td>
+                        <td class="text-center">@o.LineCount</td>
+                        <td class="text-end fw-600">@Fmt.Money(o.TotalAmount)</td>
+                        <td><span class="badge @Fmt.Badge(o.Status)">@o.Status</span></td>
+                        <td><span class="badge @Fmt.Badge(o.PaymentStatus)">@o.PaymentStatus</span></td>
+                        <td class="text-end text-nowrap">
+                            <a asp-action="Detail" asp-route-id="@o.Id" class="btn btn-xs btn-outline-secondary" title="Open / print"><i class="bi bi-file-earmark-text"></i></a>
+                            @if (canEdit && o.Status == "Draft")
+                            {
+                                <form asp-action="MarkOrdered" method="post" class="d-inline">
+                                    <input type="hidden" name="id" value="@o.Id" />
+                                    <button class="btn btn-xs btn-outline-primary" title="Send to supplier"><i class="bi bi-send"></i></button>
+                                </form>
+                            }
+                            @if (canEdit && (o.Status == "Ordered" || o.Status == "Draft"))
+                            {
+                                <form asp-action="Receive" method="post" class="d-inline" data-confirm="Receive @o.PoNumber into stock today? This posts stock IN and a finance purchase entry.">
+                                    <input type="hidden" name="id" value="@o.Id" />
+                                    <button class="btn btn-xs btn-outline-success" title="Receive goods"><i class="bi bi-box-arrow-in-down"></i></button>
+                                </form>
+                            }
+                        </td>
+                    </tr>
+                }
+                </tbody>
+                <tfoot>
+                    <tr><td colspan="6">@Model.Orders.Count order(s)</td><td class="text-end">@Fmt.Money(Model.Orders.Where(o => o.Status != "Cancelled").Sum(o => o.TotalAmount))</td><td colspan="3" class="text-xs text-muted">excl. cancelled</td></tr>
+                </tfoot>
+            </table>
+        </div>
+    }
+</div>

@@ -1,0 +1,199 @@
+@using PoultryPro.Controllers
+@model BatchCreateVm
+@{
+    var farms = ((ViewBag.Farms as IEnumerable<Farm>)?.ToList() ?? new List<Farm>());
+    var templates = ((ViewBag.Templates as IEnumerable<VaccineTemplate>)?.ToList() ?? new List<VaccineTemplate>());
+}
+
+<div class="row justify-content-center">
+    <div class="col-xl-9">
+        <form asp-action="Create" method="post" class="form-card" id="flockForm">
+            @Html.AntiForgeryToken()
+            <div asp-validation-summary="ModelOnly" class="text-danger small mb-2"></div>
+
+            <div class="section-header"><h5 class="section-title"><i class="bi bi-feather text-success me-2"></i>Placement</h5></div>
+            <div class="row g-3 mb-4">
+                <div class="col-md-6">
+                    <label asp-for="FarmId" class="form-label">Farm *</label>
+                    <select asp-for="FarmId" class="form-select" required>
+                        <option value="0">— Select farm —</option>
+                        @foreach (var f in farms)
+                        {
+                            <option value="@f.Id" data-type="@f.FarmType" data-sheds="@f.ShedCount">@f.Name — @f.Location (@f.FarmType)</option>
+                        }
+                    </select>
+                    <span asp-validation-for="FarmId" class="text-danger small"></span>
+                </div>
+                <div class="col-md-3">
+                    <label asp-for="BatchCode" class="form-label">Batch code *</label>
+                    <input asp-for="BatchCode" class="form-control mono" maxlength="20" required />
+                    <span asp-validation-for="BatchCode" class="text-danger small"></span>
+                    <div class="text-xs text-muted">Next free code suggested</div>
+                </div>
+                <div class="col-md-3">
+                    <label asp-for="ShedNo" class="form-label">Shed no.</label>
+                    <input asp-for="ShedNo" class="form-control" placeholder="e.g. S-1" maxlength="20" />
+                </div>
+                <div class="col-md-4">
+                    <label asp-for="BatchType" class="form-label">Production type *</label>
+                    <select asp-for="BatchType" class="form-select" id="BatchType">
+                        @foreach (var t in BatchController.BatchTypes)
+                        {
+                            <option value="@t">@t</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label asp-for="Breed" class="form-label">Breed / strain *</label>
+                    <select class="form-select" id="breedSelect">
+                        @foreach (var br in BatchController.Breeds)
+                        {
+                            <option value="@br" selected="@(Model.Breed == br || (br == "Other" && !BatchController.Breeds.Contains(Model.Breed)))">@br</option>
+                        }
+                    </select>
+                    <input asp-for="Breed" class="form-control mt-2 @(BatchController.Breeds.Contains(Model.Breed) ? "d-none" : "")" id="breedOther" placeholder="Type breed name" maxlength="100" />
+                    <span asp-validation-for="Breed" class="text-danger small"></span>
+                </div>
+                <div class="col-md-4">
+                    <label asp-for="HealthStatus" class="form-label">Initial status</label>
+                    <select asp-for="HealthStatus" class="form-select">
+                        @foreach (var s in BatchController.HealthStatuses)
+                        {
+                            <option value="@s">@s</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label asp-for="InitialCount" class="form-label">Day-old chicks placed *</label>
+                    <input asp-for="InitialCount" type="number" min="1" class="form-control" required id="InitialCount" />
+                    <span asp-validation-for="InitialCount" class="text-danger small"></span>
+                </div>
+                <div class="col-md-4">
+                    <label asp-for="PlacementDate" class="form-label">Placement date *</label>
+                    <input asp-for="PlacementDate" type="date" class="form-control" required id="PlacementDate" />
+                    <span asp-validation-for="PlacementDate" class="text-danger small"></span>
+                </div>
+                <div class="col-md-4">
+                    <label asp-for="ExpectedHarvestDate" class="form-label">Expected harvest</label>
+                    <input asp-for="ExpectedHarvestDate" type="date" class="form-control" id="ExpectedHarvestDate" />
+                    <span asp-validation-for="ExpectedHarvestDate" class="text-danger small"></span>
+                    <div class="text-xs text-muted" id="harvestHint">Broiler 35 d · Sonali 63 d · Layer: none</div>
+                </div>
+            </div>
+
+            <div class="section-header"><h5 class="section-title"><i class="bi bi-cash-coin text-warning me-2"></i>Source &amp; cost</h5></div>
+            <div class="row g-3 mb-4">
+                <div class="col-md-5">
+                    <label asp-for="HatcheryName" class="form-label">Hatchery</label>
+                    <input asp-for="HatcheryName" class="form-control" maxlength="150" placeholder="e.g. Kazi Hatchery" />
+                </div>
+                <div class="col-md-3">
+                    <label asp-for="ChickCostPerBird" class="form-label">Chick cost / bird (৳)</label>
+                    <input asp-for="ChickCostPerBird" type="number" step="0.01" min="0" class="form-control" id="ChickCost" />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Total chick cost</label>
+                    <div class="form-control bg-light fw-600" id="chickTotal">৳0</div>
+                </div>
+                <div class="col-12">
+                    <div class="form-check">
+                        <input asp-for="PostChickPurchase" class="form-check-input" />
+                        <label asp-for="PostChickPurchase" class="form-check-label">Post a <strong>Purchase</strong> transaction (category “Day-old Chicks”, reference = batch code) to finance</label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="section-header"><h5 class="section-title"><i class="bi bi-eyedropper text-primary me-2"></i>Vaccine programme</h5></div>
+            <div class="row g-3 mb-3">
+                <div class="col-md-5">
+                    <div class="form-check form-switch mt-2">
+                        <input asp-for="ApplyVaccineProgramme" class="form-check-input" id="applyVax" />
+                        <label class="form-check-label" for="applyVax">Apply a vaccine programme after placement</label>
+                    </div>
+                    <div class="text-xs text-muted mt-1">Due dates are calculated from the placement date; past items are flagged Overdue.</div>
+                </div>
+                <div class="col-md-7">
+                    <select asp-for="VaccineTemplateId" class="form-select" id="tplSelect">
+                        <option value="">— No programme —</option>
+                        @foreach (var t in templates)
+                        {
+                            <option value="@t.Id" data-type="@t.BatchType">@t.Name (@t.BatchType, @t.ItemCount vaccines)</option>
+                        }
+                    </select>
+                    @if (!templates.Any())
+                    {
+                        <div class="text-xs text-muted mt-1">No programmes defined yet — <a asp-controller="VaccineSchedule" asp-action="Create">create one</a>.</div>
+                    }
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label asp-for="Notes" class="form-label">Notes</label>
+                <textarea asp-for="Notes" class="form-control" rows="2" maxlength="500" placeholder="Brooding set-up, trial allocation, chick quality on arrival…"></textarea>
+            </div>
+
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Place flock</button>
+                <a asp-action="Index" class="btn btn-outline-secondary">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+(function () {
+    const typeSel = document.getElementById('BatchType');
+    const breedSel = document.getElementById('breedSelect');
+    const breedOther = document.getElementById('breedOther');
+    const placement = document.getElementById('PlacementDate');
+    const harvest = document.getElementById('ExpectedHarvestDate');
+    const tplSel = document.getElementById('tplSelect');
+    const applyVax = document.getElementById('applyVax');
+    const count = document.getElementById('InitialCount');
+    const cost = document.getElementById('ChickCost');
+    const total = document.getElementById('chickTotal');
+    const days = { Broiler: 35, Sonali: 63 };
+    const breedType = { 'Cobb 500': 'Broiler', 'Ross 308': 'Broiler', 'Sonali': 'Sonali', 'Hy-Line Brown': 'Layer', 'Lohmann Brown': 'Layer' };
+    let harvestTouched = false;
+    harvest.addEventListener('change', () => harvestTouched = true);
+
+    function suggestHarvest() {
+        if (harvestTouched || !placement.value) return;
+        const d = days[typeSel.value];
+        if (!d) { harvest.value = ''; return; }
+        const dt = new Date(placement.value + 'T00:00:00');
+        dt.setDate(dt.getDate() + d);
+        harvest.value = dt.toISOString().slice(0, 10);
+    }
+    function filterTemplates() {
+        let firstMatch = null, selectedOk = false;
+        [...tplSel.options].forEach(o => {
+            if (!o.value) return;
+            const ok = o.dataset.type === typeSel.value;
+            o.hidden = !ok;
+            if (ok && !firstMatch) firstMatch = o;
+            if (ok && o.selected) selectedOk = true;
+        });
+        if (!selectedOk) tplSel.value = firstMatch ? firstMatch.value : '';
+        if (!firstMatch) applyVax.checked = false;
+    }
+    function syncBreed() {
+        if (breedSel.value === 'Other') { breedOther.classList.remove('d-none'); if (breedType[breedOther.value] || breedOther.value === 'Other') breedOther.value = ''; }
+        else { breedOther.classList.add('d-none'); breedOther.value = breedSel.value; if (breedType[breedSel.value]) { typeSel.value = breedType[breedSel.value]; onType(); } }
+    }
+    function onType() { suggestHarvest(); filterTemplates(); }
+    function calc() {
+        const t = (parseFloat(count.value) || 0) * (parseFloat(cost.value) || 0);
+        total.textContent = ppMoney(t);
+    }
+    breedSel.addEventListener('change', syncBreed);
+    typeSel.addEventListener('change', onType);
+    placement.addEventListener('change', suggestHarvest);
+    count.addEventListener('input', calc); cost.addEventListener('input', calc);
+    tplSel.addEventListener('change', () => { if (tplSel.value) applyVax.checked = true; });
+    if (breedSel.value !== 'Other') breedOther.value = breedSel.value;
+    filterTemplates(); calc();
+})();
+</script>
+}

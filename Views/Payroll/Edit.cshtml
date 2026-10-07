@@ -1,0 +1,78 @@
+@model PayrollEditVm
+@{
+    var p = Model.Entry;
+    var dailyRate = p.BasicSalary / 26m;
+}
+<div class="row justify-content-center"><div class="col-xl-8">
+<form asp-action="Edit" asp-route-id="@p.Id" method="post" class="form-card">
+    @Html.AntiForgeryToken()
+    <div asp-validation-summary="ModelOnly" class="text-danger small mb-2"></div>
+    <div class="d-flex align-items-center gap-3 mb-4">
+        <div class="avatar" style="width:48px;height:48px;font-size:16px">@(string.Concat(p.FullName.Split(" ", StringSplitOptions.RemoveEmptyEntries).Take(2).Select(x => x[0])))</div>
+        <div>
+            <h6 class="fw-semibold mb-0">@p.FullName <span class="mono text-muted ms-1">@p.CodeOrId</span></h6>
+            <div class="text-muted small">@p.Role · @(p.FarmName ?? "Head office") · @p.PeriodLabel</div>
+        </div>
+        <span class="badge @Fmt.Badge(p.Status) ms-auto">@p.Status</span>
+    </div>
+
+    <div class="row g-3">
+        <div class="col-md-4">
+            <label class="form-label">Basic salary</label>
+            <input class="form-control" value="@Fmt.Money(p.BasicSalary)" disabled />
+            <div class="form-text">Daily rate @Fmt.Money(dailyRate)</div>
+        </div>
+        <div class="col-md-4">
+            <label asp-for="Allowances" class="form-label">Allowances (৳)</label>
+            <input asp-for="Allowances" type="number" step="1" min="0" class="form-control pay-in" />
+            <span asp-validation-for="Allowances" class="text-danger small"></span>
+        </div>
+        <div class="col-md-4">
+            <label asp-for="Overtime" class="form-label">Overtime (৳)</label>
+            <input asp-for="Overtime" type="number" step="1" min="0" class="form-control pay-in" />
+            <span asp-validation-for="Overtime" class="text-danger small"></span>
+        </div>
+        <div class="col-md-4">
+            <label asp-for="DaysPresent" class="form-label">Days present</label>
+            <input asp-for="DaysPresent" type="number" min="0" max="31" class="form-control" />
+        </div>
+        <div class="col-md-4">
+            <label asp-for="DaysAbsent" class="form-label">Days absent</label>
+            <input asp-for="DaysAbsent" type="number" min="0" max="31" class="form-control" id="absent" />
+            <span asp-validation-for="DaysAbsent" class="text-danger small"></span>
+            <button type="button" class="btn btn-link btn-sm p-0" id="recalc">Set deductions = absent × daily rate</button>
+        </div>
+        <div class="col-md-4">
+            <label asp-for="Deductions" class="form-label">Deductions (৳)</label>
+            <input asp-for="Deductions" type="number" step="1" min="0" class="form-control pay-in" id="ded" />
+            <span asp-validation-for="Deductions" class="text-danger small"></span>
+        </div>
+    </div>
+
+    <div class="info-callout mt-4 d-flex justify-content-between align-items-center">
+        <span>Net pay = basic + allowances + overtime − deductions</span>
+        <strong style="font-size:18px" id="net">@Fmt.Money(p.NetPay)</strong>
+    </div>
+
+    <div class="d-flex gap-2 mt-4">
+        <button class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Save adjustments</button>
+        <a asp-action="Index" asp-route-year="@p.PeriodYear" asp-route-month="@p.PeriodMonth" class="btn btn-outline-secondary">Cancel</a>
+        <a asp-action="Payslip" asp-route-id="@p.Id" class="btn btn-outline-secondary ms-auto"><i class="bi bi-receipt me-1"></i>Preview payslip</a>
+    </div>
+</form>
+</div></div>
+
+@section Scripts {
+<script>
+(function () {
+    var basic = @p.BasicSalary.ToString(System.Globalization.CultureInfo.InvariantCulture), rate = basic / 26;
+    function val(id) { return parseFloat(document.querySelector('[name="' + id + '"]').value || '0'); }
+    function upd() { document.getElementById('net').textContent = ppMoney(basic + val('Allowances') + val('Overtime') - val('Deductions')); }
+    document.querySelectorAll('.pay-in').forEach(function (i) { i.addEventListener('input', upd); });
+    document.getElementById('recalc').addEventListener('click', function () {
+        document.getElementById('ded').value = Math.round(val('DaysAbsent') * rate); upd();
+    });
+    upd();
+})();
+</script>
+}

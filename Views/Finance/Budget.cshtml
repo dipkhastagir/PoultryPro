@@ -1,0 +1,231 @@
+@model BudgetPageVm
+@{
+    var canEdit = User.IsAny(Roles.Finance);
+    var period = new DateTime(Model.Year, Model.Month, 1);
+    var prev = period.AddMonths(-1);
+    var next = period.AddMonths(1);
+    var expVar = Model.ExpensePlanned - Model.ExpenseActual;
+    var revVar = Model.RevenueActual - Model.RevenuePlanned;
+    var netPlanned = Model.RevenuePlanned - Model.ExpensePlanned;
+    var netActual = Model.RevenueActual - Model.ExpenseActual;
+    var expUsed = Model.ExpensePlanned > 0 ? Math.Round(Model.ExpenseActual * 100m / Model.ExpensePlanned, 1) : 0;
+    var revUsed = Model.RevenuePlanned > 0 ? Math.Round(Model.RevenueActual * 100m / Model.RevenuePlanned, 1) : 0;
+    var hasAny = Model.Expenses.Count + Model.Revenues.Count > 0;
+    var chartLines = Model.Expenses.Where(e => !e.Unbudgeted).OrderByDescending(e => e.Planned).ToList();
+    var overCount = Model.Expenses.Count(e => !e.Unbudgeted && e.Actual > e.Planned);
+    var unbudgeted = Model.Expenses.Count(e => e.Unbudgeted) + Model.Revenues.Count(e => e.Unbudgeted);
+}
+
+<div class="page-head">
+    <div>
+        <h4><i class="bi bi-clipboard-data text-primary me-2"></i>Budget vs Actual — @Model.PeriodLabel</h4>
+        <p>Planned amounts per category compared with posted transactions. @Model.DaysElapsedPct% of the month elapsed.</p>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+        <a asp-action="Budget" asp-route-year="@prev.Year" asp-route-month="@prev.Month" class="btn btn-sm btn-outline-secondary" title="Previous month"><i class="bi bi-chevron-left"></i></a>
+        <form method="get" asp-action="Budget" class="d-flex gap-1">
+            <select name="month" class="form-select form-select-sm" style="width:auto">
+                @for (var m = 1; m <= 12; m++)
+                {
+                    <option value="@m" selected="@(m == Model.Month)">@(new DateTime(2000, m, 1).ToString("MMMM"))</option>
+                }
+            </select>
+            <input type="number" name="year" value="@Model.Year" min="2000" max="2100" class="form-control form-control-sm" style="width:90px" />
+            <button class="btn btn-sm btn-outline-primary">Go</button>
+        </form>
+        <a asp-action="Budget" asp-route-year="@next.Year" asp-route-month="@next.Month" class="btn btn-sm btn-outline-secondary" title="Next month"><i class="bi bi-chevron-right"></i></a>
+        <a asp-action="ProfitLoss" asp-route-year="@Model.Year" class="btn btn-sm btn-outline-secondary"><i class="bi bi-file-earmark-bar-graph me-1"></i>P&amp;L</a>
+        @if (canEdit)
+        {
+            <form asp-action="CopyBudget" method="post" data-confirm="Copy budget lines from @prev.ToString("MMMM yyyy") into @Model.PeriodLabel?">
+                <input type="hidden" name="year" value="@Model.Year" />
+                <input type="hidden" name="month" value="@Model.Month" />
+                <button class="btn btn-sm btn-outline-primary"><i class="bi bi-copy me-1"></i>Copy last month</button>
+            </form>
+            <a asp-action="CreateBudget" asp-route-year="@Model.Year" asp-route-month="@Model.Month" class="btn btn-sm btn-primary"><i class="bi bi-plus-lg me-1"></i>Budget line</a>
+        }
+    </div>
+</div>
+
+<div class="stat-grid mb-4">
+    <div class="stat-tile tone-red">
+        <div class="st-label">Expense budget</div>
+        <div class="st-value">@Fmt.MoneyShort(Model.ExpenseActual)</div>
+        <div class="st-sub">of @Fmt.Money(Model.ExpensePlanned) planned · @Fmt.Pct(expUsed) used</div>
+        <div class="st-icon"><i class="bi bi-arrow-down-circle"></i></div>
+    </div>
+    <div class="stat-tile tone-green">
+        <div class="st-label">Revenue target</div>
+        <div class="st-value">@Fmt.MoneyShort(Model.RevenueActual)</div>
+        <div class="st-sub">of @Fmt.Money(Model.RevenuePlanned) target · @Fmt.Pct(revUsed) achieved</div>
+        <div class="st-icon"><i class="bi bi-arrow-up-circle"></i></div>
+    </div>
+    <div class="stat-tile @(netActual >= netPlanned ? "tone-blue" : "tone-amber")">
+        <div class="st-label">Net result</div>
+        <div class="st-value">@Fmt.MoneyShort(netActual)</div>
+        <div class="st-sub">planned @Fmt.Money(netPlanned)</div>
+        <div class="st-icon"><i class="bi bi-graph-up"></i></div>
+    </div>
+    <div class="stat-tile @(overCount > 0 ? "tone-red" : "tone-slate")">
+        <div class="st-label">Over budget</div>
+        <div class="st-value">@overCount</div>
+        <div class="st-sub">@unbudgeted unbudgeted categor@(unbudgeted == 1 ? "y" : "ies") with activity</div>
+        <div class="st-icon"><i class="bi bi-exclamation-triangle"></i></div>
+    </div>
+</div>
+
+@if (!hasAny)
+{
+    <div class="card">
+        <div class="card-body">
+            <div class="empty-state">
+                <i class="bi bi-clipboard-data"></i>
+                <h6>No budget or transactions for @Model.PeriodLabel</h6>
+                <p class="text-muted small">Create budget lines per category, or copy last month's plan to get started.</p>
+                @if (canEdit)
+                {
+                    <a asp-action="CreateBudget" asp-route-year="@Model.Year" asp-route-month="@Model.Month" class="btn btn-sm btn-primary"><i class="bi bi-plus-lg me-1"></i>Add budget line</a>
+                }
+            </div>
+        </div>
+    </div>
+}
+else
+{
+    if (chartLines.Count > 0)
+    {
+        <div class="card mb-4">
+            <div class="card-header"><h6><i class="bi bi-bar-chart text-primary me-2"></i>Expense categories — planned vs actual</h6></div>
+            <div class="card-body"><div style="height:@(Math.Max(220, chartLines.Count * 38 + 60))px"><canvas id="budgetChart"></canvas></div></div>
+        </div>
+    }
+
+    foreach (var section in new[] { ("Expense", "Expenses", Model.Expenses, "bi-arrow-down-circle text-danger"), ("Revenue", "Revenue", Model.Revenues, "bi-arrow-up-circle text-success") })
+    {
+        var (type, title, lines, icon) = section;
+        var planned = lines.Where(l => !l.Unbudgeted).Sum(l => l.Planned);
+        var actual = lines.Sum(l => l.Actual);
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h6><i class="bi @icon me-2"></i>@title</h6>
+                @if (canEdit)
+                {
+                    <a asp-action="CreateBudget" asp-route-year="@Model.Year" asp-route-month="@Model.Month" asp-route-type="@type" class="btn btn-xs btn-outline-primary"><i class="bi bi-plus-lg me-1"></i>@type line</a>
+                }
+            </div>
+            @if (lines.Count == 0)
+            {
+                <div class="card-body"><div class="empty-state py-3"><i class="bi bi-inbox"></i><p class="text-muted small mb-0">No @title.ToLower() budgeted or posted this month.</p></div></div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead>
+                            <tr><th>Category</th><th>Farm</th><th class="text-end">Planned</th><th class="text-end">Actual</th><th class="text-end">Variance</th><th style="min-width:200px">@(type == "Expense" ? "Budget used" : "Target achieved")</th><th></th></tr>
+                        </thead>
+                        <tbody>
+                        @foreach (var l in lines.OrderBy(l => l.Unbudgeted).ThenByDescending(l => Math.Max(l.Planned, l.Actual)))
+                        {
+                            var pct = l.PctUsed;
+                            var cls = type == "Expense"
+                                ? (pct > 100 ? "danger" : pct > Model.DaysElapsedPct + 15 ? "warning" : "")
+                                : (pct < Model.DaysElapsedPct - 25 ? "warning" : "");
+                            <tr>
+                                <td class="fw-600">@l.Category
+                                    @if (!string.IsNullOrEmpty(l.Budget?.Notes)) { <i class="bi bi-chat-left-text text-muted ms-1" title="@l.Budget!.Notes"></i> }
+                                </td>
+                                <td class="small text-muted">@(l.Budget?.FarmName ?? (l.Unbudgeted ? "—" : "All farms"))</td>
+                                <td class="text-end">@(l.Unbudgeted ? "—" : Fmt.Money(l.Planned))</td>
+                                <td class="text-end">
+                                    <a asp-action="Index" asp-route-category="@l.Category" asp-route-from="@period.ToString("yyyy-MM-dd")" asp-route-to="@period.AddMonths(1).AddDays(-1).ToString("yyyy-MM-dd")" class="text-decoration-none">@Fmt.Money(l.Actual)</a>
+                                </td>
+                                <td class="text-end fw-600 @(l.Unbudgeted ? "text-muted" : l.Variance >= 0 ? "text-success" : "text-danger")">
+                                    @(l.Unbudgeted ? "—" : (l.Variance >= 0 ? "+" : "−") + Fmt.Money(Math.Abs(l.Variance)))
+                                </td>
+                                <td>
+                                    @if (l.Unbudgeted)
+                                    {
+                                        <span class="badge badge-warning-soft">Unbudgeted</span>
+                                    }
+                                    else
+                                    {
+                                        <div class="d-flex align-items-center gap-2">
+                                            <div class="prog-bar-wrap flex-fill position-relative" title="@Model.DaysElapsedPct% of month elapsed">
+                                                <div class="prog-bar-fill @cls" style="width:@(Math.Min(100, pct).ToString(System.Globalization.CultureInfo.InvariantCulture))%"></div>
+                                            </div>
+                                            <span class="text-xs fw-600" style="width:48px">@Fmt.Pct(pct, 0)</span>
+                                        </div>
+                                    }
+                                </td>
+                                <td class="text-end text-nowrap">
+                                    @if (canEdit)
+                                    {
+                                        if (l.Budget != null)
+                                        {
+                                            <a asp-action="EditBudget" asp-route-id="@l.Budget.Id" class="btn btn-xs btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></a>
+                                            <form asp-action="DeleteBudget" method="post" class="d-inline" data-confirm="Delete the @l.Category budget line?">
+                                                <input type="hidden" name="id" value="@l.Budget.Id" />
+                                                <button class="btn btn-xs btn-outline-danger" title="Delete"><i class="bi bi-trash"></i></button>
+                                            </form>
+                                        }
+                                        else
+                                        {
+                                            <a asp-action="CreateBudget" asp-route-year="@Model.Year" asp-route-month="@Model.Month" asp-route-category="@l.Category" asp-route-type="@type" class="btn btn-xs btn-outline-primary">Set budget</a>
+                                        }
+                                    }
+                                </td>
+                            </tr>
+                        }
+                        </tbody>
+                        <tfoot>
+                            <tr class="fw-600">
+                                <td colspan="2">Total @title.ToLower()</td>
+                                <td class="text-end">@Fmt.Money(planned)</td>
+                                <td class="text-end">@Fmt.Money(actual)</td>
+                                @{ var tv = type == "Expense" ? planned - actual : actual - planned; }
+                                <td class="text-end @(tv >= 0 ? "text-success" : "text-danger")">@(tv >= 0 ? "+" : "−")@Fmt.Money(Math.Abs(tv))</td>
+                                <td colspan="2" class="text-xs text-muted">@(type == "Expense" ? "positive = under budget" : "positive = above target")</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            }
+        </div>
+    }
+
+    <div class="info-callout small">
+        <i class="bi bi-info-circle me-1"></i>Actuals come from finance transactions dated in @Model.PeriodLabel: expenses are the absolute value of
+        negative amounts, revenue the positive amounts, grouped by category. Bars turn amber when spending runs more than 15 points ahead of the
+        calendar (@Model.DaysElapsedPct% elapsed) and red once the budget is exceeded.
+    </div>
+}
+
+@section Scripts {
+@if (chartLines.Count > 0)
+{
+<script>
+(function () {
+    const labels = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(chartLines.Select(l => l.Category)));
+    const planned = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(chartLines.Select(l => (double)l.Planned)));
+    const actual = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(chartLines.Select(l => (double)l.Actual)));
+    new Chart(document.getElementById('budgetChart'), {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [
+                { label: 'Planned', data: planned, backgroundColor: ppColors.slateSoft || 'rgba(100,116,139,.25)', borderColor: ppColors.slate, borderWidth: 1, borderRadius: 4 },
+                { label: 'Actual', data: actual, borderRadius: 4,
+                  backgroundColor: actual.map((v, i) => v > planned[i] ? ppColors.red : ppColors.green) }
+            ]
+        },
+        options: {
+            indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { position: 'top' }, tooltip: { callbacks: { label: c => c.dataset.label + ': ' + ppMoney(c.raw) } } },
+            scales: { x: { ticks: { callback: v => ppMoney(v) } } }
+        }
+    });
+})();
+</script>
+}
+}

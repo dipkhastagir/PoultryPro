@@ -1,0 +1,10 @@
+<div class="row justify-content-center">
+    <div class="col-lg-6">
+        <div class="form-card text-center py-5">
+            <div class="score-ring mx-auto mb-3" style="background:#fee2e2;color:#b91c1c"><i class="bi bi-shield-lock fs-3"></i></div>
+            <h5 class="fw-bold">You don't have access to this page</h5>
+            <p class="text-muted">Your role <b>@User.Role()</b> cannot open this area. @Roles.Describe(User.Role()).</p>
+            <a asp-controller="Dashboard" asp-action="Index" class="btn btn-primary btn-sm">Back to dashboard</a>
+        </div>
+    </div>
+</div>

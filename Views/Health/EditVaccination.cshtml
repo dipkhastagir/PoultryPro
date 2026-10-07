@@ -1,0 +1,117 @@
+@model VaccinationRecord
+@using PoultryPro.Controllers
+@{
+    string? returnUrl = ViewBag.ReturnUrl as string;
+    var backUrl = !string.IsNullOrEmpty(returnUrl) && Url.IsLocalUrl(returnUrl) ? returnUrl : Url.Action("Index", "Health");
+    var statuses = new[] { "Planned", "Overdue", "Done" };
+    var routes = HealthController.Routes;
+}
+
+<div class="page-head">
+    <div>
+        <h4><i class="bi bi-shield-check text-success me-2"></i>Edit Vaccination</h4>
+        <p>@Model.VaccineName · flock <span class="mono">@Model.BatchCode</span> · @Model.FarmName</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="@backUrl" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Back</a>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-8">
+        <div class="form-card">
+            <form asp-action="EditVaccination" asp-route-id="@Model.Id" method="post" id="vaxForm">
+                @Html.AntiForgeryToken()
+                <input type="hidden" asp-for="Id" />
+                <input type="hidden" name="returnUrl" value="@returnUrl" />
+                <div class="row g-3">
+                    <div class="col-md-8">
+                        <label class="form-label">Vaccine *</label>
+                        <input asp-for="VaccineName" class="form-control" required maxlength="150" placeholder="e.g. ND + IB (B1 strain)" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Due date *</label>
+                        <input asp-for="DueDate" type="date" class="form-control" required />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Status</label>
+                        <select asp-for="Status" class="form-select" id="vaxStatus">
+                            @foreach (var s in statuses.Union(new[] { Model.Status }).Where(s => !string.IsNullOrEmpty(s)).Distinct())
+                            {
+                                <option value="@s">@s</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-4" id="completedWrap">
+                        <label class="form-label">Completed on</label>
+                        <input asp-for="CompletedDate" type="date" class="form-control" id="completedDate" max="@DateTime.Today.ToString("yyyy-MM-dd")" />
+                        <div class="form-text">Setting a date marks the dose as done.</div>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Route</label>
+                        <input asp-for="Route" class="form-control" list="routeList" placeholder="e.g. Eye drop" maxlength="50" />
+                        <datalist id="routeList">
+                            @foreach (var r in routes) { <option value="@r"></option> }
+                        </datalist>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Dose (ml / bird)</label>
+                        <input asp-for="DoseMl" type="number" step="0.01" min="0" class="form-control" />
+                    </div>
+                    <div class="col-md-8">
+                        <label class="form-label">Administered by</label>
+                        <input asp-for="AdministeredBy" class="form-control" maxlength="100" placeholder="Vet / technician name" />
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Notes</label>
+                        <textarea asp-for="Notes" class="form-control" rows="3" maxlength="500" placeholder="Vaccine lot, cold-chain remarks, reactions observed…"></textarea>
+                    </div>
+                </div>
+                <div class="d-flex gap-2 mt-4">
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Save changes</button>
+                    <a href="@backUrl" class="btn btn-outline-secondary">Cancel</a>
+                </div>
+            </form>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card mb-3">
+            <div class="card-header"><h6><i class="bi bi-info-circle text-primary me-2"></i>Flock</h6></div>
+            <div class="card-body">
+                <dl class="kv mb-0">
+                    <dt>Batch</dt><dd><a asp-controller="Batch" asp-action="Detail" asp-route-id="@Model.BatchId" class="mono">@Model.BatchCode</a></dd>
+                    <dt>Breed</dt><dd>@(string.IsNullOrEmpty(Model.Breed) ? "—" : Model.Breed)</dd>
+                    <dt>Farm</dt><dd>@Model.FarmName</dd>
+                    <dt>Current status</dt><dd><span class="badge @Fmt.Badge(Model.IsOverdue ? "Overdue" : Model.Status)">@(Model.IsOverdue ? "Overdue" : Model.Status)</span></dd>
+                    @if (Model.IsOverdue)
+                    {
+                        <dt>Days overdue</dt><dd class="text-danger fw-600">@Model.DaysOverdue</dd>
+                    }
+                    @if (Model.CompletedDate.HasValue)
+                    {
+                        <dt>Timeliness</dt><dd><span class="badge @(Model.OnTime ? "badge-healthy" : "badge-warning-soft")">@(Model.OnTime ? "On time" : "Late")</span></dd>
+                    }
+                    <dt>Recorded</dt><dd>@Fmt.Date(Model.CreatedAt)</dd>
+                </dl>
+            </div>
+        </div>
+        <div class="info-callout small">
+            <i class="bi bi-lightbulb me-1"></i>A dose counts as <strong>on time</strong> when it is completed no later than one day after its due date.
+            Planned doses whose due date has passed are flagged <strong>Overdue</strong> automatically.
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+(function () {
+    const st = document.getElementById('vaxStatus'), cd = document.getElementById('completedDate');
+    function sync() {
+        if (st.value === 'Done' && !cd.value) cd.value = new Date().toISOString().slice(0, 10);
+        if (st.value !== 'Done') cd.value = '';
+    }
+    st.addEventListener('change', sync);
+    cd.addEventListener('change', () => { if (cd.value) st.value = 'Done'; });
+})();
+</script>
+}

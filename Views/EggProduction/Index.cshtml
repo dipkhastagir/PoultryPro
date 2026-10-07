@@ -1,0 +1,314 @@
+@model EggProductionIndexVm
+@using System.Text.Json
+@{
+    var canWrite = User.IsAny(Roles.AdminOrManager + "," + Roles.Veterinarian);
+    var daily = ((ViewBag.Daily as IEnumerable<EggDailyPoint>)?.ToList() ?? new List<EggDailyPoint>());
+    var days = (int)(ViewBag.Days ?? 90);
+    var inv = System.Globalization.CultureInfo.InvariantCulture;
+    var latestDay = daily.LastOrDefault();
+    var prevDay = daily.Count > 1 ? daily[^2] : null;
+    var hdDelta = latestDay != null && prevDay != null ? latestDay.HenDayPct - prevDay.HenDayPct : (decimal?)null;
+    var refToday = latestDay?.ReferenceHenDayPct;
+    var activeLayers = Model.LayerBatches.Where(b => b.IsActive).ToList();
+    var totalEggs = daily.Sum(d => d.Eggs);
+    var totalA = daily.Sum(d => d.GradeA);
+    var totalB = daily.Sum(d => d.GradeB);
+    var totalCr = daily.Sum(d => d.Cracked);
+    var totalDi = daily.Sum(d => d.Dirty);
+
+    // weekly buckets for the grading chart (readable for 90 days)
+    var weekly = daily.GroupBy(d => (int)((DateTime.Today - d.Date).TotalDays / 7)).OrderByDescending(g => g.Key).Select(g => new
+    {
+        label = g.Min(d => d.Date).ToString("dd MMM"),
+        a = g.Sum(d => d.GradeA), b = g.Sum(d => d.GradeB), c = g.Sum(d => d.Cracked), di = g.Sum(d => d.Dirty),
+        u = Math.Max(0, g.Sum(d => d.Eggs - d.GradeA - d.GradeB - d.Cracked - d.Dirty)),
+        fpd = g.Where(d => d.FeedKg > 0).Sum(d => d.Eggs) > 0 ? Math.Round(g.Sum(d => d.FeedKg) * 1000m / (g.Where(d => d.FeedKg > 0).Sum(d => d.Eggs) / 12m), 0) : (decimal?)null,
+        ew = g.Where(d => d.AvgEggWeightGm.HasValue).Select(d => d.AvgEggWeightGm!.Value).DefaultIfEmpty().Average()
+    }).ToList();
+}
+
+<div class="page-head">
+    <div>
+        <h4><i class="bi bi-egg text-warning me-2"></i>Egg Production</h4>
+        <p>@ViewData["Subtitle"]</p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+        <form method="get" class="d-flex gap-2">
+            <select name="batchId" class="form-select form-select-sm" onchange="this.form.submit()" style="min-width:220px">
+                <option value="">All layer flocks</option>
+                @foreach (var b in Model.LayerBatches)
+                {
+                    <option value="@b.Id" selected="@(Model.BatchId == b.Id)">@b.BatchCode · @b.FarmName@(b.IsActive ? "" : " (closed)")</option>
+                }
+            </select>
+            <select name="days" class="form-select form-select-sm" onchange="this.form.submit()" style="width:auto">
+                @foreach (var d in new[] { 30, 60, 90, 180, 365 })
+                {
+                    <option value="@d" selected="@(days == d)">Last @d days</option>
+                }
+            </select>
+        </form>
+        @if (Model.Records.Count > 0)
+        {
+            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="window.print()"><i class="bi bi-printer me-1"></i>Print</button>
+        }
+        @if (canWrite && activeLayers.Count > 0)
+        {
+            <a asp-action="Create" asp-route-batchId="@Model.BatchId" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg me-1"></i>Record eggs</a>
+        }
+    </div>
+</div>
+
+@if (Model.LayerBatches.Count == 0)
+{
+    <div class="card"><div class="card-body">
+        <div class="empty-state"><i class="bi bi-egg"></i>No layer flocks yet. Create a flock with batch type <b>Layer</b> to start tracking egg production.
+            @if (canWrite) { <div class="mt-2"><a asp-controller="Batch" asp-action="Create" class="btn btn-primary btn-sm">New flock</a></div> }
+        </div>
+    </div></div>
+    return;
+}
+
+@if (Model.Batch != null)
+{
+    var b = Model.Batch;
+    <div class="d-flex flex-wrap gap-2 mb-3">
+        <span class="chip"><i class="bi bi-house me-1"></i>@b.FarmName</span>
+        <span class="chip"><i class="bi bi-calendar me-1"></i>Placed @Fmt.Date(b.PlacementDate)</span>
+        <span class="chip"><i class="bi bi-hourglass-split me-1"></i>@(b.AgeInDays / 7) wk @(b.AgeInDays % 7) d</span>
+        <span class="chip"><i class="bi bi-people me-1"></i>@Fmt.Num(b.CurrentCount) hens</span>
+        <span class="badge @Fmt.Badge(b.HealthStatus)">@b.HealthStatus</span>
+        <a asp-controller="Batch" asp-action="Detail" asp-route-id="@b.Id" class="text-xs ms-1 align-self-center">Flock cockpit →</a>
+    </div>
+}
+
+<div class="stat-grid">
+    <div class="stat-tile @(latestDay == null ? "tone-slate" : latestDay.HenDayPct >= 85 ? "tone-green" : latestDay.HenDayPct >= 70 ? "tone-amber" : "tone-red")">
+        <div class="st-label">Hen-day @(latestDay != null && latestDay.Date == DateTime.Today ? "today" : "latest")</div>
+        <div class="st-value">@(latestDay != null ? Fmt.Pct(latestDay.HenDayPct, 1) : "—")</div>
+        <div class="st-sub">
+            @if (latestDay != null)
+            {
+                @Fmt.Date(latestDay.Date)
+                if (hdDelta.HasValue) { <span class="@(hdDelta >= 0 ? "text-success" : "text-danger")"> · @(hdDelta >= 0 ? "+" : "")@hdDelta.Value.ToString("0.0", inv) pts</span> }
+                if (refToday.HasValue) { <span> · ref @refToday.Value.ToString("0", inv)%</span> }
+            }
+            else { <span>no records in range</span> }
+        </div>
+        <div class="st-icon"><i class="bi bi-percent"></i></div>
+    </div>
+    <div class="stat-tile tone-blue">
+        <div class="st-label">Eggs (latest day)</div>
+        <div class="st-value">@(latestDay != null ? Fmt.Num(latestDay.Eggs) : "—")</div>
+        <div class="st-sub">@Fmt.Num(Model.Eggs30) in last 30 days · 7-day avg HD @Fmt.Pct(Model.AvgHenDay7, 1)</div>
+        <div class="st-icon"><i class="bi bi-egg-fill"></i></div>
+    </div>
+    <div class="stat-tile tone-violet">
+        <div class="st-label">Avg egg weight</div>
+        <div class="st-value">@(latestDay?.AvgEggWeightGm is decimal w ? w.ToString("0.0", inv) + " g" : "—")</div>
+        <div class="st-sub">@(latestDay?.AvgEggWeightGm is decimal w2 ? (w2 >= 63 ? "Large (≥ 63 g)" : w2 >= 53 ? "Medium (53–63 g)" : "Small (< 53 g)") : "not recorded")</div>
+        <div class="st-icon"><i class="bi bi-speedometer"></i></div>
+    </div>
+    <div class="stat-tile @(latestDay != null && latestDay.CrackedPct > 2 ? "tone-red" : "tone-slate")">
+        <div class="st-label">Cracked</div>
+        <div class="st-value">@(latestDay != null ? Fmt.Pct(latestDay.CrackedPct, 2) : "—")</div>
+        <div class="st-sub">period @(totalEggs > 0 ? Fmt.Pct(totalCr * 100m / totalEggs, 2) : "—") · target &lt; 2%</div>
+        <div class="st-icon"><i class="bi bi-heartbreak"></i></div>
+    </div>
+    <div class="stat-tile tone-amber">
+        <div class="st-label">Feed per dozen (30 d)</div>
+        <div class="st-value">@(Model.FeedPerDozen30 > 0 ? Fmt.Num(Model.FeedPerDozen30 / 1000m, 2) + " kg" : "—")</div>
+        <div class="st-sub">peak HD in period @Fmt.Pct(Model.PeakHenDay, 1)</div>
+        <div class="st-icon"><i class="bi bi-basket"></i></div>
+    </div>
+</div>
+
+@if (Model.Records.Count == 0)
+{
+    <div class="card"><div class="card-body">
+        <div class="empty-state"><i class="bi bi-clipboard2-data"></i>No egg production recorded in the last @days days@(Model.Batch != null ? " for " + Model.Batch.BatchCode : "").
+            @if (canWrite && activeLayers.Count > 0) { <div class="mt-2"><a asp-action="Create" asp-route-batchId="@Model.BatchId" class="btn btn-primary btn-sm">Record today's collection</a></div> }
+        </div>
+    </div></div>
+    return;
+}
+
+<div class="row g-3 mb-3">
+    <div class="col-lg-8">
+        <div class="card h-100">
+            <div class="card-header"><h6><i class="bi bi-graph-up text-success me-2"></i>Hen-day production — last @days days</h6><span class="text-xs text-muted">dashed: brown-layer reference curve for flock age</span></div>
+            <div class="card-body"><div style="height:300px"><canvas id="hdChart"></canvas></div></div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card h-100">
+            <div class="card-header"><h6><i class="bi bi-pie-chart text-primary me-2"></i>Grade mix (period)</h6></div>
+            <div class="card-body">
+                <div style="height:200px"><canvas id="mixChart"></canvas></div>
+                <dl class="kv mt-3 mb-0 small">
+                    <dt>Total eggs</dt><dd>@Fmt.Num(totalEggs)</dd>
+                    <dt>Grade A</dt><dd>@Fmt.Num(totalA) (@(totalEggs > 0 ? Fmt.Pct(totalA * 100m / totalEggs, 1) : "—"))</dd>
+                    <dt>Grade B</dt><dd>@Fmt.Num(totalB)</dd>
+                    <dt>Cracked / dirty</dt><dd>@Fmt.Num(totalCr) / @Fmt.Num(totalDi)</dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 mb-3">
+    <div class="col-lg-7">
+        <div class="card h-100">
+            <div class="card-header"><h6><i class="bi bi-bar-chart text-primary me-2"></i>Eggs by grade — weekly</h6></div>
+            <div class="card-body"><div style="height:280px"><canvas id="gradeChart"></canvas></div></div>
+        </div>
+    </div>
+    <div class="col-lg-5">
+        <div class="card h-100">
+            <div class="card-header"><h6><i class="bi bi-basket text-warning me-2"></i>Feed per dozen &amp; egg weight — weekly</h6></div>
+            <div class="card-body"><div style="height:280px"><canvas id="fpdChart"></canvas></div></div>
+        </div>
+    </div>
+</div>
+
+@if (Model.BatchId == null && Model.LayerBatches.Count > 1)
+{
+    var byFlock = Model.Records.GroupBy(r => new { r.BatchId, r.BatchCode, r.FarmName }).Select(g => new
+    {
+        g.Key.BatchId, g.Key.BatchCode, g.Key.FarmName, Eggs = g.Sum(r => r.TotalEggs), HenDays = g.Sum(r => r.HenCount),
+        Feed = g.Sum(r => r.FeedKg ?? 0), Cracked = g.Sum(r => r.CrackedEggs), Last = g.Max(r => r.RecordDate)
+    }).OrderBy(x => x.BatchCode).ToList();
+    <div class="card mb-3">
+        <div class="card-header"><h6><i class="bi bi-collection text-primary me-2"></i>Flock comparison (period)</h6></div>
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead><tr><th>Flock</th><th>Farm</th><th class="text-end">Eggs</th><th class="text-end">Hen-day</th><th class="text-end">Cracked</th><th class="text-end">Feed/dozen</th><th>Last record</th></tr></thead>
+                <tbody>
+                    @foreach (var f in byFlock)
+                    {
+                        <tr>
+                            <td><a asp-action="Index" asp-route-batchId="@f.BatchId" asp-route-days="@days" class="fw-600 text-decoration-none">@f.BatchCode</a></td>
+                            <td>@f.FarmName</td>
+                            <td class="text-end">@Fmt.Num(f.Eggs)</td>
+                            <td class="text-end">@(f.HenDays > 0 ? Fmt.Pct(f.Eggs * 100m / f.HenDays, 1) : "—")</td>
+                            <td class="text-end">@(f.Eggs > 0 ? Fmt.Pct(f.Cracked * 100m / f.Eggs, 2) : "—")</td>
+                            <td class="text-end">@(f.Eggs > 0 && f.Feed > 0 ? Fmt.Num(f.Feed * 1000m / (f.Eggs / 12m), 0) + " g" : "—")</td>
+                            <td>@Fmt.Date(f.Last)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+<div class="card">
+    <div class="card-header">
+        <h6><i class="bi bi-table text-primary me-2"></i>Daily records</h6>
+        <input data-table-filter="#tblEggs" class="form-control form-control-sm no-print" style="max-width:220px" placeholder="Filter…" />
+    </div>
+    <div class="table-responsive">
+        <table class="table table-hover mb-0" id="tblEggs">
+            <thead>
+                <tr><th>Date</th><th>Flock</th><th class="text-end">Age (wk)</th><th class="text-end">Hens</th><th class="text-end">Eggs</th><th class="text-end">Hen-day</th>
+                    <th class="text-end">A</th><th class="text-end">B</th><th class="text-end">Cracked</th><th class="text-end">Dirty</th><th class="text-end">Egg wt</th>
+                    <th class="text-end">Feed kg</th><th class="text-end">Feed/dozen</th><th>Notes</th>@if (canWrite) { <th class="no-print"></th> }</tr>
+            </thead>
+            <tbody>
+                @foreach (var r in Model.Records)
+                {
+                    var hdClass = r.HenDayPct >= 85 ? "text-success" : r.HenDayPct >= 70 ? "" : "text-danger";
+                    <tr>
+                        <td class="text-nowrap">@Fmt.Date(r.RecordDate)</td>
+                        <td><a asp-controller="Batch" asp-action="Detail" asp-route-id="@r.BatchId" class="text-decoration-none">@r.BatchCode</a></td>
+                        <td class="text-end">@r.AgeWeeks</td>
+                        <td class="text-end">@Fmt.Num(r.HenCount)</td>
+                        <td class="text-end fw-600">@Fmt.Num(r.TotalEggs)</td>
+                        <td class="text-end @hdClass">@Fmt.Pct(r.HenDayPct, 1)</td>
+                        <td class="text-end">@Fmt.Num(r.GradeA)</td>
+                        <td class="text-end">@Fmt.Num(r.GradeB)</td>
+                        <td class="text-end @(r.CrackedPct > 2 ? "text-danger" : "")">@Fmt.Num(r.CrackedEggs)</td>
+                        <td class="text-end">@Fmt.Num(r.DirtyEggs)</td>
+                        <td class="text-end">@(r.AvgEggWeightGm.HasValue ? r.AvgEggWeightGm.Value.ToString("0.0", inv) + " g" : "—")</td>
+                        <td class="text-end">@(r.FeedKg.HasValue ? Fmt.Num(r.FeedKg.Value, 1) : "—")</td>
+                        <td class="text-end">@(r.FeedPerDozenGm > 0 ? Fmt.Num(r.FeedPerDozenGm, 0) + " g" : "—")</td>
+                        <td class="text-xs text-muted">@r.Notes</td>
+                        @if (canWrite)
+                        {
+                            <td class="text-end text-nowrap no-print">
+                                <a asp-action="Edit" asp-route-id="@r.Id" class="btn btn-xs btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></a>
+                                <form asp-action="Delete" method="post" class="d-inline" data-confirm="Delete the @r.BatchCode record for @r.RecordDate.ToString("dd MMM yyyy")?">
+                                    <input type="hidden" name="id" value="@r.Id" />
+                                    <button class="btn btn-xs btn-outline-danger" title="Delete"><i class="bi bi-trash"></i></button>
+                                </form>
+                            </td>
+                        }
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@section Scripts {
+@if (Model.Records.Count > 0)
+{
+<script>
+(function () {
+    const daily = @Html.Raw(JsonSerializer.Serialize(daily.Select(d => new { d = d.Date.ToString("dd MMM"), hd = d.HenDayPct, r = d.ReferenceHenDayPct })));
+    const weekly = @Html.Raw(JsonSerializer.Serialize(weekly));
+    new Chart(document.getElementById('hdChart'), {
+        type: 'line',
+        data: {
+            labels: daily.map(x => x.d),
+            datasets: [
+                { label: 'Hen-day %', data: daily.map(x => x.hd), borderColor: ppColors.green, backgroundColor: ppColors.greenSoft, fill: true, tension: .25, pointRadius: 0, borderWidth: 2 },
+                { label: 'Reference curve', data: daily.map(x => x.r), borderColor: ppColors.slate, borderDash: [6, 4], pointRadius: 0, borderWidth: 1.5, fill: false, spanGaps: true },
+                { label: 'Peak target (@LayerReference.PeakPct.ToString("0", inv)%)', data: daily.map(() => @LayerReference.PeakPct.ToString("0", inv)), borderColor: ppColors.amber, borderDash: [2, 3], pointRadius: 0, borderWidth: 1, fill: false }
+            ]
+        },
+        options: {
+            interaction: { mode: 'index', intersect: false },
+            scales: { y: { min: 0, max: 100, ticks: { callback: v => v + '%' } }, x: { ticks: { maxTicksLimit: 12 } } },
+            plugins: { legend: { position: 'bottom' }, tooltip: { callbacks: { label: c => c.dataset.label + ': ' + (c.parsed.y == null ? '—' : c.parsed.y.toFixed(1) + '%') } } }
+        }
+    });
+    new Chart(document.getElementById('mixChart'), {
+        type: 'doughnut',
+        data: { labels: ['Grade A', 'Grade B', 'Cracked', 'Dirty'],
+                datasets: [{ data: [@totalA, @totalB, @totalCr, @totalDi], backgroundColor: [ppColors.green, ppColors.blue, ppColors.red, ppColors.amber] }] },
+        options: { cutout: '60%', plugins: { legend: { position: 'right' } } }
+    });
+    new Chart(document.getElementById('gradeChart'), {
+        type: 'bar',
+        data: {
+            labels: weekly.map(w => 'wk of ' + w.label),
+            datasets: [
+                { label: 'Grade A', data: weekly.map(w => w.a), backgroundColor: ppColors.green },
+                { label: 'Grade B', data: weekly.map(w => w.b), backgroundColor: ppColors.blue },
+                { label: 'Cracked', data: weekly.map(w => w.c), backgroundColor: ppColors.red },
+                { label: 'Dirty', data: weekly.map(w => w.di), backgroundColor: ppColors.amber },
+                { label: 'Ungraded', data: weekly.map(w => w.u), backgroundColor: ppColors.slateSoft }
+            ]
+        },
+        options: { scales: { x: { stacked: true }, y: { stacked: true, ticks: { callback: v => Number(v).toLocaleString() } } }, plugins: { legend: { position: 'bottom' } } }
+    });
+    new Chart(document.getElementById('fpdChart'), {
+        type: 'bar',
+        data: {
+            labels: weekly.map(w => w.label),
+            datasets: [
+                { type: 'bar', label: 'Feed per dozen (g)', data: weekly.map(w => w.fpd), backgroundColor: ppColors.amberSoft, borderColor: ppColors.amber, borderWidth: 1, yAxisID: 'y' },
+                { type: 'line', label: 'Avg egg weight (g)', data: weekly.map(w => w.ew ? Number(w.ew.toFixed(1)) : null), borderColor: ppColors.violet, pointRadius: 3, tension: .3, yAxisID: 'y1' }
+            ]
+        },
+        options: {
+            scales: { y: { beginAtZero: false, title: { display: true, text: 'g feed / dozen' } },
+                      y1: { position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'egg g' } } },
+            plugins: { legend: { position: 'bottom' } }
+        }
+    });
+})();
+</script>
+}
+}

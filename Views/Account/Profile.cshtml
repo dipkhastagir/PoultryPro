@@ -1,0 +1,46 @@
+@model ProfileVm
+<div class="row g-4">
+    <div class="col-lg-4">
+        <div class="form-card text-center">
+            <div class="avatar mx-auto mb-3" style="width:72px;height:72px;font-size:24px">@User.Initials()</div>
+            <h5 class="fw-bold mb-0">@Model.FullName</h5>
+            <div class="text-muted small mb-2">@@@Model.Username</div>
+            <span class="badge badge-info-soft">@Model.Role</span>
+            <p class="text-muted small mt-3 mb-0">@Roles.Describe(Model.Role)</p>
+            <hr />
+            <dl class="kv text-start">
+                <dt>Member since</dt><dd>@Fmt.Date(Model.CreatedAt)</dd>
+                <dt>Last sign-in</dt><dd>@Fmt.DateTime(Model.LastLoginAt)</dd>
+            </dl>
+            <a asp-action="ChangePassword" class="btn btn-outline-secondary btn-sm mt-3"><i class="bi bi-key me-1"></i>Change password</a>
+        </div>
+    </div>
+    <div class="col-lg-8">
+        <div class="form-card">
+            <h6 class="fw-semibold mb-4"><i class="bi bi-person-gear text-primary me-2"></i>Profile details</h6>
+            <form asp-action="Profile" method="post">
+                @Html.AntiForgeryToken()
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Full name *</label>
+                        <input asp-for="FullName" class="form-control" required />
+                        <span asp-validation-for="FullName" class="text-danger small"></span>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Username</label>
+                        <input class="form-control" value="@Model.Username" disabled />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Email</label>
+                        <input asp-for="Email" class="form-control" type="email" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Phone</label>
+                        <input asp-for="Phone" class="form-control" />
+                    </div>
+                </div>
+                <button class="btn btn-primary mt-4"><i class="bi bi-check-lg me-1"></i>Save changes</button>
+            </form>
+        </div>
+    </div>
+</div>

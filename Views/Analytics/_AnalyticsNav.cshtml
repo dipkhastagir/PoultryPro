@@ -1,0 +1,26 @@
+@{
+    var current = ViewContext.RouteData.Values["action"]?.ToString() ?? "Index";
+    var pages = new List<(string Action, string Label, string Icon)>
+    {
+        ("Index", "Hub", "bi-grid-1x2"),
+        ("GrowthCurve", "Growth", "bi-activity"),
+        ("Efficiency", "EPEF", "bi-trophy"),
+        ("Anomalies", "Anomalies", "bi-exclamation-diamond"),
+        ("HeatStress", "Heat stress", "bi-thermometer-sun"),
+        ("RiskScore", "Risk score", "bi-radar"),
+        ("Forecast", "Harvest", "bi-magic"),
+        ("FeedForecast", "Feed demand", "bi-basket"),
+        ("Benchmark", "Benchmark", "bi-bar-chart-steps"),
+        ("Carbon", "Carbon", "bi-cloud-haze2")
+    };
+}
+<nav class="d-flex flex-wrap gap-1 mb-3 no-print" aria-label="Analytics pages">
+    @foreach (var p in pages)
+    {
+        var on = string.Equals(current, p.Action, StringComparison.OrdinalIgnoreCase);
+        <a asp-controller="Analytics" asp-action="@p.Action"
+           class="btn btn-sm @(on ? "btn-primary" : "btn-outline-secondary") py-1 px-2" style="font-size:12px">
+            <i class="bi @p.Icon me-1"></i>@p.Label
+        </a>
+    }
+</nav>

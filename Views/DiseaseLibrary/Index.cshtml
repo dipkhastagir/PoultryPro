@@ -1,0 +1,142 @@
+@model DiseaseLibraryIndexVm
+@{
+    var canEdit = User.IsAny(Roles.Health);
+    string CatIcon(string c) => c switch
+    {
+        "Viral" => "bi-virus", "Bacterial" => "bi-bug", "Parasitic" => "bi-bug-fill", "Fungal" => "bi-flower1",
+        "Nutritional" => "bi-basket", "Environmental" => "bi-thermometer-sun", _ => "bi-clipboard2-pulse"
+    };
+    string Excerpt(string? s, int n) => string.IsNullOrWhiteSpace(s) ? "" : (s.Length > n ? s[..n].TrimEnd() + "…" : s);
+    var filtered = Model.Category != null || !string.IsNullOrWhiteSpace(Model.Q);
+}
+
+<div class="page-head">
+    <div>
+        <h4>Disease Library</h4>
+        <p>@Model.TotalEntries diseases · clinical signs, prevention and treatment, with case counts from your farms.</p>
+    </div>
+    @if (canEdit)
+    {
+        <a asp-action="Create" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg me-1"></i>Add disease</a>
+    }
+</div>
+
+<div class="stat-grid">
+    <div class="stat-tile tone-blue">
+        <div class="st-label">Shown</div>
+        <div class="st-value">@Model.Entries.Count</div>
+        <div class="st-sub">of @Model.TotalEntries entries</div>
+        <div class="st-icon"><i class="bi bi-book"></i></div>
+    </div>
+    <div class="stat-tile tone-red">
+        <div class="st-label">High / critical</div>
+        <div class="st-value">@Model.Entries.Count(e => e.Severity is "High" or "Critical")</div>
+        <div class="st-sub">severe diseases in view</div>
+        <div class="st-icon"><i class="bi bi-exclamation-octagon"></i></div>
+    </div>
+    <div class="stat-tile tone-amber">
+        <div class="st-label">Zoonotic / notifiable</div>
+        <div class="st-value">@Model.Entries.Count(e => e.IsZoonotic) / @Model.Entries.Count(e => e.IsNotifiable)</div>
+        <div class="st-sub">human risk / report to DLS</div>
+        <div class="st-icon"><i class="bi bi-shield-exclamation"></i></div>
+    </div>
+    <div class="stat-tile tone-green">
+        <div class="st-label">Farm cases matched</div>
+        <div class="st-value">@Model.Entries.Sum(e => e.CaseCount)</div>
+        <div class="st-sub">@Model.Entries.Sum(e => e.ActiveCaseCount) still open</div>
+        <div class="st-icon"><i class="bi bi-clipboard2-pulse"></i></div>
+    </div>
+</div>
+
+<form method="get" class="filter-bar">
+    <div class="input-group input-group-sm" style="max-width:340px">
+        <span class="input-group-text"><i class="bi bi-search"></i></span>
+        <input name="q" value="@Model.Q" class="form-control" placeholder="Search name, local name, symptom, drug…" />
+    </div>
+    <select name="category" class="form-select form-select-sm" style="max-width:200px" onchange="this.form.submit()">
+        <option value="">All categories</option>
+        @foreach (var c in Model.Categories)
+        {
+            <option value="@c" selected="@(Model.Category == c)">@c</option>
+        }
+    </select>
+    <button class="btn btn-sm btn-primary"><i class="bi bi-funnel me-1"></i>Apply</button>
+    @if (filtered)
+    {
+        <a asp-action="Index" class="btn btn-sm btn-outline-secondary">Clear</a>
+    }
+</form>
+
+<div class="d-flex flex-wrap gap-2 mb-3">
+    <a asp-action="Index" asp-route-q="@Model.Q" class="chip text-decoration-none @(Model.Category == null ? "fw-600" : "")">All</a>
+    @foreach (var c in Model.Categories)
+    {
+        <a asp-action="Index" asp-route-category="@c" asp-route-q="@Model.Q" class="chip text-decoration-none @(Model.Category == c ? "fw-600" : "")"><i class="bi @CatIcon(c) me-1"></i>@c</a>
+    }
+</div>
+
+@if (!Model.Entries.Any())
+{
+    <div class="card"><div class="card-body">
+        <div class="empty-state">
+            <i class="bi bi-book"></i>
+            <h6>@(filtered ? "No diseases match your search" : "The library is empty")</h6>
+            <p class="text-muted small">@(filtered ? "Try another keyword or clear the category filter." : "Add common diseases such as Newcastle Disease, Gumboro, Avian Influenza and Coccidiosis.")</p>
+            @if (canEdit && !filtered)
+            {
+                <a asp-action="Create" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg me-1"></i>Add disease</a>
+            }
+        </div>
+    </div></div>
+}
+else
+{
+    <div class="row g-3">
+        @foreach (var e in Model.Entries)
+        {
+            <div class="col-md-6 col-xl-4">
+                <div class="card h-100">
+                    <div class="card-body d-flex flex-column gap-2">
+                        <div class="d-flex justify-content-between align-items-start gap-2">
+                            <div>
+                                <a asp-action="Detail" asp-route-id="@e.Id" class="fw-600 text-decoration-none" style="font-size:15px">@e.Name</a>
+                                @if (!string.IsNullOrWhiteSpace(e.LocalName))
+                                {
+                                    <div class="text-xs text-muted">@e.LocalName</div>
+                                }
+                            </div>
+                            <span class="chip text-nowrap"><i class="bi @CatIcon(e.Category) me-1"></i>@e.Category</span>
+                        </div>
+                        <div class="d-flex flex-wrap gap-1">
+                            <span class="badge @Fmt.Badge(e.Severity)">@e.Severity severity</span>
+                            @if (e.IsZoonotic) { <span class="badge badge-danger-soft"><i class="bi bi-person-exclamation me-1"></i>Zoonotic</span> }
+                            @if (e.IsNotifiable) { <span class="badge badge-warning-soft"><i class="bi bi-megaphone me-1"></i>Notifiable</span> }
+                            @if (!string.IsNullOrWhiteSpace(e.MortalityRange)) { <span class="badge badge-gray">Mortality @e.MortalityRange</span> }
+                        </div>
+                        <div class="text-xs text-muted" style="line-height:1.5">@Excerpt(e.Symptoms, 160)</div>
+                        <div class="mt-auto pt-2 d-flex justify-content-between align-items-center border-top">
+                            <span class="text-xs">
+                                @if (e.CaseCount > 0)
+                                {
+                                    <span><i class="bi bi-clipboard2-pulse me-1"></i><span class="fw-600">@e.CaseCount</span> farm case(s)</span>
+                                    @if (e.ActiveCaseCount > 0) { <span class="badge badge-danger-soft ms-1">@e.ActiveCaseCount open</span> }
+                                }
+                                else
+                                {
+                                    <span class="text-muted">No farm cases recorded</span>
+                                }
+                            </span>
+                            <span class="text-nowrap">
+                                <a asp-action="Detail" asp-route-id="@e.Id" class="btn btn-xs btn-outline-primary">Read</a>
+                                @if (canEdit)
+                                {
+                                    <a asp-action="Edit" asp-route-id="@e.Id" class="btn btn-xs btn-outline-secondary"><i class="bi bi-pencil"></i></a>
+                                }
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}

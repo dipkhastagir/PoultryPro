@@ -1,0 +1,205 @@
+@model CorrelationVm
+@{
+    var k = Model.Variables.Count;
+    var hasData = Model.Observations > 0 && Model.R.GetLength(0) == k;
+    string Stars(double p) => p < 0.001 ? "***" : p < 0.01 ? "**" : p < 0.05 ? "*" : "";
+    string Strength(double r) { var a = Math.Abs(r); return a >= 0.7 ? "strong" : a >= 0.4 ? "moderate" : a >= 0.2 ? "weak" : "negligible"; }
+    var significant = 0;
+    if (hasData)
+        for (int i = 0; i < k; i++) for (int j = i + 1; j < k; j++) if (Model.R[i, j].HasValue && Model.P[i, j] < 0.05) significant++;
+}
+
+<div class="page-head">
+    <div>
+        <a asp-action="Index" class="text-xs text-decoration-none"><i class="bi bi-arrow-left me-1"></i>Research data hub</a>
+        <h4 class="mt-1"><i class="bi bi-grid-3x3 me-2"></i>Correlation Explorer</h4>
+        <p>Pearson correlation between batch-day variables from daily flock records.</p>
+    </div>
+    <a asp-action="Export" asp-route-dataset="daily" asp-route-farmId="@Model.FarmId" class="btn btn-outline-secondary btn-sm"><i class="bi bi-download me-1"></i>Underlying data (CSV)</a>
+</div>
+
+<form method="get" class="filter-bar">
+    <select name="batchType" class="form-select form-select-sm" style="max-width:180px">
+        <option value="">All flock types</option>
+        @foreach (var t in new[] { "Broiler", "Sonali", "Layer" })
+        {
+            <option value="@t" selected="@(t == Model.BatchType)">@t</option>
+        }
+    </select>
+    <select name="farmId" class="form-select form-select-sm" style="max-width:220px">
+        <option value="">All farms</option>
+        @foreach (var f in Model.Farms)
+        {
+            <option value="@f.Id" selected="@(f.Id == Model.FarmId)">@f.Name</option>
+        }
+    </select>
+    <button class="btn btn-sm btn-primary"><i class="bi bi-arrow-repeat me-1"></i>Recalculate</button>
+    @if (Model.BatchType != null || Model.FarmId.HasValue) { <a asp-action="Correlations" class="btn btn-sm btn-outline-secondary">Reset</a> }
+</form>
+
+<div class="stat-grid">
+    <div class="stat-tile tone-blue">
+        <div class="st-label">Batch-day observations</div>
+        <div class="st-value">@Fmt.Num(Model.Observations)</div>
+        <div class="st-sub">pairwise-complete per cell</div>
+        <div class="st-icon"><i class="bi bi-calendar3"></i></div>
+    </div>
+    <div class="stat-tile tone-violet">
+        <div class="st-label">Variables</div>
+        <div class="st-value">@k</div>
+        <div class="st-sub">@(k * (k - 1) / 2) unique pairs</div>
+        <div class="st-icon"><i class="bi bi-sliders"></i></div>
+    </div>
+    <div class="stat-tile tone-green">
+        <div class="st-label">Significant pairs</div>
+        <div class="st-value">@significant</div>
+        <div class="st-sub">p &lt; 0.05 (uncorrected)</div>
+        <div class="st-icon"><i class="bi bi-check2-square"></i></div>
+    </div>
+    <div class="stat-tile tone-amber">
+        <div class="st-label">Strongest |r|</div>
+        <div class="st-value">@(Model.Strongest.Count > 0 ? Math.Abs(Model.Strongest[0].R).ToString("0.00") : "—")</div>
+        <div class="st-sub">@(Model.Strongest.Count > 0 ? Model.Strongest[0].A + " × " + Model.Strongest[0].B : "no pairs")</div>
+        <div class="st-icon"><i class="bi bi-link-45deg"></i></div>
+    </div>
+</div>
+
+@if (!hasData)
+{
+    <div class="card"><div class="card-body">
+        <div class="empty-state"><i class="bi bi-grid-3x3"></i>
+            <p class="mb-0">No daily records match these filters. Correlations need at least 5 paired observations per variable pair.</p></div>
+    </div></div>
+}
+else
+{
+    <div class="row g-3 mb-3">
+        <div class="col-xl-8">
+            <div class="card h-100">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h6 class="mb-0">Correlation matrix (Pearson r)</h6>
+                    <div class="d-flex align-items-center gap-1 text-xs">
+                        <span>−1</span>
+                        <span style="display:inline-block;width:140px;height:10px;border-radius:5px;background:linear-gradient(90deg,rgba(59,130,246,.85),#fff,rgba(239,68,68,.85))"></span>
+                        <span>+1</span>
+                    </div>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-bordered table-sm mb-0 text-center align-middle" style="min-width:640px">
+                        <thead>
+                            <tr>
+                                <th></th>
+                                @for (int j = 0; j < k; j++) { <th class="text-xs" style="width:10%">@Model.Variables[j]</th> }
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @for (int i = 0; i < k; i++)
+                            {
+                                <tr>
+                                    <th class="text-start text-xs text-nowrap">@Model.Variables[i]<div class="text-muted fw-normal">@Model.Units[i]</div></th>
+                                    @for (int j = 0; j < k; j++)
+                                    {
+                                        var r = Model.R[i, j];
+                                        if (i == j)
+                                        {
+                                            <td style="background:#e5e7eb" class="text-xs text-muted" title="n = @Model.N[i, j]">1</td>
+                                        }
+                                        else if (!r.HasValue)
+                                        {
+                                            <td class="text-xs text-muted" title="n = @Model.N[i, j] (need ≥ 5)">n/a</td>
+                                        }
+                                        else
+                                        {
+                                            var dark = Math.Abs(r.Value) >= 0.55;
+                                            <td style="background:@AnalyticsUi.CorrColor(r.Value);@(dark ? "color:#fff;" : "")" class="small fw-600"
+                                                title="@Model.Variables[i] × @Model.Variables[j]: r = @r.Value.ToString("0.000"), p = @AnalyticsUi.PValue(Model.P[i, j]), n = @Model.N[i, j]">
+                                                @r.Value.ToString("0.00")<sup>@Stars(Model.P[i, j])</sup>
+                                            </td>
+                                        }
+                                    }
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div class="card-body pt-2 text-xs text-muted">
+                    * p &lt; 0.05 &nbsp; ** p &lt; 0.01 &nbsp; *** p &lt; 0.001 (two-sided t-test of H₀: ρ = 0). Hover a cell for r, p and n.
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-4">
+            <div class="card h-100">
+                <div class="card-header"><h6 class="mb-0">Strongest associations</h6></div>
+                @if (Model.Strongest.Count == 0)
+                {
+                    <div class="card-body"><div class="empty-state"><i class="bi bi-link"></i><p class="mb-0">Not enough paired data.</p></div></div>
+                }
+                else
+                {
+                    <div class="card-body">
+                        <div style="height:220px"><canvas id="strongChart"></canvas></div>
+                    </div>
+                    <ul class="list-group list-group-flush small">
+                        @foreach (var s in Model.Strongest)
+                        {
+                            <li class="list-group-item">
+                                <div class="d-flex justify-content-between"><span class="fw-600">@s.A × @s.B</span><span class="mono">r = @s.R.ToString("0.00")</span></div>
+                                <div class="text-xs text-muted">@Strength(s.R) @(s.R >= 0 ? "positive" : "negative") association · n = @s.N · r² = @((s.R * s.R).ToString("0.00")) (@((s.R * s.R * 100).ToString("0"))% shared variance)</div>
+                            </li>
+                        }
+                    </ul>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+<div class="row g-3">
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-header"><h6 class="mb-0">Method</h6></div>
+            <div class="card-body small">
+                <div class="formula mb-2">r = Σ(xᵢ − x̄)(yᵢ − ȳ) / √[Σ(xᵢ − x̄)² · Σ(yᵢ − ȳ)²]</div>
+                <div class="formula mb-2">t = r·√(n − 2) / √(1 − r²), &nbsp; df = n − 2</div>
+                <ul class="mb-0 ps-3">
+                    <li><strong>THI</strong> = (1.8T + 32) − (0.55 − 0.0055·RH)(1.8T − 26).</li>
+                    <li><strong>Mortality</strong> = deaths ÷ birds alive at start of day × 100.</li>
+                    <li><strong>Weight gain</strong> = change in sampled average weight between consecutive days of the same flock.</li>
+                    <li><strong>Water : feed</strong> = litres of water per kg of feed (healthy broilers ≈ 1.6–2.0).</li>
+                    <li>Pairwise deletion: each cell uses all batch-days where both variables were recorded.</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-header"><h6 class="mb-0">How to read this</h6></div>
+            <div class="card-body small">
+                <p>Red cells mean the two variables rise together; blue cells mean one falls as the other rises. Rules of thumb: |r| ≥ 0.7 strong,
+                    0.4–0.7 moderate, 0.2–0.4 weak.</p>
+                <div class="warn-callout mb-2"><strong>Correlation is not causation.</strong> Age drives weight, feed intake and water use simultaneously,
+                    so many pairs are confounded by age. Batch-days within a flock are not independent, so p-values are optimistic; with
+                    @(k * (k - 1) / 2) tests, expect about @Math.Round(k * (k - 1) / 2 * 0.05, 1) false positives at α = 0.05 by chance alone.</div>
+                <p class="mb-0">Use this matrix to generate hypotheses, then test them with a mixed model (flock as random effect) on the
+                    <a asp-action="Export" asp-route-dataset="daily">daily dataset</a> or a controlled <a asp-controller="Trials" asp-action="Index">field trial</a>.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+@if (Model.Strongest.Count > 0)
+{
+<script>
+(function () {
+    const d = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Strongest.Select(s => new { l = s.A + " × " + s.B, r = Math.Round(s.R, 3) })));
+    new Chart(document.getElementById('strongChart'), {
+        type: 'bar',
+        data: { labels: d.map(x => x.l), datasets: [{ label: 'r', data: d.map(x => x.r), backgroundColor: d.map(x => x.r >= 0 ? ppColors.red : ppColors.blue), borderRadius: 3 }] },
+        options: { indexAxis: 'y', maintainAspectRatio: false, plugins: { legend: { display: false } },
+                   scales: { x: { min: -1, max: 1 }, y: { ticks: { font: { size: 10 } } } } }
+    });
+})();
+</script>
+}
+}

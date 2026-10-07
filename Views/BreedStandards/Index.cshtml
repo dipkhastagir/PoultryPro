@@ -1,0 +1,220 @@
+@model List<BreedStandard>
+@{
+    var breeds = ((ViewBag.Breeds as IEnumerable<(string Breed, int Points, int MaxAge, int Batches)>)?.ToList() ?? new List<(string Breed, int Points, int MaxAge, int Batches)>());
+    var selected = ViewBag.Selected as string;
+    var canEdit = User.IsAny(Roles.Health);
+    var sel = breeds.FirstOrDefault(b => b.Breed == selected);
+    var last = Model.LastOrDefault();
+    BreedStandard? prev = null;
+}
+
+<div class="page-head">
+    <div>
+        <h4><i class="bi bi-rulers me-2"></i>Breed Standards</h4>
+        <p>Reference growth, feed, FCR and mortality targets. Analytics interpolate linearly between the points defined here.</p>
+    </div>
+    @if (canEdit)
+    {
+        <div class="d-flex gap-2">
+            <a asp-action="Create" asp-route-breed="@selected" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg me-1"></i>Add point@(selected != null ? " to " + selected : "")</a>
+            <a asp-action="Create" class="btn btn-outline-secondary btn-sm"><i class="bi bi-plus-square me-1"></i>New breed</a>
+        </div>
+    }
+</div>
+
+@if (breeds.Count == 0)
+{
+    <div class="card"><div class="card-body">
+        <div class="empty-state">
+            <i class="bi bi-rulers"></i>
+            <p>No breed standards defined yet. Add points from the breed's management guide (e.g. Cobb 500, Ross 308) so growth, forecast and risk analytics can compare flocks with the standard.</p>
+            @if (canEdit) { <a asp-action="Create" class="btn btn-primary btn-sm">Add the first point</a> }
+        </div>
+    </div></div>
+}
+else
+{
+    <ul class="nav nav-tabs mb-3">
+        @foreach (var b in breeds)
+        {
+            <li class="nav-item">
+                <a class="nav-link @(b.Breed == selected ? "active" : "")" asp-action="Index" asp-route-breed="@b.Breed">
+                    @b.Breed <span class="badge badge-gray ms-1">@b.Points</span>
+                </a>
+            </li>
+        }
+    </ul>
+
+    <div class="stat-grid">
+        <div class="stat-tile tone-green">
+            <div class="st-label">Standard points</div>
+            <div class="st-value">@Model.Count</div>
+            <div class="st-sub">Day @(Model.FirstOrDefault()?.AgeDay ?? 0) – @(last?.AgeDay ?? 0)</div>
+            <div class="st-icon"><i class="bi bi-dot"></i></div>
+        </div>
+        <div class="stat-tile tone-blue">
+            <div class="st-label">Final target weight</div>
+            <div class="st-value">@(last != null ? Fmt.Num(last.TargetWeightGm) + " g" : "—")</div>
+            <div class="st-sub">at day @(last?.AgeDay ?? 0)</div>
+            <div class="st-icon"><i class="bi bi-speedometer2"></i></div>
+        </div>
+        <div class="stat-tile tone-amber">
+            <div class="st-label">Target FCR</div>
+            <div class="st-value">@(last != null && last.TargetFCR > 0 ? last.TargetFCR.ToString("0.000") : "—")</div>
+            <div class="st-sub">Cum. feed @(last != null ? Fmt.Num(last.CumFeedGm / 1000m, 2) + " kg/bird" : "—")</div>
+            <div class="st-icon"><i class="bi bi-arrow-repeat"></i></div>
+        </div>
+        <div class="stat-tile tone-violet">
+            <div class="st-label">Flocks using this breed</div>
+            <div class="st-value">@sel.Batches</div>
+            <div class="st-sub">Target mortality @(last != null ? Fmt.Pct(last.TargetCumMortPct, 1) : "—")</div>
+            <div class="st-icon"><i class="bi bi-collection"></i></div>
+        </div>
+    </div>
+
+    @if (Model.Count == 0)
+    {
+        <div class="card"><div class="card-body"><div class="empty-state"><i class="bi bi-graph-up"></i><p class="mb-0">No points for this breed.</p></div></div></div>
+    }
+    else
+    {
+        <div class="row g-3 mb-3">
+            <div class="col-lg-7">
+                <div class="card h-100">
+                    <div class="card-header"><h6 class="mb-0">Growth &amp; daily feed curve — @selected</h6></div>
+                    <div class="card-body"><div style="height:300px"><canvas id="growthChart"></canvas></div></div>
+                </div>
+            </div>
+            <div class="col-lg-5">
+                <div class="card h-100">
+                    <div class="card-header"><h6 class="mb-0">FCR &amp; cumulative mortality targets</h6></div>
+                    <div class="card-body"><div style="height:300px"><canvas id="fcrChart"></canvas></div></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h6 class="mb-0">Standard table — @selected</h6>
+                <input class="form-control form-control-sm" style="max-width:180px" placeholder="Filter…" data-table-filter="#tblStd" />
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0" id="tblStd">
+                    <thead>
+                        <tr>
+                            <th>Day</th><th class="text-end">Body weight (g)</th><th class="text-end">Gain since prev. (g/d)</th>
+                            <th class="text-end">Daily feed (g)</th><th class="text-end">Cum. feed (g)</th><th class="text-end">FCR</th>
+                            <th class="text-end">Cum. mortality</th>
+                            @if (canEdit) { <th class="text-end">Actions</th> }
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var s in Model)
+                        {
+                            var gain = prev != null && s.AgeDay > prev.AgeDay ? (s.TargetWeightGm - prev.TargetWeightGm) / (s.AgeDay - prev.AgeDay) : (decimal?)null;
+                            <tr>
+                                <td class="fw-600">@s.AgeDay</td>
+                                <td class="text-end">@Fmt.Num(s.TargetWeightGm)</td>
+                                <td class="text-end text-muted">@(gain.HasValue ? Fmt.Num(gain.Value, 1) : "—")</td>
+                                <td class="text-end">@Fmt.Num(s.DailyFeedGm, 1)</td>
+                                <td class="text-end">@Fmt.Num(s.CumFeedGm)</td>
+                                <td class="text-end">@(s.TargetFCR > 0 ? s.TargetFCR.ToString("0.000") : "—")</td>
+                                <td class="text-end">@Fmt.Pct(s.TargetCumMortPct, 2)</td>
+                                @if (canEdit)
+                                {
+                                    <td class="text-end text-nowrap">
+                                        <a asp-action="Edit" asp-route-id="@s.Id" class="btn btn-xs btn-outline-secondary"><i class="bi bi-pencil"></i></a>
+                                        <form asp-action="Delete" method="post" class="d-inline" data-confirm="Delete @s.Breed day @s.AgeDay?">
+                                            <input type="hidden" name="id" value="@s.Id" />
+                                            <button class="btn btn-xs btn-outline-danger"><i class="bi bi-trash"></i></button>
+                                        </form>
+                                    </td>
+                                }
+                            </tr>
+                            prev = s;
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+
+    <div class="row g-3">
+        <div class="col-lg-7">
+            <div class="card h-100">
+                <div class="card-header"><h6 class="mb-0">How standards are used</h6></div>
+                <div class="card-body small">
+                    <p class="mb-2">For a flock at age <em>a</em> between two standard points (a₀, w₀) and (a₁, w₁), the expected value is linearly interpolated:</p>
+                    <div class="formula">W<sub>std</sub>(a) = w₀ + (w₁ − w₀) · (a − a₀) / (a₁ − a₀)</div>
+                    <p class="mt-2 mb-0">The same interpolation is applied to daily feed, cumulative feed, FCR and cumulative mortality. Growth-curve, forecast,
+                        feed-demand and risk-score analytics, plus the <span class="chip">Growth lag</span> alert, all compare actual flock data against these targets.
+                        Weekly points (day 0, 7, 14 …) are sufficient; daily points make the curve more precise.</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-5">
+            <div class="card h-100">
+                <div class="card-header"><h6 class="mb-0">All breeds</h6></div>
+                <div class="table-responsive">
+                    <table class="table table-sm mb-0">
+                        <thead><tr><th>Breed</th><th class="text-end">Points</th><th class="text-end">Max day</th><th class="text-end">Flocks</th></tr></thead>
+                        <tbody>
+                            @foreach (var b in breeds)
+                            {
+                                <tr class="@(b.Breed == selected ? "table-active" : "")">
+                                    <td><a asp-action="Index" asp-route-breed="@b.Breed" class="text-decoration-none">@b.Breed</a></td>
+                                    <td class="text-end">@b.Points</td><td class="text-end">@b.MaxAge</td><td class="text-end">@b.Batches</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div class="card-body pt-2">
+                    <div class="warn-callout text-xs mb-0">Breeds without a standard (e.g. layer strains) are excluded from growth-lag and forecast analytics.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@section Scripts {
+@if (Model.Count > 0)
+{
+<script>
+(function () {
+    const pts = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Select(s => new { d = s.AgeDay, w = s.TargetWeightGm, f = s.DailyFeedGm, fcr = s.TargetFCR, m = s.TargetCumMortPct })));
+    const xy = (k) => pts.map(p => ({ x: p.d, y: p[k] }));
+    new Chart(document.getElementById('growthChart'), {
+        type: 'line',
+        data: { datasets: [
+            { label: 'Body weight (g)', data: xy('w'), borderColor: ppColors.green, backgroundColor: ppColors.greenSoft, fill: true, tension: .3, yAxisID: 'y' },
+            { label: 'Daily feed (g/bird)', data: xy('f'), borderColor: ppColors.amber, borderDash: [5, 4], tension: .3, yAxisID: 'y1', pointRadius: 2 }
+        ] },
+        options: {
+            maintainAspectRatio: false, interaction: { mode: 'nearest', axis: 'x', intersect: false },
+            scales: {
+                x: { type: 'linear', title: { display: true, text: 'Age (days)' } },
+                y: { beginAtZero: true, title: { display: true, text: 'Weight (g)' } },
+                y1: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'Feed (g/day)' } }
+            }
+        }
+    });
+    new Chart(document.getElementById('fcrChart'), {
+        type: 'line',
+        data: { datasets: [
+            { label: 'Target FCR', data: xy('fcr').filter(p => p.y > 0), borderColor: ppColors.blue, tension: .3, yAxisID: 'y' },
+            { label: 'Cum. mortality (%)', data: xy('m'), borderColor: ppColors.red, backgroundColor: ppColors.redSoft, fill: true, tension: .3, yAxisID: 'y1' }
+        ] },
+        options: {
+            maintainAspectRatio: false, interaction: { mode: 'nearest', axis: 'x', intersect: false },
+            scales: {
+                x: { type: 'linear', title: { display: true, text: 'Age (days)' } },
+                y: { title: { display: true, text: 'FCR' } },
+                y1: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'Mortality %' } }
+            }
+        }
+    });
+})();
+</script>
+}
+}

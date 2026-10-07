@@ -1,0 +1,129 @@
+@model List<VaccineTemplate>
+@{
+    var canEdit = User.IsAny(Roles.Health);
+    var type = ViewBag.Type as string;
+    var typeCounts = ViewBag.TypeCounts as Dictionary<string, int> ?? new();
+    int allCount = ViewBag.AllCount ?? 0;
+    string TypeIcon(string t) => t switch { "Layer" => "bi-egg", "Sonali" => "bi-feather", _ => "bi-basket" };
+    string TypeTone(string t) => t switch { "Layer" => "tone-amber", "Sonali" => "tone-violet", _ => "tone-green" };
+}
+
+<div class="page-head">
+    <div>
+        <h4>Vaccine Programmes</h4>
+        <p>Templates of vaccines by flock age. Applying a programme creates dated vaccination records for a flock.</p>
+    </div>
+    @if (canEdit)
+    {
+        <a asp-action="Create" asp-route-batchType="@type" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg me-1"></i>New programme</a>
+    }
+</div>
+
+<div class="stat-grid">
+    <div class="stat-tile tone-blue">
+        <div class="st-label">Programmes</div>
+        <div class="st-value">@allCount</div>
+        <div class="st-sub">@Model.Count(t => t.IsActive) active in this view</div>
+        <div class="st-icon"><i class="bi bi-eyedropper"></i></div>
+    </div>
+    @foreach (var kv in typeCounts)
+    {
+        <div class="stat-tile @TypeTone(kv.Key)">
+            <div class="st-label">@kv.Key</div>
+            <div class="st-value">@kv.Value</div>
+            <div class="st-sub">programme(s)</div>
+            <div class="st-icon"><i class="bi @TypeIcon(kv.Key)"></i></div>
+        </div>
+    }
+</div>
+
+<div class="filter-bar">
+    <div class="btn-group btn-group-sm" role="group">
+        <a asp-action="Index" class="btn @(type == null ? "btn-primary" : "btn-outline-secondary")">All <span class="ms-1 opacity-75">@allCount</span></a>
+        @foreach (var kv in typeCounts)
+        {
+            <a asp-action="Index" asp-route-type="@kv.Key" class="btn @(type == kv.Key ? "btn-primary" : "btn-outline-secondary")">@kv.Key <span class="ms-1 opacity-75">@kv.Value</span></a>
+        }
+    </div>
+    @if (Model.Any())
+    {
+        <input class="form-control form-control-sm" style="max-width:260px" placeholder="Filter programmes…" data-table-filter="#tblTemplates" />
+    }
+</div>
+
+@if (!Model.Any())
+{
+    <div class="card"><div class="card-body">
+        <div class="empty-state">
+            <i class="bi bi-eyedropper"></i>
+            <h6>No vaccine programmes@(type != null ? " for " + type + " flocks" : "")</h6>
+            <p class="text-muted small">Create a programme (e.g. "Broiler standard — Bangladesh") and add Marek's, ND, IB and Gumboro doses by age.</p>
+            @if (canEdit)
+            {
+                <a asp-action="Create" asp-route-batchType="@type" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg me-1"></i>Create programme</a>
+            }
+        </div>
+    </div></div>
+}
+else
+{
+    <div class="card">
+        <div class="card-header"><h6>Programme templates</h6></div>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0" id="tblTemplates">
+                <thead>
+                    <tr>
+                        <th>Programme</th>
+                        <th>Flock type</th>
+                        <th class="text-end">Vaccines</th>
+                        <th>Age span</th>
+                        <th>Status</th>
+                        <th class="text-end"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var t in Model)
+                    {
+                        <tr>
+                            <td>
+                                <a asp-action="Detail" asp-route-id="@t.Id" class="fw-600 text-decoration-none">@t.Name</a>
+                                @if (!string.IsNullOrWhiteSpace(t.Description))
+                                {
+                                    <div class="text-xs text-muted text-truncate" style="max-width:420px">@t.Description</div>
+                                }
+                            </td>
+                            <td><span class="chip"><i class="bi @TypeIcon(t.BatchType) me-1"></i>@t.BatchType</span></td>
+                            <td class="text-end fw-600">@t.ItemCount</td>
+                            <td class="text-xs">
+                                @if (t.FirstAgeDay.HasValue)
+                                {
+                                    <span>Day @t.FirstAgeDay – @t.LastAgeDay</span>
+                                    var span = Math.Max(1, (t.LastAgeDay ?? 0) - (t.FirstAgeDay ?? 0));
+                                    <div class="prog-bar-wrap mt-1" style="max-width:140px"><div class="prog-bar-fill" style="width:@(Math.Min(100, span * 100 / Math.Max(70, span)))%"></div></div>
+                                }
+                                else
+                                {
+                                    <span class="text-muted">No vaccines yet</span>
+                                }
+                            </td>
+                            <td><span class="badge @(t.IsActive ? "badge-healthy" : "badge-gray")">@(t.IsActive ? "Active" : "Inactive")</span></td>
+                            <td class="text-end text-nowrap">
+                                <a asp-action="Detail" asp-route-id="@t.Id" class="btn btn-xs btn-outline-primary"><i class="bi bi-list-ol me-1"></i>Open</a>
+                                @if (canEdit)
+                                {
+                                    <a asp-action="Edit" asp-route-id="@t.Id" class="btn btn-xs btn-outline-secondary"><i class="bi bi-pencil"></i></a>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+<div class="info-callout mt-3">
+    <i class="bi bi-info-circle me-1"></i>
+    Applying a programme runs <span class="mono">sp_ApplyVaccineTemplate</span>: each vaccine gets a due date of
+    <em>placement date + age day</em>. Doses already scheduled for the flock (same vaccine and date) are skipped, so re-applying is safe.
+</div>

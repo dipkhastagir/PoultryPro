@@ -1,0 +1,12 @@
+@model Farm
+@{
+    ViewData["Title"] = Model.Id == 0 ? "Add Farm" : "Edit Farm";
+    ViewData["Subtitle"] ??= "Farm details, ownership and GPS location";
+}
+@section Head {
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+}
+<partial name="_FarmForm" model="Model" />
+@section Scripts {
+    <partial name="_PickMapScripts" />
+}

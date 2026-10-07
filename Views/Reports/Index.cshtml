@@ -1,0 +1,55 @@
+@{
+    ViewData["Title"] = "Reports";
+    ViewData["Subtitle"] = "Generate and view farm reports";
+    var reports = new[]
+    {
+        new { Icon="bi-bar-chart-fill", Color="#e1f5ee", Ic="#0a7d5e", Title="Production Report",
+              Desc="Batch-wise production, FCR, weight gain and mortality statistics",
+              Action="Production", BtnClass="btn-success" },
+        new { Icon="bi-cash-stack", Color="#dbeafe", Ic="#1d4ed8", Title="Financial Report",
+              Desc="Revenue, expenses, profit & loss by month and category",
+              Action="Financial", BtnClass="btn-primary" },
+        new { Icon="bi-box-seam-fill", Color="#fef9c3", Ic="#854d0e", Title="Inventory Report",
+              Desc="Stock levels, total values, low stock and expiry alerts",
+              Action="Inventory", BtnClass="btn-warning" },
+        new { Icon="bi-geo-alt-fill", Color="#ede9fe", Ic="#5b21b6", Title="Farm Report",
+              Desc="Farm capacity, utilization rates and certification status",
+              Action="Farm", BtnClass="btn-secondary" },
+        new { Icon="bi-people-fill", Color="#fee2e2", Ic="#991b1b", Title="HR Report",
+              Desc="Employee headcount, roles, status and payroll summary",
+              Action="HR", BtnClass="btn-danger" },
+        new { Icon="bi-heart-pulse-fill", Color="#fce7f3", Ic="#be185d", Title="Health Report",
+              Desc="Vaccination compliance, disease cases by farm and mortality causes & trend",
+              Action="Health", BtnClass="btn-outline-danger" },
+        new { Icon="bi-cart-check-fill", Color="#dcfce7", Ic="#166534", Title="Sales & Market Report",
+              Desc="Revenue by product and customer, monthly sales trend and outstanding receivables",
+              Action="Market", BtnClass="btn-outline-success" },
+        new { Icon="bi-person-badge-fill", Color="#e0f2fe", Ic="#075985", Title="Field Operations Report",
+              Desc="Visits per officer, completion rate, visit duration, GPS accuracy and pending sync",
+              Action="FieldOps", BtnClass="btn-outline-primary" },
+    };
+}
+
+<div class="row g-4">
+    @foreach (var r in reports.Where(r => r.Action != "Market" || User.IsAny(Roles.Finance + "," + Roles.Viewer)))
+    {
+        <div class="col-md-6 col-xl-4">
+            <div class="card h-100" style="transition:box-shadow .2s" onmouseover="this.style.boxShadow='0 4px 20px rgba(0,0,0,.08)'" onmouseout="this.style.boxShadow=''">
+                <div class="card-body d-flex flex-column gap-3 p-4">
+                    <div style="width:48px;height:48px;border-radius:12px;background:@r.Color;display:flex;align-items:center;justify-content:center">
+                        <i class="bi @r.Icon" style="font-size:22px;color:@r.Ic"></i>
+                    </div>
+                    <div>
+                        <div style="font-size:15px;font-weight:600;margin-bottom:4px">@r.Title</div>
+                        <div style="font-size:13px;color:var(--text-secondary);line-height:1.5">@r.Desc</div>
+                    </div>
+                    <div class="mt-auto">
+                        <a asp-action="@r.Action" class="btn btn-sm @r.BtnClass">
+                            <i class="bi bi-file-earmark-text me-1"></i>Generate Report
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>

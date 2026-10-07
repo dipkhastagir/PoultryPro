@@ -1,0 +1,218 @@
+@model EmployeeProfileVm
+@{
+    var e = Model.Employee;
+    var canEdit = User.IsAny(Roles.Finance);
+    var byDate = Model.Attendance30.ToDictionary(a => a.AttendanceDate.Date);
+    var today = DateTime.Today;
+    string Color(string? s) => s switch
+    {
+        "Present" => "#10b981", "Late" => "#f59e0b", "Half Day" => "#facc15", "Leave" => "#3b82f6", "Absent" => "#ef4444", _ => "#e2e8f0"
+    };
+    string CheckIn(double? minutes) => minutes.HasValue ? DateTime.Today.AddMinutes(minutes.Value).ToString("hh:mm tt") : "—";
+    var pct = Model.MonthAttendancePct;
+}
+
+<div class="page-head">
+    <div class="d-flex align-items-center gap-3">
+        <div class="avatar" style="width:56px;height:56px;font-size:19px">@e.Initials</div>
+        <div>
+            <h4>@e.FullName @if (!e.IsActive) { <span class="badge badge-danger-soft align-middle">Inactive</span> }</h4>
+            <p><span class="mono">@(e.EmployeeCode ?? $"#{e.Id}")</span> · @e.Role · @(e.FarmName ?? "All farms") · <span class="badge @Fmt.Badge(e.Status)">@e.Status</span></p>
+        </div>
+    </div>
+    <div class="d-flex gap-2 no-print">
+        <a asp-action="Index" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Directory</a>
+        @if (canEdit)
+        {
+            <a asp-controller="Attendance" asp-action="Report" class="btn btn-sm btn-outline-secondary"><i class="bi bi-grid-3x3 me-1"></i>Attendance report</a>
+            <a asp-action="Edit" asp-route-id="@e.Id" class="btn btn-sm btn-primary"><i class="bi bi-pencil me-1"></i>Edit</a>
+        }
+    </div>
+</div>
+
+<div class="stat-grid">
+    <div class="stat-tile @(pct >= 90 ? "tone-green" : pct >= 75 ? "tone-amber" : "tone-red")">
+        <div class="st-label">Attendance this month</div>
+        <div class="st-value">@(Model.MonthWorkingDays == 0 ? "—" : Fmt.Pct(pct, 0))</div>
+        <div class="st-sub">@Fmt.Num(Model.MonthPresentDays, 1) of @Model.MonthWorkingDays working days</div>
+        <div class="st-icon"><i class="bi bi-calendar-check"></i></div>
+    </div>
+    <div class="stat-tile tone-amber">
+        <div class="st-label">Late / absent / leave</div>
+        <div class="st-value">@Model.MonthLate / @Model.MonthAbsent / @Model.MonthLeave</div>
+        <div class="st-sub">This month</div>
+        <div class="st-icon"><i class="bi bi-alarm"></i></div>
+    </div>
+    <div class="stat-tile tone-blue">
+        <div class="st-label">Avg check-in</div>
+        <div class="st-value">@CheckIn(Model.AvgCheckInMinutes)</div>
+        <div class="st-sub">@(Model.AvgHoursWorked.HasValue ? $"{Model.AvgHoursWorked:0.0} h average day" : "No check-out data")</div>
+        <div class="st-icon"><i class="bi bi-clock"></i></div>
+    </div>
+    <div class="stat-tile tone-violet">
+        <div class="st-label">Open tasks</div>
+        <div class="st-value">@Model.OpenTasks.Count</div>
+        <div class="st-sub">@Model.OpenTasks.Count(t => t.IsOverdue) overdue · @Model.DoneTasks completed</div>
+        <div class="st-icon"><i class="bi bi-kanban"></i></div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-4">
+        <div class="card h-100">
+            <div class="card-header"><h6><i class="bi bi-person-badge text-primary me-2"></i>Profile</h6></div>
+            <div class="card-body">
+                <dl class="kv">
+                    <dt>Employee code</dt><dd class="mono">@(e.EmployeeCode ?? "—")</dd>
+                    <dt>Job role</dt><dd>@e.Role</dd>
+                    <dt>Farm</dt><dd>@(e.FarmName ?? "All farms / head office")</dd>
+                    <dt>Joined</dt><dd>@Fmt.Date(e.JoinDate) <span class="text-muted text-xs">(@(e.TenureMonths / 12)y @(e.TenureMonths % 12)m)</span></dd>
+                    <dt>Phone</dt><dd>@(e.Phone ?? "—")</dd>
+                    <dt>Email</dt><dd>@(e.Email ?? "—")</dd>
+                    <dt>Address</dt><dd>@(e.Address ?? "—")</dd>
+                    <dt>Emergency contact</dt><dd>@(e.EmergencyContact ?? "—")</dd>
+                    @if (canEdit)
+                    {
+                        <dt>Monthly salary</dt><dd class="fw-600">@Fmt.Money(e.MonthlySalary)</dd>
+                        <dt>Daily rate</dt><dd>@Fmt.Money(e.MonthlySalary / 26)</dd>
+                    }
+                </dl>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-8">
+        <div class="card mb-4">
+            <div class="card-header">
+                <h6><i class="bi bi-calendar3-week text-success me-2"></i>Last 30 days attendance</h6>
+                <div class="d-flex gap-2 flex-wrap text-xs">
+                    @foreach (var s in AttendanceRecord.Statuses)
+                    {
+                        <span class="d-inline-flex align-items-center gap-1"><span style="width:10px;height:10px;border-radius:3px;background:@Color(s);display:inline-block"></span>@s</span>
+                    }
+                    <span class="d-inline-flex align-items-center gap-1"><span style="width:10px;height:10px;border-radius:3px;background:repeating-linear-gradient(45deg,#f1f5f9,#f1f5f9 2px,#e2e8f0 2px,#e2e8f0 4px);display:inline-block"></span>Friday</span>
+                </div>
+            </div>
+            <div class="card-body">
+                <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(44px,1fr));gap:6px">
+                    @for (var d = today.AddDays(-29); d <= today; d = d.AddDays(1))
+                    {
+                        byDate.TryGetValue(d, out var rec);
+                        var weekend = d.DayOfWeek == DayOfWeek.Friday;
+                        var bg = rec != null ? Color(rec.Status) : weekend ? "repeating-linear-gradient(45deg,#f1f5f9,#f1f5f9 3px,#e2e8f0 3px,#e2e8f0 6px)" : "#f8fafc";
+                        var fg = rec != null && rec.Status != "Half Day" ? "#fff" : "#475569";
+                        var tip = $"{d:ddd dd MMM}: {(rec?.Status ?? (weekend ? "Weekly holiday" : "Not marked"))}"
+                                  + (rec?.CheckIn != null ? $" · in {rec.CheckIn:hh\\:mm}" : "") + (rec?.CheckOut != null ? $" · out {rec.CheckOut:hh\\:mm}" : "");
+                        <div title="@tip" style="background:@bg;color:@fg;border-radius:8px;padding:6px 0;text-align:center;border:1px solid @(d == today ? "#0f172a" : "transparent")">
+                            <div style="font-size:10px;opacity:.85">@d.ToString("ddd")</div>
+                            <div style="font-weight:700;font-size:13px">@d.Day</div>
+                            <div style="font-size:9.5px;font-weight:600">@(rec != null ? AttendanceRecord.Code(rec.Status) : weekend ? "W" : "·")</div>
+                        </div>
+                    }
+                </div>
+                @if (!Model.Attendance30.Any())
+                {
+                    <div class="text-muted small mt-3"><i class="bi bi-info-circle me-1"></i>No attendance has been recorded for this employee in the last 30 days.</div>
+                }
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h6><i class="bi bi-kanban text-warning me-2"></i>Open tasks assigned</h6>
+                @if (!User.IsInRole(Roles.Viewer))
+                {
+                    <a asp-controller="Tasks" asp-action="Create" class="btn btn-sm btn-outline-secondary"><i class="bi bi-plus-lg"></i> New task</a>
+                }
+            </div>
+            @if (!Model.OpenTasks.Any())
+            {
+                <div class="empty-state py-4"><i class="bi bi-check2-all"></i>No open tasks.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0 table-sm">
+                        <thead><tr><th>Task</th><th>Farm / batch</th><th>Priority</th><th>Status</th><th>Due</th></tr></thead>
+                        <tbody>
+                            @foreach (var t in Model.OpenTasks)
+                            {
+                                <tr>
+                                    <td><a asp-controller="Tasks" asp-action="Edit" asp-route-id="@t.Id" class="fw-600 text-decoration-none">@t.Title</a><div class="text-xs text-muted">@t.Category</div></td>
+                                    <td class="small">@(t.FarmName ?? "—")@(t.BatchCode != null ? $" · {t.BatchCode}" : "")</td>
+                                    <td><span class="badge @Fmt.Badge(t.Priority)">@t.Priority</span></td>
+                                    <td><span class="badge @Fmt.Badge(t.Status)">@t.Status</span></td>
+                                    <td class="small @(t.IsOverdue ? "text-danger fw-600" : "")">@Fmt.Date(t.DueDate)@(t.IsOverdue ? " (overdue)" : "")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@if (canEdit)
+{
+    <div class="card mt-4">
+        <div class="card-header">
+            <h6><i class="bi bi-wallet2 text-primary me-2"></i>Payroll history</h6>
+            <span class="text-muted text-xs">Last @Model.PayrollHistory.Count periods</span>
+        </div>
+        @if (!Model.PayrollHistory.Any())
+        {
+            <div class="empty-state py-4"><i class="bi bi-wallet2"></i>No payroll has been generated for this employee yet.</div>
+        }
+        else
+        {
+            <div class="row g-0">
+                <div class="col-lg-8">
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0 table-sm">
+                            <thead><tr><th>Period</th><th class="text-end">Basic</th><th class="text-end">Allow.</th><th class="text-end">OT</th><th class="text-end">Deduct.</th><th class="text-end">Net pay</th><th>Days P/A</th><th>Status</th><th></th></tr></thead>
+                            <tbody>
+                                @foreach (var p in Model.PayrollHistory)
+                                {
+                                    <tr>
+                                        <td>@p.PeriodLabel</td>
+                                        <td class="text-end">@Fmt.Money(p.BasicSalary)</td>
+                                        <td class="text-end">@Fmt.Money(p.Allowances)</td>
+                                        <td class="text-end">@Fmt.Money(p.Overtime)</td>
+                                        <td class="text-end text-danger">@Fmt.Money(p.Deductions)</td>
+                                        <td class="text-end fw-600">@Fmt.Money(p.NetPay)</td>
+                                        <td class="small">@p.DaysPresent / @p.DaysAbsent</td>
+                                        <td><span class="badge @Fmt.Badge(p.Status)">@p.Status</span></td>
+                                        <td><a asp-controller="Payroll" asp-action="Payslip" asp-route-id="@p.Id" class="btn btn-xs btn-outline-secondary" title="Payslip"><i class="bi bi-receipt"></i></a></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="col-lg-4 p-3"><div style="height:220px"><canvas id="payChart"></canvas></div></div>
+            </div>
+        }
+    </div>
+}
+
+@section Scripts {
+    @if (canEdit && Model.PayrollHistory.Any())
+    {
+        var hist = Model.PayrollHistory.OrderBy(p => p.PeriodYear).ThenBy(p => p.PeriodMonth).ToList();
+        <script>
+            new Chart(document.getElementById('payChart'), {
+                type: 'bar',
+                data: {
+                    labels: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(hist.Select(p => new DateTime(p.PeriodYear, p.PeriodMonth, 1).ToString("MMM yy")))),
+                    datasets: [
+                        { label: 'Net pay', data: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(hist.Select(p => p.NetPay))), backgroundColor: ppColors.green, borderRadius: 4 },
+                        { label: 'Deductions', data: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(hist.Select(p => p.Deductions))), backgroundColor: ppColors.red, borderRadius: 4 }
+                    ]
+                },
+                options: { plugins: { legend: { position: 'bottom' }, tooltip: { callbacks: { label: c => c.dataset.label + ': ' + ppMoney(c.raw) } } },
+                           scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, ticks: { callback: v => ppMoney(v) } } } }
+            });
+        </script>
+    }
+}

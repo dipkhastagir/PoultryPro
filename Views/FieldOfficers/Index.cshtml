@@ -1,0 +1,151 @@
+@model List<FieldOfficer>
+@{
+    var syncStats    = ((ViewBag.SyncStats as IEnumerable<PendingSyncSummary>)?.ToList() ?? new List<PendingSyncSummary>());
+    var recentVisits = ((ViewBag.RecentVisits as IEnumerable<FarmVisit>)?.ToList() ?? new List<FarmVisit>());
+    var canEdit = User.IsAny(Roles.AdminOrManager);
+}
+
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md-3"><div class="kpi-card">
+        <div class="kpi-label"><i class="bi bi-person-badge text-primary"></i> Total Officers</div>
+        <div class="kpi-value">@ViewBag.TotalOfficers</div>
+    </div></div>
+    <div class="col-6 col-md-3"><div class="kpi-card">
+        <div class="kpi-label"><i class="bi bi-person-check text-success"></i> Active</div>
+        <div class="kpi-value text-success">@ViewBag.ActiveOfficers</div>
+    </div></div>
+    <div class="col-6 col-md-3"><div class="kpi-card">
+        <div class="kpi-label"><i class="bi bi-arrow-repeat text-warning"></i> Pending Syncs</div>
+        <div class="kpi-value @((int)ViewBag.PendingSyncs > 0 ? "text-warning" : "")">@ViewBag.PendingSyncs</div>
+    </div></div>
+    <div class="col-6 col-md-3"><div class="kpi-card">
+        <div class="kpi-label"><i class="bi bi-calendar2-check text-info"></i> Recent Visits</div>
+        <div class="kpi-value">@recentVisits.Count</div>
+    </div></div>
+</div>
+
+<div class="section-header mb-3">
+    <h5 class="section-title">All Field Officers</h5>
+    @if (canEdit) { <a asp-action="Create" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg me-1"></i>Add Field Officer</a> }
+</div>
+
+<div class="card mb-4">
+    <div class="table-responsive">
+        <table class="table table-hover mb-0">
+            <thead>
+                <tr><th>Officer</th><th>Username</th><th>Zone</th><th>Designation</th><th>Assigned Farms</th><th>Pending Sync</th><th>Last Login</th><th>Status</th><th>Actions</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var fo in Model)
+                {
+                    var sync = syncStats.FirstOrDefault(s => s.FieldOfficerId == fo.Id);
+                    <tr class="@(!fo.IsActive ? "opacity-50" : "")">
+                        <td>
+                            <div class="d-flex align-items-center gap-2">
+                                <div class="avatar" style="background:@(fo.IsActive ? "var(--primary-light)" : "#f1f5f9");color:@(fo.IsActive ? "var(--primary-dark)" : "#94a3b8")">@fo.Initials</div>
+                                <div>
+                                    <div class="fw-semibold" style="font-size:13.5px">@fo.FullName</div>
+                                    <small class="text-muted">@fo.Phone</small>
+                                </div>
+                            </div>
+                        </td>
+                        <td><code style="font-size:12px;background:#f1f5f9;padding:2px 6px;border-radius:4px">@fo.Username</code></td>
+                        <td><small class="text-muted">@(fo.Zone ?? "—")</small></td>
+                        <td><span class="badge badge-info-soft">@fo.Designation</span></td>
+                        <td><span class="badge @(fo.AssignedFarmCount > 0 ? "badge-healthy" : "badge-gray")">@fo.AssignedFarmCount farm@(fo.AssignedFarmCount != 1 ? "s" : "")</span></td>
+                        <td>
+                            @if (sync != null && sync.TotalPending > 0)
+                            { <span class="badge badge-warning-soft"><i class="bi bi-arrow-repeat me-1"></i>@sync.TotalPending pending</span> }
+                            else
+                            { <span class="badge badge-healthy"><i class="bi bi-check me-1"></i>Synced</span> }
+                        </td>
+                        <td><small class="text-muted">@(fo.LastLoginAt.HasValue ? fo.LastLoginAt.Value.ToString("dd MMM, HH:mm") : "Never")</small></td>
+                        <td><span class="badge @(fo.IsActive ? "badge-healthy" : "badge-danger-soft")">@(fo.IsActive ? "Active" : "Inactive")</span></td>
+                        <td>
+                            <div class="d-flex gap-1">
+                                <a asp-action="Detail" asp-route-id="@fo.Id" class="btn btn-xs btn-outline-primary" title="Detail"><i class="bi bi-eye"></i></a>
+                                @if (canEdit)
+                                {
+                                <a asp-action="Edit" asp-route-id="@fo.Id" class="btn btn-xs btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></a>
+                                <form asp-action="ToggleActive" method="post" style="display:inline">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="id" value="@fo.Id" />
+                                    <button class="btn btn-xs @(fo.IsActive ? "btn-outline-warning" : "btn-outline-success")" title="@(fo.IsActive ? "Deactivate" : "Activate")">
+                                        <i class="bi bi-@(fo.IsActive ? "pause-circle" : "play-circle")"></i>
+                                    </button>
+                                </form>
+                                <form asp-action="Delete" method="post" style="display:inline" onsubmit="return confirm('Remove @fo.FullName?')">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="id" value="@fo.Id" />
+                                    <button class="btn btn-xs btn-outline-danger" title="Delete"><i class="bi bi-trash"></i></button>
+                                </form>
+                                }
+                            </div>
+                        </td>
+                    </tr>
+                }
+                @if (!Model.Any())
+                {
+                    <tr><td colspan="9" class="text-center text-muted py-4">No field officers yet. <a asp-action="Create">Add the first one →</a></td></tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@if (syncStats.Any(s => s.TotalPending > 0))
+{
+    <div class="card mb-4">
+        <div class="card-header">
+            <h6><i class="bi bi-arrow-repeat text-warning me-2"></i>Pending Sync Summary</h6>
+            <span class="badge badge-warning-soft">@syncStats.Sum(s => s.TotalPending) total pending</span>
+        </div>
+        <div class="table-responsive">
+            <table class="table mb-0">
+                <thead><tr><th>Officer</th><th>Visits</th><th>Daily Records</th><th>Photos</th><th>Signatures</th><th>Total</th></tr></thead>
+                <tbody>
+                    @foreach (var s in syncStats.Where(x => x.TotalPending > 0))
+                    {
+                        <tr>
+                            <td><strong>@s.FullName</strong></td>
+                            <td><span class="badge @(s.PendingVisits>0?"badge-warning-soft":"badge-gray")">@s.PendingVisits</span></td>
+                            <td><span class="badge @(s.PendingDailyRecords>0?"badge-warning-soft":"badge-gray")">@s.PendingDailyRecords</span></td>
+                            <td><span class="badge @(s.PendingPhotos>0?"badge-warning-soft":"badge-gray")">@s.PendingPhotos</span></td>
+                            <td><span class="badge @(s.PendingSignatures>0?"badge-warning-soft":"badge-gray")">@s.PendingSignatures</span></td>
+                            <td><strong class="text-warning">@s.TotalPending</strong></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+<div class="card">
+    <div class="card-header"><h6><i class="bi bi-geo-alt-fill text-success me-2"></i>Recent Farm Visits</h6></div>
+    <div class="table-responsive">
+        <table class="table table-hover mb-0">
+            <thead><tr><th>Officer</th><th>Farm</th><th>Batch</th><th>Visit Date</th><th>Check-In</th><th>GPS</th><th>Sync</th></tr></thead>
+            <tbody>
+                @foreach (var v in recentVisits)
+                {
+                    <tr>
+                        <td><strong>@v.FieldOfficerName</strong></td>
+                        <td><div style="font-size:13px">@v.FarmName</div><small class="text-muted">@v.FarmLocation</small></td>
+                        <td>@(string.IsNullOrEmpty(v.BatchCode) ? "—" : v.BatchCode)</td>
+                        <td>@v.VisitDate.ToString("dd MMM yyyy")</td>
+                        <td><small>@(v.CheckInTime.HasValue ? v.CheckInTime.Value.ToString("HH:mm") : "—")</small></td>
+                        <td>
+                            @if (v.CheckInLatitude.HasValue)
+                            { <small class="text-success"><i class="bi bi-geo-alt-fill"></i> @v.CheckInLatitude.Value.ToString("F4"), @v.CheckInLongitude!.Value.ToString("F4")</small> }
+                            else { <small class="text-muted">No GPS</small> }
+                        </td>
+                        <td><span class="badge @(v.SyncStatus=="Synced"?"badge-healthy":"badge-warning-soft")">@v.SyncStatus</span></td>
+                    </tr>
+                }
+                @if (!recentVisits.Any())
+                { <tr><td colspan="7" class="text-center text-muted py-3">No visits recorded yet.</td></tr> }
+            </tbody>
+        </table>
+    </div>
+</div>

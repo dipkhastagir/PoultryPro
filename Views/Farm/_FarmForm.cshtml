@@ -1,0 +1,130 @@
+@model Farm
+@{
+    var isNew = Model.Id == 0;
+    var types = PoultryPro.Controllers.FarmController.FarmTypes;
+}
+<div class="page-head">
+    <div>
+        <h4>@(isNew ? "Add Farm" : "Edit Farm")</h4>
+        <p>@(isNew ? "Register a farm with its ownership, housing and GPS location" : Model.Name)</p>
+    </div>
+    <div class="d-flex gap-2">
+        @if (!isNew)
+        {
+            <a asp-action="Detail" asp-route-id="@Model.Id" class="btn btn-sm btn-outline-secondary"><i class="bi bi-eye me-1"></i>View profile</a>
+        }
+        <a asp-action="Index" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>All farms</a>
+    </div>
+</div>
+
+<form asp-action="@(isNew ? "Create" : "Edit")" method="post">
+    @Html.AntiForgeryToken()
+    <input type="hidden" asp-for="Id" />
+    <input type="hidden" asp-for="IsActive" />
+    <div asp-validation-summary="ModelOnly" class="text-danger small mb-2"></div>
+    <div class="row g-4">
+        <div class="col-lg-7">
+            <div class="form-card mb-4">
+                <h6 class="fw-semibold mb-3"><i class="bi bi-house-gear text-primary me-2"></i>Farm profile</h6>
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Farm Name *</label>
+                        <input asp-for="Name" class="form-control" placeholder="e.g. Gazipur North Farm" required maxlength="150" />
+                        <span asp-validation-for="Name" class="text-danger small"></span>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Location *</label>
+                        <input asp-for="Location" class="form-control" placeholder="e.g. Kaliakair, Gazipur" required maxlength="200" />
+                        <span asp-validation-for="Location" class="text-danger small"></span>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Farm Type</label>
+                        <select asp-for="FarmType" class="form-select">
+                            @foreach (var t in types) { <option value="@t">@t</option> }
+                            @if (!types.Contains(Model.FarmType)) { <option value="@Model.FarmType">@Model.FarmType</option> }
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Zone / Region</label>
+                        <input asp-for="Zone" class="form-control" placeholder="e.g. Gazipur Zone" maxlength="80" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Sheds</label>
+                        <input asp-for="ShedCount" type="number" class="form-control" min="1" max="200" />
+                        <span asp-validation-for="ShedCount" class="text-danger small"></span>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Owner Name</label>
+                        <input asp-for="OwnerName" class="form-control" placeholder="Farm owner / contract grower" maxlength="150" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Owner Phone</label>
+                        <input asp-for="OwnerPhone" class="form-control" placeholder="01XXXXXXXXX" maxlength="20" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Capacity (birds)</label>
+                        <input asp-for="Capacity" type="number" class="form-control" min="0" />
+                        <span asp-validation-for="Capacity" class="text-danger small"></span>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Current Stock</label>
+                        <input asp-for="CurrentStock" type="number" class="form-control" min="0" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Floor Area (sq ft)</label>
+                        <input asp-for="AreaSqFt" type="number" class="form-control" min="0" />
+                        <span asp-validation-for="AreaSqFt" class="text-danger small"></span>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Employee Count</label>
+                        <input asp-for="EmployeeCount" type="number" class="form-control" min="0" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Certification Status</label>
+                        <select asp-for="CertStatus" class="form-select">
+                            <option>Valid</option>
+                            <option>Expiring Soon</option>
+                            <option>Expired</option>
+                            <option>Pending</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Certification Expiry</label>
+                        <input asp-for="CertExpiry" type="date" class="form-control" />
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Notes</label>
+                        <textarea asp-for="Notes" class="form-control" rows="3" maxlength="500" placeholder="Housing system, ventilation, water source, access road…"></textarea>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-5">
+            <div class="form-card mb-4">
+                <h6 class="fw-semibold mb-1"><i class="bi bi-geo-alt-fill text-success me-2"></i>GPS location</h6>
+                <p class="text-muted small mb-3">Click the map to drop the farm pin, drag it to adjust, or type the coordinates.</p>
+                <div id="pickMap" style="height:300px;border-radius:10px;border:1px solid var(--border)"></div>
+                <div class="row g-2 mt-2">
+                    <div class="col-6">
+                        <label class="form-label">Latitude</label>
+                        <input asp-for="Latitude" id="lat" type="number" step="0.000001" min="-90" max="90" class="form-control form-control-sm mono" />
+                        <span asp-validation-for="Latitude" class="text-danger small"></span>
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label">Longitude</label>
+                        <input asp-for="Longitude" id="lng" type="number" step="0.000001" min="-180" max="180" class="form-control form-control-sm mono" />
+                        <span asp-validation-for="Longitude" class="text-danger small"></span>
+                    </div>
+                </div>
+                <div class="d-flex gap-2 mt-2">
+                    <button type="button" class="btn btn-xs btn-outline-secondary" id="btnLocate"><i class="bi bi-crosshair me-1"></i>Use my location</button>
+                    <button type="button" class="btn btn-xs btn-outline-danger" id="btnClear"><i class="bi bi-x-lg me-1"></i>Clear</button>
+                </div>
+            </div>
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Save Farm</button>
+                <a href="@(isNew ? Url.Action("Index") : Url.Action("Detail", new { id = Model.Id }))" class="btn btn-outline-secondary">Cancel</a>
+            </div>
+        </div>
+    </div>
+</form>

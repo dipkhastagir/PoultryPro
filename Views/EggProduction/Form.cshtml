@@ -1,0 +1,162 @@
+@model EggProductionFormVm
+@{
+    var batches = ((ViewBag.Batches as IEnumerable<Batch>)?.ToList() ?? new List<Batch>());
+    var isNew = Model.Id == 0;
+    var inv = System.Globalization.CultureInfo.InvariantCulture;
+}
+<div class="row justify-content-center"><div class="col-xl-9">
+<div class="page-head">
+    <div>
+        <a asp-action="Index" asp-route-batchId="@(Model.BatchId > 0 ? Model.BatchId : null)" class="text-xs text-decoration-none"><i class="bi bi-arrow-left me-1"></i>Egg production</a>
+        <h4 class="mt-1"><i class="bi bi-egg text-warning me-2"></i>@ViewData["Title"]</h4>
+        <p>@ViewData["Subtitle"]</p>
+    </div>
+</div>
+
+@if (ViewBag.Warning is string warn)
+{
+    <div class="warn-callout small">@warn</div>
+}
+
+@if (batches.Count == 0)
+{
+    <div class="card"><div class="card-body">
+        <div class="empty-state"><i class="bi bi-egg"></i>No active layer flocks. Place a flock with type <b>Layer</b> first.
+            <div class="mt-2"><a asp-controller="Batch" asp-action="Create" class="btn btn-primary btn-sm">New flock</a></div>
+        </div>
+    </div></div>
+}
+else
+{
+<div class="row g-3">
+    <div class="col-lg-8">
+        <div class="form-card">
+            <form asp-action="@(isNew ? "Create" : "Edit")" method="post" novalidate id="eggForm">
+                <input type="hidden" asp-for="Id" />
+                <div asp-validation-summary="All" class="alert alert-danger py-2 small"></div>
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Layer flock *</label>
+                        <select asp-for="BatchId" class="form-select" id="batchSel">
+                            <option value="0" data-hens="0">— select flock —</option>
+                            @foreach (var b in batches)
+                            {
+                                <option value="@b.Id" data-hens="@b.CurrentCount" selected="@(Model.BatchId == b.Id)">@b.BatchCode · @b.Breed · @b.FarmName (@b.CurrentCount.ToString("N0", inv) hens)</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Date *</label>
+                        <input asp-for="RecordDate" type="date" class="form-control" value="@Model.RecordDate.ToString("yyyy-MM-dd")" max="@DateTime.Today.ToString("yyyy-MM-dd")" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Hens housed *</label>
+                        <input asp-for="HenCount" type="number" min="1" class="form-control calc" id="hens" />
+                    </div>
+
+                    <div class="col-12"><div class="section-title mt-2">Collection &amp; grading</div></div>
+                    <div class="col-md-4">
+                        <label class="form-label">Total eggs collected *</label>
+                        <input asp-for="TotalEggs" type="number" min="0" class="form-control calc" id="total" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Grade A</label>
+                        <input asp-for="GradeA" type="number" min="0" class="form-control calc grade" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Grade B</label>
+                        <input asp-for="GradeB" type="number" min="0" class="form-control calc grade" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Cracked</label>
+                        <input asp-for="CrackedEggs" type="number" min="0" class="form-control calc grade" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Dirty</label>
+                        <input asp-for="DirtyEggs" type="number" min="0" class="form-control calc grade" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Ungraded (auto)</label>
+                        <input class="form-control" id="ungraded" readonly tabindex="-1" />
+                    </div>
+
+                    <div class="col-12"><div class="section-title mt-2">Quality &amp; feed</div></div>
+                    <div class="col-md-4">
+                        <label class="form-label">Average egg weight (g)</label>
+                        <input asp-for="AvgEggWeightGm" type="number" step="0.1" min="0" max="120" class="form-control" placeholder="e.g. 61.5" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Feed consumed (kg)</label>
+                        <input asp-for="FeedKg" type="number" step="0.1" min="0" class="form-control calc" id="feed" />
+                    </div>
+                    <div class="col-md-4 d-flex align-items-end">
+                        <button type="button" class="btn btn-outline-secondary btn-sm w-100" id="stdFeed">Use 112 g/hen standard</button>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Notes</label>
+                        <input asp-for="Notes" class="form-control" maxlength="300" placeholder="e.g. lighting change, vaccination, heat stress" />
+                    </div>
+                </div>
+                <div class="d-flex justify-content-end gap-2 mt-4">
+                    <a asp-action="Index" asp-route-batchId="@(Model.BatchId > 0 ? Model.BatchId : null)" class="btn btn-outline-secondary">Cancel</a>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-check2 me-1"></i>@(isNew ? "Save record" : "Save changes")</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card position-sticky" style="top:80px">
+            <div class="card-header"><h6><i class="bi bi-calculator text-success me-2"></i>Live indicators</h6></div>
+            <div class="card-body">
+                <dl class="kv mb-3">
+                    <dt>Hen-day production</dt><dd class="fw-600" id="hdOut">—</dd>
+                    <dt>Grade A share</dt><dd id="aOut">—</dd>
+                    <dt>Cracked</dt><dd id="crOut">—</dd>
+                    <dt>Feed per hen</dt><dd id="fphOut">—</dd>
+                    <dt>Feed per dozen</dt><dd id="fpdOut">—</dd>
+                </dl>
+                <div id="gradeWarn" class="warn-callout small d-none">Graded eggs exceed the total collected.</div>
+                <div class="formula text-xs">Hen-day % = eggs ÷ hens × 100<br />Feed/dozen (g) = feed kg × 1000 ÷ (eggs ÷ 12)</div>
+                <div class="text-xs text-muted mt-2">Targets (brown layer at peak): hen-day ≥ 90%, cracked &lt; 2%, feed ≈ 1.5–1.7 kg per dozen.</div>
+            </div>
+        </div>
+    </div>
+</div>
+}
+</div></div>
+
+@section Scripts {
+<script>
+(function () {
+    const form = document.getElementById('eggForm'); if (!form) return;
+    const v = id => Number(document.getElementById(id)?.value || 0);
+    const sel = document.getElementById('batchSel');
+    const isNew = @(isNew ? "true" : "false");
+    function update() {
+        const hens = v('hens'), total = v('total'), feed = v('feed');
+        const grades = Array.from(document.querySelectorAll('.grade')).map(i => Number(i.value || 0));
+        const graded = grades.reduce((a, b) => a + b, 0);
+        document.getElementById('ungraded').value = total - graded;
+        document.getElementById('gradeWarn').classList.toggle('d-none', graded <= total);
+        const hd = hens > 0 ? total / hens * 100 : 0;
+        const hdEl = document.getElementById('hdOut');
+        hdEl.textContent = hens > 0 ? hd.toFixed(1) + '%' : '—';
+        hdEl.className = 'fw-600 ' + (hd >= 85 ? 'text-success' : hd >= 70 ? 'text-warning' : 'text-danger');
+        document.getElementById('aOut').textContent = total > 0 ? (grades[0] / total * 100).toFixed(1) + '%' : '—';
+        document.getElementById('crOut').textContent = total > 0 ? (grades[2] / total * 100).toFixed(2) + '%' : '—';
+        document.getElementById('fphOut').textContent = hens > 0 && feed > 0 ? (feed * 1000 / hens).toFixed(0) + ' g/hen' : '—';
+        document.getElementById('fpdOut').textContent = total > 0 && feed > 0 ? (feed * 1000 / (total / 12)).toFixed(0) + ' g' : '—';
+    }
+    form.querySelectorAll('input').forEach(i => i.addEventListener('input', update));
+    sel.addEventListener('change', () => {
+        const hens = Number(sel.selectedOptions[0].dataset.hens || 0);
+        if (isNew && hens > 0) { document.getElementById('hens').value = hens; }
+        update();
+    });
+    document.getElementById('stdFeed').addEventListener('click', () => {
+        document.getElementById('feed').value = (v('hens') * 0.112).toFixed(1); update();
+    });
+    update();
+})();
+</script>
+}

@@ -1,0 +1,84 @@
+@model VisitCreateVm
+@{
+    ViewData["Title"]    = "Edit Visit";
+    int visitId = ViewBag.VisitId;
+    var farms    = ViewBag.Farms    as IEnumerable<Farm>         ?? new List<Farm>();
+    var officers = ViewBag.Officers as IEnumerable<FieldOfficer> ?? new List<FieldOfficer>();
+    var batches  = ViewBag.Batches  as IEnumerable<Batch>        ?? new List<Batch>();
+}
+
+<div class="row justify-content-center"><div class="col-lg-8">
+<div class="form-card">
+    <h6 class="fw-semibold mb-4"><i class="bi bi-pencil text-primary me-2"></i>Edit Visit #@visitId</h6>
+
+    <form asp-action="Edit" method="post">
+        @Html.AntiForgeryToken()
+        <input type="hidden" name="visitId" value="@visitId" />
+
+        <div class="row g-3 mb-4">
+            <div class="col-md-6">
+                <label class="form-label">Field Officer</label>
+                <select asp-for="FieldOfficerId" class="form-select">
+                    @foreach (var o in officers)
+                    { <option value="@o.Id">@o.FullName</option> }
+                </select>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Farm</label>
+                <select asp-for="FarmId" class="form-select">
+                    @foreach (var f in farms)
+                    { <option value="@f.Id">@f.Name</option> }
+                </select>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Batch</label>
+                <select asp-for="BatchId" class="form-select">
+                    <option value="">— No Batch —</option>
+                    @foreach (var b in batches)
+                    { <option value="@b.Id">@b.BatchCode — @b.Breed</option> }
+                </select>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Visit Purpose</label>
+                <select asp-for="VisitPurpose" class="form-select">
+                    <option>Routine Check</option><option>Vaccination</option>
+                    <option>Health Inspection</option><option>Weight Recording</option>
+                    <option>Harvest Planning</option><option>Disease Follow-up</option>
+                    <option>Feed Audit</option><option>Biosecurity Check</option>
+                </select>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Visit Date</label>
+                <input asp-for="VisitDate" type="date" class="form-control" />
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Status</label>
+                <select asp-for="VisitStatus" class="form-select">
+                    <option>Pending</option><option>In Progress</option><option>Completed</option><option>Cancelled</option>
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Latitude</label>
+                <input asp-for="CheckInLatitude" type="number" step="0.000001" class="form-control" />
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Longitude</label>
+                <input asp-for="CheckInLongitude" type="number" step="0.000001" class="form-control" />
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">GPS Accuracy (m)</label>
+                <input asp-for="GpsAccuracyMeters" type="number" step="0.01" class="form-control" />
+            </div>
+            <div class="col-12">
+                <label class="form-label">Overall Remark</label>
+                <textarea asp-for="OverallRemark" class="form-control" rows="3"></textarea>
+            </div>
+        </div>
+
+        <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Save Changes</button>
+            <a asp-action="Detail" asp-route-id="@visitId" class="btn btn-outline-secondary">Cancel</a>
+        </div>
+    </form>
+</div>
+</div></div>

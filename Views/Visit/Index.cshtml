@@ -1,0 +1,256 @@
+@model List<FarmVisit>
+@{
+    var farms    = ViewBag.Farms    as IEnumerable<Farm>          ?? new List<Farm>();
+    var officers = ViewBag.Officers as IEnumerable<FieldOfficer>  ?? new List<FieldOfficer>();
+    int? selFarm = ViewBag.SelectedFarm; int? selOfficer = ViewBag.SelectedOfficer;
+    string? selStatus = ViewBag.SelectedStatus;
+    bool mineOnly = ViewBag.MineOnly ?? false;
+    int? myOfficerId = ViewBag.MyOfficerId;
+    var canWrite = User.IsAny(Roles.Operations);
+    var inv = System.Globalization.CultureInfo.InvariantCulture;
+    var withGps = Model.Where(v => v.CheckInLatitude.HasValue && v.CheckInLongitude.HasValue).ToList();
+    var completed = Model.Count(v => v.VisitStatus == "Completed");
+    var geoVerified = Model.Count(v => v.Trust?.GpsVerified == true);
+    var offSite = Model.Count(v => v.Trust?.GpsStatus == VisitTrustResult.OffSite);
+    var avgTrust = Model.Count > 0 ? Model.Average(v => (double)(v.Trust?.Score ?? 0)) : (double?)null;
+    string Osm(decimal lat, decimal lng) =>
+        $"https://www.openstreetmap.org/?mlat={lat.ToString(inv)}&mlon={lng.ToString(inv)}#map=16/{lat.ToString(inv)}/{lng.ToString(inv)}";
+    string StatusCls(string s) => s switch
+    {
+        "Completed" => "badge-healthy", "In Progress" => "badge-ready", "Cancelled" => "badge-danger-soft", _ => "badge-warning-soft"
+    };
+    var mapPoints = withGps.Select(v => new
+    {
+        id = v.Id, lat = v.CheckInLatitude!.Value, lng = v.CheckInLongitude!.Value,
+        farm = v.FarmName, officer = v.FieldOfficerName, date = v.VisitDate.ToString("dd MMM yyyy"),
+        status = v.VisitStatus, acc = v.GpsAccuracyMeters
+    });
+}
+
+@section Head {
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+}
+
+<div class="page-head">
+    <div>
+        <h4>@(mineOnly ? "My farm visits" : "Farm visits")</h4>
+        <p>
+            @Model.Count visit(s) · @geoVerified GPS-verified · @completed completed
+            @if (mineOnly)
+            {
+                <span class="chip ms-1"><i class="bi bi-person-check"></i>Showing your visits · <a asp-action="Index" asp-route-all="true">show all officers</a></span>
+            }
+        </p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+        <a asp-controller="Farm" asp-action="Map" class="btn btn-sm btn-outline-secondary"><i class="bi bi-map me-1"></i>Farm &amp; check-in map</a>
+        @if (canWrite)
+        {
+            <a asp-action="Create" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg me-1"></i>New visit</a>
+        }
+    </div>
+</div>
+
+<div class="stat-grid">
+    <div class="stat-tile tone-blue">
+        <div class="st-label">Visits</div>
+        <div class="st-value">@Model.Count</div>
+        <div class="st-sub">@Model.Sum(v => v.DailyRecordCount) daily records captured</div>
+        <div class="st-icon"><i class="bi bi-geo-alt"></i></div>
+    </div>
+    <div class="stat-tile tone-green">
+        <div class="st-label">Completed</div>
+        <div class="st-value">@completed</div>
+        <div class="st-sub">@(Model.Count > 0 ? Fmt.Pct((decimal)completed / Model.Count * 100, 0) : "—") of visits</div>
+        <div class="st-icon"><i class="bi bi-check-circle"></i></div>
+    </div>
+    <div class="stat-tile tone-violet">
+        <div class="st-label">GPS-verified</div>
+        <div class="st-value">@geoVerified</div>
+        <div class="st-sub">@(Model.Count > 0 ? Fmt.Pct((decimal)geoVerified / Model.Count * 100, 0) : "—") inside geofence@(offSite > 0 ? $" · {offSite} off-site" : "") · avg trust @(avgTrust.HasValue ? avgTrust.Value.ToString("0") : "—")</div>
+        <div class="st-icon"><i class="bi bi-crosshair"></i></div>
+    </div>
+    <div class="stat-tile @((int)(ViewBag.PendingSync ?? 0) > 0 ? "tone-amber" : "tone-slate")">
+        <div class="st-label">Pending sync</div>
+        <div class="st-value">@ViewBag.PendingSync</div>
+        <div class="st-sub">@Model.Sum(v => v.PhotoCount) photo(s) uploaded</div>
+        <div class="st-icon"><i class="bi bi-arrow-repeat"></i></div>
+    </div>
+</div>
+
+<form method="get" class="filter-bar">
+    <div>
+        <label class="form-label">Farm</label>
+        <select name="farmId" class="form-select">
+            <option value="">All farms</option>
+            @foreach (var f in farms) { <option value="@f.Id" selected="@(selFarm == f.Id)">@f.Name</option> }
+        </select>
+    </div>
+    <div>
+        <label class="form-label">Field officer</label>
+        <select name="officerId" class="form-select">
+            <option value="">All officers</option>
+            @foreach (var o in officers) { <option value="@o.Id" selected="@(selOfficer == o.Id)">@o.FullName@(o.Id == myOfficerId ? " (me)" : "")</option> }
+        </select>
+    </div>
+    <div>
+        <label class="form-label">Status</label>
+        <select name="status" class="form-select">
+            <option value="">All</option>
+            @foreach (var st in new[] { "Pending", "In Progress", "Completed", "Cancelled" })
+            {
+                <option value="@st" selected="@(selStatus == st)">@st</option>
+            }
+        </select>
+    </div>
+    @if (myOfficerId.HasValue) { <input type="hidden" name="all" value="true" /> }
+    <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-funnel me-1"></i>Filter</button>
+    @if (selFarm.HasValue || (selOfficer.HasValue && !mineOnly) || !string.IsNullOrEmpty(selStatus))
+    {
+        <a asp-action="Index" class="btn btn-sm btn-outline-secondary">Clear</a>
+    }
+    @if (withGps.Count > 0)
+    {
+        <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" data-bs-toggle="collapse" data-bs-target="#visitMapWrap"><i class="bi bi-map me-1"></i>Map view</button>
+    }
+</form>
+
+@if (withGps.Count > 0)
+{
+    <div class="collapse mb-3" id="visitMapWrap">
+        <div class="card">
+            <div class="card-header"><h6><i class="bi bi-geo-alt-fill text-success me-2"></i>GPS check-ins (@withGps.Count)</h6><span class="text-xs text-muted">green = completed · amber = open</span></div>
+            <div id="visitMap" style="height:360px"></div>
+        </div>
+    </div>
+}
+
+<div class="card">
+    @if (!Model.Any())
+    {
+        <div class="empty-state">
+            <i class="bi bi-geo-alt"></i>
+            No visits found@(mineOnly ? " for you yet" : " for the selected filters").
+            @if (canWrite) { <div class="mt-2"><a asp-action="Create" class="btn btn-sm btn-primary"><i class="bi bi-plus-lg me-1"></i>Record a visit</a></div> }
+        </div>
+    }
+    else
+    {
+        <div class="card-header">
+            <h6><i class="bi bi-list-ul text-primary me-2"></i>Visit log</h6>
+            <input data-table-filter="#tblVisits" class="form-control form-control-sm" style="max-width:220px" placeholder="Quick filter…" />
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover table-sm mb-0" id="tblVisits">
+                <thead>
+                    <tr>
+                        <th>Date</th><th>Farm</th><th>Batch</th><th>Officer</th><th>Purpose</th>
+                        <th>Check-in</th><th>GPS</th><th class="text-center">Records</th>
+                        <th class="text-center">Photos</th><th class="text-center">Signed</th><th class="text-center" title="Visit Trust Score (0–100)">Trust</th><th>Status</th><th>Sync</th><th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var v in Model)
+                    {
+                        <tr>
+                            <td class="text-nowrap"><a asp-action="Detail" asp-route-id="@v.Id" class="fw-600">@v.VisitDate.ToString("dd MMM yyyy")</a></td>
+                            <td>
+                                <div style="font-size:13px">@v.FarmName</div>
+                                <div class="text-xs text-muted">@v.FarmLocation</div>
+                            </td>
+                            <td>
+                                @if (!string.IsNullOrEmpty(v.BatchCode) && v.BatchId.HasValue)
+                                { <a asp-controller="Batch" asp-action="Detail" asp-route-id="@v.BatchId" class="badge badge-info-soft text-decoration-none">@v.BatchCode</a> }
+                                else { <span class="text-muted small">—</span> }
+                            </td>
+                            <td class="text-xs">@v.FieldOfficerName</td>
+                            <td class="text-xs">@v.VisitPurpose</td>
+                            <td class="text-xs text-muted text-nowrap">
+                                @(v.CheckInTime.HasValue ? v.CheckInTime.Value.ToString("HH:mm") : "—")
+                                @if (v.CheckOutTime.HasValue) { <span>→ @v.CheckOutTime.Value.ToString("HH:mm")</span> }
+                            </td>
+                            <td class="text-nowrap">
+                                @{
+                                    var tr = v.Trust;
+                                    var gpsStatus = tr?.GpsStatus ?? VisitTrustResult.NoGps;
+                                    var gpsTip = tr?.DistanceM is double dm
+                                        ? $"{dm.ToString("N0", inv)} m from farm (limit {tr.ToleranceM.ToString("0", inv)} m)"
+                                        : tr?.GpsNote ?? "No GPS";
+                                }
+                                @if (v.CheckInLatitude.HasValue && v.CheckInLongitude.HasValue)
+                                {
+                                    <a href="@Osm(v.CheckInLatitude.Value, v.CheckInLongitude.Value)" target="_blank" rel="noopener" class="badge @(tr?.GpsBadge ?? "badge-gray") text-decoration-none"
+                                       title="@gpsTip · @v.CheckInLatitude.Value.ToString("0.00000", inv), @v.CheckInLongitude.Value.ToString("0.00000", inv)@(v.GpsAccuracyMeters.HasValue ? " ±" + v.GpsAccuracyMeters.Value.ToString("0") + " m" : "")">
+                                        <i class="bi @(tr?.GpsIcon ?? "bi-geo") me-1"></i>@gpsStatus
+                                    </a>
+                                    @if (tr?.DistanceM is double d2) { <div class="text-xs text-muted">@d2.ToString("N0", inv) m</div> }
+                                }
+                                else { <span class="badge badge-gray" title="@gpsTip">No GPS</span> }
+                            </td>
+                            <td class="text-center"><span class="badge @(v.DailyRecordCount > 0 ? "badge-info-soft" : "badge-gray")">@v.DailyRecordCount</span></td>
+                            <td class="text-center"><span class="badge badge-gray">@v.PhotoCount</span></td>
+                            <td class="text-center">
+                                @if (v.SignatureCount > 0) { <i class="bi bi-patch-check-fill text-success" title="Farmer signed"></i> }
+                                else { <i class="bi bi-dash text-muted"></i> }
+                            </td>
+                            <td class="text-center">
+                                @if (v.Trust != null)
+                                {
+                                    <span class="badge @v.Trust.ScoreBadge" title="Visit Trust Score — @v.Trust.ScoreBand">@v.Trust.Score</span>
+                                }
+                                else { <span class="text-muted">—</span> }
+                            </td>
+                            <td><span class="badge @StatusCls(v.VisitStatus)">@v.VisitStatus</span></td>
+                            <td><span class="badge @(v.SyncStatus == "Synced" ? "badge-healthy" : "badge-warning-soft")">@v.SyncStatus</span></td>
+                            <td>
+                                <div class="d-flex gap-1">
+                                    <a asp-action="Detail" asp-route-id="@v.Id" class="btn btn-xs btn-outline-primary" title="Open"><i class="bi bi-eye"></i></a>
+                                    @if (canWrite)
+                                    {
+                                        <a asp-action="Edit" asp-route-id="@v.Id" class="btn btn-xs btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></a>
+                                        <form asp-action="Delete" method="post" class="d-inline" data-confirm="Delete the visit on @v.VisitDate.ToString("dd MMM") at @(v.FarmName)?">
+                                            <input type="hidden" name="id" value="@v.Id" />
+                                            <button class="btn btn-xs btn-outline-danger" title="Delete"><i class="bi bi-trash"></i></button>
+                                        </form>
+                                    }
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@section Scripts {
+@if (withGps.Count > 0)
+{
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+(function () {
+    const pts = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(mapPoints));
+    const wrap = document.getElementById('visitMapWrap');
+    let map = null;
+    function esc(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
+    wrap.addEventListener('shown.bs.collapse', function () {
+        if (map) { map.invalidateSize(); return; }
+        if (typeof L === 'undefined') return;
+        map = L.map('visitMap');
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
+        const bounds = [];
+        pts.forEach(p => {
+            const done = p.status === 'Completed';
+            L.circleMarker([p.lat, p.lng], { radius: 7, color: done ? '#0a7d5e' : '#b45309', fillColor: done ? '#0d9e75' : '#f59e0b', fillOpacity: .8, weight: 2 })
+                .bindPopup('<b>' + esc(p.farm) + '</b><br>' + esc(p.date) + ' · ' + esc(p.officer) + '<br>' + esc(p.status)
+                    + (p.acc != null ? '<br><span class="text-muted">±' + Math.round(p.acc) + ' m</span>' : '')
+                    + '<br><a href="@Url.Content("~/Visit/Detail/")' + p.id + '">Open visit →</a>')
+                .addTo(map);
+            bounds.push([p.lat, p.lng]);
+        });
+        if (bounds.length === 1) map.setView(bounds[0], 14); else map.fitBounds(bounds, { padding: [30, 30] });
+    });
+})();
+</script>
+}
+}

@@ -1,0 +1,82 @@
+@* ── INVENTORY REPORT ── *@
+@{
+    var items = ((ViewBag.Items as IEnumerable<InventoryItem>)?.ToList() ?? new List<InventoryItem>());
+    var lowStock = ((ViewBag.LowStock as IEnumerable<InventoryItem>)?.ToList() ?? new List<InventoryItem>());
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <a asp-action="Index" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>All Reports</a>
+    <button onclick="window.print()" class="btn btn-sm btn-outline-primary"><i class="bi bi-printer me-1"></i>Print</button>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md-3"><div class="kpi-card">
+        <div class="kpi-label">Total Items</div><div class="kpi-value">@items.Count</div>
+    </div></div>
+    <div class="col-6 col-md-3"><div class="kpi-card">
+        <div class="kpi-label">Low / Out of Stock</div>
+        <div class="kpi-value text-warning">@lowStock.Count</div>
+    </div></div>
+    <div class="col-6 col-md-3"><div class="kpi-card">
+        <div class="kpi-label">Expiring ≤30 Days</div>
+        <div class="kpi-value text-danger">@items.Count(i => i.IsExpiringSoon)</div>
+    </div></div>
+    <div class="col-6 col-md-3"><div class="kpi-card">
+        <div class="kpi-label">Total Stock Value</div>
+        <div class="kpi-value">৳@(((decimal)ViewBag.TotalValue).ToString("N0"))</div>
+    </div></div>
+</div>
+
+@if (lowStock.Any())
+{
+    <div class="card mb-4" style="border-color:#f59e0b">
+        <div class="card-header" style="background:#fef9c3"><h6 class="text-warning-emphasis"><i class="bi bi-exclamation-triangle-fill me-2"></i>Low Stock / Out of Stock Items — Action Required</h6></div>
+        <div class="table-responsive">
+            <table class="table mb-0">
+                <thead><tr><th>Item</th><th>Category</th><th>Current Qty</th><th>Min Level</th><th>Unit</th><th>Supplier</th><th>Status</th></tr></thead>
+                <tbody>
+                    @foreach (var i in lowStock)
+                    {
+                        <tr class="@(i.StockStatus == "Out of Stock" ? "table-danger" : "table-warning")">
+                            <td><strong>@i.Name</strong></td>
+                            <td>@i.Category</td>
+                            <td class="fw-bold">@i.Quantity</td>
+                            <td>@i.MinimumLevel</td>
+                            <td>@i.Unit</td>
+                            <td>@(i.SupplierName ?? "—")</td>
+                            <td><span class="badge @(i.StockStatus == "Out of Stock" ? "badge-danger-soft" : "badge-warning-soft")">@i.StockStatus</span></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+<div class="card">
+    <div class="card-header"><h6><i class="bi bi-box-seam me-2"></i>Full Inventory</h6></div>
+    <div class="table-responsive">
+        <table class="table mb-0" style="font-size:12px">
+            <thead><tr><th>Item</th><th>Category</th><th>Qty</th><th>Unit</th><th>Min Level</th><th>Expiry</th><th>Unit Cost</th><th>Total Value</th><th>Status</th></tr></thead>
+            <tbody>
+                @foreach (var i in items)
+                {
+                    <tr>
+                        <td>@i.Name @if(i.IsExpiringSoon){<span class="badge badge-danger-soft" style="font-size:10px">!</span>}</td>
+                        <td><small>@i.Category</small></td>
+                        <td>@i.Quantity</td>
+                        <td>@i.Unit</td>
+                        <td>@i.MinimumLevel</td>
+                        <td><small class="@(i.IsExpiringSoon ? "text-danger fw-bold" : "text-muted")">@(i.ExpiryDate?.ToString("dd MMM yyyy") ?? "—")</small></td>
+                        <td>৳@i.UnitCost.ToString("N2")</td>
+                        <td class="fw-semibold">৳@i.TotalValue.ToString("N0")</td>
+                        <td><span class="badge @(i.StockStatus=="In Stock"?"badge-healthy":i.StockStatus=="Low Stock"?"badge-warning-soft":"badge-danger-soft")">@i.StockStatus</span></td>
+                    </tr>
+                }
+            </tbody>
+            <tfoot class="table-light fw-bold">
+                <tr><td colspan="7">Total Value</td><td>৳@items.Sum(i=>i.TotalValue).ToString("N0")</td><td></td></tr>
+            </tfoot>
+        </table>
+    </div>
+</div>

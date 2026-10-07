@@ -1,0 +1,176 @@
+@model CalendarMonthVm
+@{
+    var first = new DateTime(Model.Year, Model.Month, 1);
+    var prev = first.AddMonths(-1);
+    var next = first.AddMonths(1);
+    var today = DateTime.Today;
+    var byDay = Model.ByDay;
+    var kinds = new[] { ("vax", "Vaccination due"), ("task", "Task due"), ("harvest", "Expected harvest"), ("order", "Order delivery"), ("cert", "Certificate expiry") };
+    string Href(FarmCalendarEvent e) => e.RouteId.HasValue ? Url.Action(e.Action, e.Controller, new { id = e.RouteId })! : Url.Action(e.Action, e.Controller)!;
+    var canCreate = !User.IsInRole(Roles.Viewer);
+    var upcomingByDay = Model.Upcoming.GroupBy(e => e.Date.Date).OrderBy(g => g.Key).ToList();
+    var dayNames = new[] { "Sat", "Sun", "Mon", "Tue", "Wed", "Thu", "Fri" };
+}
+@section Head {
+<style>
+    .cal-cell .cal-more { font-size: 10.5px; color: var(--text-muted); cursor: pointer; }
+    .cal-cell.fri { background: #fbfcfe; }
+    .cal-ev.overdue { color: #b91c1c !important; font-weight: 600; }
+    .cal-cell .cal-add { opacity: 0; float: right; font-size: 11px; text-decoration: none; }
+    .cal-cell:hover .cal-add { opacity: .7; }
+    .agenda-day { font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--text-secondary); margin: 14px 0 6px; }
+    .agenda-item { display: flex; gap: 10px; align-items: center; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; margin-bottom: 6px; text-decoration: none; color: inherit; }
+    .agenda-item:hover { background: #f8fafc; }
+    @@media (max-width: 767px) { .cal-cell { min-height: 70px; } .cal-ev { font-size: 10px; } }
+</style>
+}
+
+<div class="page-head">
+    <div>
+        <h4>@Model.MonthLabel</h4>
+        <p>@Model.Events.Count(e => e.Date.Month == Model.Month) events this month@(Model.OverdueVaccinations > 0 ? $" · {Model.OverdueVaccinations} overdue vaccinations" : "")</p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap align-items-center">
+        <a asp-action="Index" asp-route-year="@prev.Year" asp-route-month="@prev.Month" class="btn btn-sm btn-outline-secondary"><i class="bi bi-chevron-left"></i> @prev.ToString("MMM")</a>
+        @if (first.Year != today.Year || first.Month != today.Month)
+        {
+            <a asp-action="Index" class="btn btn-sm btn-outline-secondary">Today</a>
+        }
+        <a asp-action="Index" asp-route-year="@next.Year" asp-route-month="@next.Month" class="btn btn-sm btn-outline-secondary">@next.ToString("MMM") <i class="bi bi-chevron-right"></i></a>
+        @if (canCreate)
+        {
+            <a asp-controller="Tasks" asp-action="Create" class="btn btn-sm btn-primary"><i class="bi bi-plus-lg me-1"></i>New task</a>
+        }
+    </div>
+</div>
+
+<div class="stat-grid">
+    <div class="stat-tile tone-blue"><div class="st-label">Vaccinations</div><div class="st-value">@Model.Count("vax")</div><div class="st-sub">@(Model.OverdueVaccinations) overdue overall</div><div class="st-icon"><i class="bi bi-shield-plus"></i></div></div>
+    <div class="stat-tile tone-amber"><div class="st-label">Tasks due</div><div class="st-value">@Model.Count("task")</div><div class="st-sub">Open / in progress</div><div class="st-icon"><i class="bi bi-check2-square"></i></div></div>
+    <div class="stat-tile tone-violet"><div class="st-label">Harvests</div><div class="st-value">@Model.Count("harvest")</div><div class="st-sub">Expected this month</div><div class="st-icon"><i class="bi bi-basket"></i></div></div>
+    <div class="stat-tile tone-green"><div class="st-label">Deliveries</div><div class="st-value">@Model.Count("order")</div><div class="st-sub">Undelivered orders</div><div class="st-icon"><i class="bi bi-truck"></i></div></div>
+    <div class="stat-tile tone-red"><div class="st-label">Cert expiries</div><div class="st-value">@Model.Count("cert")</div><div class="st-sub">Renew before expiry</div><div class="st-icon"><i class="bi bi-patch-check"></i></div></div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-header">
+        <h6><i class="bi bi-calendar3 text-primary me-2"></i>Month view</h6>
+        <div class="d-flex flex-wrap gap-2 align-items-center">
+            @foreach (var (k, label) in kinds)
+            {
+                <label class="d-inline-flex align-items-center gap-1 small" style="cursor:pointer">
+                    <input type="checkbox" class="form-check-input m-0 kind-toggle" value="@k" checked />
+                    <span class="cal-ev @k mb-0" style="display:inline-block">@label</span>
+                </label>
+            }
+            <span class="small text-danger fw-600 ms-1">Red text = overdue</span>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        <div class="cal-grid">
+            @foreach (var dn in dayNames)
+            {
+                <div class="cal-head">@dn</div>
+            }
+            @for (var d = Model.GridStart; d <= Model.GridEnd; d = d.AddDays(1))
+            {
+                var evs = byDay[d].ToList();
+                var inMonth = d.Month == Model.Month;
+                <div class="cal-cell @(inMonth ? "" : "muted") @(d == today ? "today" : "") @(d.DayOfWeek == DayOfWeek.Friday && inMonth ? "fri" : "")">
+                    <div class="cal-day">
+                        @d.Day@(d.Day == 1 ? " " + d.ToString("MMM") : "")
+                        @if (d == today) { <span class="badge bg-success ms-1" style="font-size:9px">Today</span> }
+                        @if (canCreate && d >= today)
+                        {
+                            <a asp-controller="Tasks" asp-action="Create" asp-route-due="@d.ToString("yyyy-MM-dd")" class="cal-add" title="Add task on this day"><i class="bi bi-plus-circle"></i></a>
+                        }
+                    </div>
+                    @for (var i = 0; i < evs.Count; i++)
+                    {
+                        var e = evs[i];
+                        <a href="@Href(e)" class="cal-ev @e.Kind @(e.IsOverdue ? "overdue" : "") @(i >= 4 ? "extra d-none" : "")" data-kind="@e.Kind" title="@e.KindLabel: @e.Title@(e.Detail != null ? " — " + e.Detail : "")@(e.FarmName != null ? " (" + e.FarmName + ")" : "")"><i class="bi @e.Icon me-1"></i>@e.Title</a>
+                    }
+                    @if (evs.Count > 4)
+                    {
+                        <div class="cal-more" onclick="this.parentElement.querySelectorAll('.extra').forEach(function(x){x.classList.remove('d-none')});this.remove()">+@(evs.Count - 4) more</div>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header">
+                <h6><i class="bi bi-list-task text-success me-2"></i>Upcoming 14 days</h6>
+                <span class="text-muted text-xs">@today.ToString("dd MMM") – @today.AddDays(14).ToString("dd MMM yyyy") · @Model.Upcoming.Count events</span>
+            </div>
+            <div class="card-body pt-0">
+                @if (!upcomingByDay.Any())
+                {
+                    <div class="empty-state"><i class="bi bi-calendar-check"></i>Nothing scheduled in the next two weeks.</div>
+                }
+                @foreach (var g in upcomingByDay)
+                {
+                    var delta = (g.Key - today).Days;
+                    <div class="agenda-day">@g.Key.ToString("dddd, dd MMM") <span class="text-muted fw-normal text-lowercase">· @(delta == 0 ? "today" : delta == 1 ? "tomorrow" : $"in {delta} days")</span></div>
+                    @foreach (var e in g)
+                    {
+                        <a href="@Href(e)" class="agenda-item" data-kind="@e.Kind">
+                            <span class="cal-ev @e.Kind mb-0" style="width:34px;text-align:center;padding:5px 0"><i class="bi @e.Icon"></i></span>
+                            <span class="flex-grow-1">
+                                <span class="fw-600 d-block" style="font-size:13px">@e.Title</span>
+                                <span class="text-muted text-xs">@e.KindLabel@(e.Detail != null ? " · " + e.Detail : "")</span>
+                            </span>
+                            @if (e.FarmName != null) { <span class="chip">@e.FarmName</span> }
+                        </a>
+                    }
+                }
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card mb-4">
+            <div class="card-header"><h6><i class="bi bi-pie-chart text-primary me-2"></i>Next 14 days by type</h6></div>
+            <div class="card-body"><div style="height:210px"><canvas id="mixChart"></canvas></div></div>
+        </div>
+        <div class="card">
+            <div class="card-header"><h6><i class="bi bi-info-circle text-primary me-2"></i>About this calendar</h6></div>
+            <div class="card-body small text-muted">
+                <p class="mb-2">Events are pulled live from the Health, Tasks, Batch, Market and Farm modules — there is nothing to maintain separately.</p>
+                <ul class="mb-0 ps-3">
+                    <li>Vaccinations: scheduled doses not yet completed</li>
+                    <li>Tasks: open / in-progress tasks with a due date</li>
+                    <li>Harvest: expected harvest date of active batches</li>
+                    <li>Deliveries: orders not delivered or cancelled</li>
+                    <li>Certificates: expiry dates</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+(function () {
+    document.querySelectorAll('.kind-toggle').forEach(function (cb) {
+        cb.addEventListener('change', function () {
+            document.querySelectorAll('[data-kind="' + cb.value + '"]').forEach(function (el) { el.style.display = cb.checked ? '' : 'none'; });
+        });
+    });
+    var counts = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(kinds.Select(k => Model.Upcoming.Count(e => e.Kind == k.Item1))));
+    var labels = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(kinds.Select(k => k.Item2)));
+    if (counts.some(function (c) { return c > 0; })) {
+        new Chart(document.getElementById('mixChart'), {
+            type: 'doughnut',
+            data: { labels: labels, datasets: [{ data: counts, backgroundColor: [ppColors.blue, ppColors.amber, ppColors.violet, ppColors.green, ppColors.red], borderWidth: 0 }] },
+            options: { cutout: '62%', plugins: { legend: { position: 'right' } } }
+        });
+    } else {
+        document.getElementById('mixChart').parentElement.innerHTML = '<div class="empty-state py-4"><i class="bi bi-calendar"></i>No upcoming events</div>';
+    }
+})();
+</script>
+}
